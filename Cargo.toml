@@ -1,8 +1,25 @@
+#cargo-features = ["edition"]
+
 [package]
 name = "gfx2"
 version = "0.1.0"
 authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
+#edition = '2018'
 
 [dependencies]
 petgraph = "*"
 bitflags = "*"
+toml = "0.4"
+config = "*"
+winit = "*"
+ash = "*"
+pretty_env_logger = "*"
+log = "*"
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "*", features = ["windef", "winuser"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+metal-rs = "*"
+cocoa = "*"
+objc = "*"

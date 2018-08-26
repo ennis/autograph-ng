@@ -1,0 +1,18 @@
+[gfx.window]
+width=1280
+height=720
+fullscreen=false
+vsync=false
+title="Autograph/GFX2"
+
+[gfx.vulkan]
+instance_extensions=[]
+layers=[]
+# Enable debug context
+debug=true
+
+[gfx]
+max_in_flight_frames=1
+default_upload_buffer_size=4194304
+
+
