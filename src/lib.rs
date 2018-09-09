@@ -10,6 +10,7 @@ extern crate winapi;
 extern crate pretty_env_logger;
 #[macro_use]
 extern crate log;
+extern crate slotmap;
 
 mod texture;
 pub mod format;
@@ -17,10 +18,13 @@ mod buffer;
 mod buffer_data;
 mod upload_buffer;
 mod fence;
+mod presentation;
 pub mod window;
 pub mod context;
 pub mod frame;
 
+// re-export vulkan as gfx2::vk
+pub use ash::vk;
 
 // TODO: design a low-level layer for resources and commands (in the eventuality of switching to Vulkan at some point)
 // Safe write access to persistent resources:
@@ -69,6 +73,29 @@ pub mod frame;
 // Q: What about DirectX RayTracing?
 // A?: Should be ported to vulkan with NV extensions "soon"
 //
+// Semantics of persistent resources (stable across frames):
+// * Option A: RAII objects
+//      self-contained objects, release memory on drop
+//      CANNOT borrow the context: would prevent self-referential structs
+//      MUST extend the context lifetime with Arc
+//      + self-contained, "expected" behavior
+//      - proliferation of Arcs
+//      - need backref to context
+//
+// * Option B: dumb objects (handles)
+//      objects = handles to objects managed by the context
+//      only access through context
+//      not bound to the context lifetime: they just become useless once the context is dropped
+//      + no backref to context: very lightweight objects
+//      - must release explicitly: may leak if user forgets
+//
+// * Option C: Rc-handles
+//      object with a Rc handle to an object also owned by the context
+//      periodically, context reclaims objects with no refs
+//      + no backref to context
+//      + expected behavior
+//      - one Rc allocation for each object
+//      - convoluted
 
 // STEP 0: window and event loop.
 // STEP 1: clear the framebuffer.

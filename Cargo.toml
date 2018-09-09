@@ -15,6 +15,7 @@ winit = "*"
 ash = "*"
 pretty_env_logger = "*"
 log = "*"
+slotmap = "*"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "*", features = ["windef", "winuser"] }

@@ -1,15 +1,23 @@
 extern crate gfx2;
+extern crate ash;
 
+use std::env;
+
+use gfx2::vk;
 use gfx2::window::*;
+use gfx2::frame::*;
 
 fn main() {
-    // this creates an event loop, a window, and a context.
+    env::set_current_dir(env!("CARGO_MANIFEST_DIR"));
+
+    // this creates an event loop, a window, context, and a swapchain associated to the window.
     let mut app = App::new();
     let ctx = &mut app.context;
     let window = &mut app.window;
 
     // create a persistent framebuffer texture.
     //let mut persistent_tex = ctx.create_texture(unimplemented!());
+    // create a persistent depth texture.
 
     loop {
         let mut should_close = false;
@@ -19,11 +27,97 @@ fn main() {
                 Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
                     should_close = true;
                 },
+                // if resize, then delete persistent resources and re-create
                 _ => ()
             }
 
-            // create frame
-            //let mut frame = ctx.new_frame();
+            let mut frame = ctx.new_frame();
+            // initial task
+            let t_init = frame.create_task();
+            let r_color_a = frame.image_2d(t_init, (1024, 1024), vk::Format::R16g16b16a16Sfloat);
+            let r_color_b = frame.image_2d(t_init, (1024, 1024), vk::Format::R16g16b16a16Sfloat);
+            // render to target
+            let t_render = frame.create_task();
+            let r_color_a = frame.color_attachment_dependency(t_render, &r_color_a);
+            let r_color_b = frame.color_attachment_dependency(t_render, &r_color_b);
+            // post-process
+            let t_postproc = frame.create_task();
+            frame.image_sample_dependency(t_postproc, &r_color_a);
+            frame.image_sample_dependency(t_postproc, &r_color_b);
+            let r_output = frame.image_2d(t_init, (1024, 1024), vk::Format::R8g8b8a8Srgb);
+            frame.submit();
+
+            // ---- create frame (lock context)
+            // let mut frame = ctx.new_frame();
+            // ---- get the image associated with the presentation. (A)
+            // let presentation_image = frame.presentation_image(app.presentation);
+            // ---- clear presentation image (B)
+            // frame.clear(presentation_image);
+            // ---- submit frame (C)
+            // frame.submit();
+
+            // Dependency types:
+            // - (R) texture (sampled image) (VK_ACCESS_SHADER_READ_BIT)
+            // - (R/RW) storage image (VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT)
+            // - (R) attachment input (VK_ACCESS_INPUT_ATTACHMENT_READ_BIT )
+            // - (RW) depth attachment (VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)
+            // - (RW) stencil attachment (VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)
+            // - (RW) color attachment (VK_ACCESS_COLOR_ATTACHMENT_READ_BIT)
+            // - (RW) buffer
+            // -> Determines accessMask for barriers
+            //
+            // Dependency read barriers stage mask (for deps with R):
+            // - by default: TOP_OF_PIPE
+            // - ultimately: automagically detect from shader
+            //
+            // Dependency write barriers (for deps with W):
+            // - by default: BOTTOM_OF_PIPE
+            // - ultimately: automagically detect from shader
+            //
+
+
+            // Graph:
+            // Node = pass type (graphics or compute), callback function
+            // callback function parameters:
+            //  - command buffer, within a subpass instance initialized with the correct attachments
+            //  - container object that holds all requested resources in their correct state (all images, sampled images, buffer, storage buffer, uniform buffers, etc.)
+            // The callback just has to submit the draw command.
+            // Edge = dependency
+            // - toposort
+            // - check for concurrent read/write hazards
+            // - infer usage of resources from graphs (mutate graph)
+            // - schedule renderpasses
+            // - reorder to minimize layout transitions
+            // - allocate resources
+            // - group in render passes (draw commands with the same attachments; notably: chains without `sample` dependencies)
+            //      - new dependency type: attachment input
+            //      - at least one subpass for each different attachment?
+            //      - minimize the number of attachments
+            //      - a sample dependency always breaks the render pass
+            // - heuristic for renderpasses:
+            //      - schedule a pass (starting from the first one)
+            //      - follow all output attachments
+            //      - if no successor has a sample-dependency, and NO OTHER ATTACHMENTS, then merge the successors into the renderpass
+            //      - schedule_renderpasses()
+            //      - create dependencies between subpasses (e.g. output-to-input attachment)
+            //      - user-provided hints?
+            // - schedule renderpasses (dependencies between renderpasses: e.g. layout transitions)
+            // - insert memory barriers
+            // - insert layout transitions
+            //
+            // Various graphs:
+            // - initial graph
+            // - graph with render passes
+            // - graph with render passes and explicit layout transitions
+
+
+            // things that we need to clear the buffer:
+            // (A) acquire next image in swapchain
+            // (B) allocate command buffer
+            // (B) transition image to render target
+            // (B) create renderpass (from cache?)
+            //      (B)
+
             // synchronize access with the persistent texture in the frame.
             //let mut persistent_tex = frame.sync(persistent_tex);
             // now persistent_tex can be used as a transient.
@@ -35,4 +129,7 @@ fn main() {
         });
         if should_close { break }
     }
+
+    // delete persistent textures.
+    // context.release(persistent_tex);
 }
