@@ -379,6 +379,6 @@ impl Drop for TextureObject {
 /// # References
 ///
 /// https://stackoverflow.com/questions/9572414/how-many-mipmaps-does-a-texture-have-in-opengl
-fn get_texture_mip_map_count(width: u32, height: u32) -> u8 {
+pub fn get_texture_mip_map_count(width: u32, height: u32) -> u8 {
     1 + f32::floor(f32::log2(max(width, height) as f32)) as u8
 }

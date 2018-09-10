@@ -6,6 +6,27 @@ use std::env;
 use gfx2::vk;
 use gfx2::window::*;
 use gfx2::frame::*;
+use gfx2::texture::get_texture_mip_map_count;
+
+fn downsample(frame: &mut Frame, input: ResourceRef) -> ResourceRef
+{
+    let create_info = frame.get_image_create_info(&input).clone();
+    let (w,h) = (create_info.extent.width, create_info.extent.height);
+    let count = get_texture_mip_map_count(w,h);
+
+    let mut r_last = input;
+    let mut cur_w = w;
+    let mut cur_h = h;
+    for i in 0..count {
+        let t = frame.create_task("downsample");
+        frame.image_sample_dependency(t, &r_last);
+        cur_w /= 2;
+        cur_h /= 2;
+        r_last = frame.create_image_2d(t, (cur_w, cur_h), vk::Format::R16g16b16a16Sfloat);
+    }
+
+    r_last
+}
 
 fn main() {
     env::set_current_dir(env!("CARGO_MANIFEST_DIR"));
@@ -36,17 +57,20 @@ fn main() {
                 let mut frame = ctx.new_frame();
                 // initial task
                 let t_init = frame.create_task("init");
-                let r_color_a = frame.image_2d(t_init, (1024, 1024), vk::Format::R16g16b16a16Sfloat);
-                let r_color_b = frame.image_2d(t_init, (1024, 1024), vk::Format::R16g16b16a16Sfloat);
+                let r_color_a = frame.create_image_2d(t_init, (1024, 1024), vk::Format::R16g16b16a16Sfloat);
+                let r_color_b = frame.create_image_2d(t_init, (1024, 1024), vk::Format::R16g16b16a16Sfloat);
                 // render to target
                 let t_render = frame.create_task("render");
-                let r_color_a = frame.color_attachment_dependency(t_render, &r_color_a);
-                let r_color_b = frame.color_attachment_dependency(t_render, &r_color_b);
+                let r_color_a = frame.color_attachment_dependency(t_render, 0, &r_color_a);
+                let r_color_b = frame.color_attachment_dependency(t_render, 1, &r_color_b);
+                // downsample one
+                let r_color_b = downsample(&mut frame, r_color_b);
                 // post-process
                 let t_postproc = frame.create_task("postproc");
                 frame.image_sample_dependency(t_postproc, &r_color_a);
                 frame.image_sample_dependency(t_postproc, &r_color_b);
-                let r_output = frame.image_2d(t_init, (1024, 1024), vk::Format::R8g8b8a8Srgb);
+                let r_output = frame.create_image_2d(t_init, (1024, 1024), vk::Format::R8g8b8a8Srgb);
+                frame.color_attachment_dependency(t_postproc, 0, &r_output);
                 frame.submit();
                 first = false;
             }
@@ -78,7 +102,9 @@ fn main() {
             // - by default: BOTTOM_OF_PIPE
             // - ultimately: automagically detect from shader
             //
-
+            // Resource creation:
+            // - in a node?
+            // - outside, by the system?
 
             // Graph:
             // Node = pass type (graphics or compute), callback function

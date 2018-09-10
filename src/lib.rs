@@ -6,7 +6,8 @@ extern crate config;
 #[macro_use]
 extern crate ash;
 extern crate winit;
-//extern crate winapi;
+#[cfg(target_os = "windows")]
+extern crate winapi;
 extern crate pretty_env_logger;
 #[macro_use]
 extern crate log;
@@ -15,7 +16,7 @@ extern crate serde;
 #[macro_use]
 extern crate serde_json;
 
-mod texture;
+pub mod texture;
 pub mod format;
 mod buffer;
 mod buffer_data;
