@@ -4,6 +4,8 @@ use std::ptr;
 
 use ash::vk;
 use petgraph::{Graph, Direction, Directed, graph::NodeIndex};
+use serde_json as json;
+use serde::ser::{Serializer, SerializeSeq, SerializeMap};
 
 use context::Context;
 
@@ -27,28 +29,41 @@ pub struct ResourceId(pub(crate) u32);
 #[derive(Debug)]
 pub(crate) struct Task
 {
+    /// Task name.
+    pub(crate) name: String,
     /// Resources that this node writes to.
     pub(crate) writes: Vec<ResourceId>,
     /// Resources that should be created for this node.
     pub(crate) creates: Vec<ResourceId>
 }
 
+impl Task
+{
+    fn new<S: Into<String>>(name: S) -> Task {
+        Task {
+            name: name.into(),
+            creates: Vec::new(),
+            writes: Vec::new(),
+        }
+    }
+}
+
 /// Represents a dependency between tasks in the frame graph.
 pub(crate) struct Dependency
 {
     /// The resource depended on.
-    resource: ResourceId,
+    pub(crate) resource: ResourceId,
     /// How this resource is accessed by the dependent task.
     /// See vulkan docs for all possible flags.
-    access_bits: vk::AccessFlags,
+    pub(crate) access_bits: vk::AccessFlags,
     /// What pipeline stage must have completed on the dependency.
     /// By default, this is BOTTOM_OF_PIPE.
-    src_stage_mask: vk::PipelineStageFlags,
+    pub(crate) src_stage_mask: vk::PipelineStageFlags,
     /// What pipeline stage of this task (destination) is waiting on the dependency.
     /// By default, this is TOP_OF_PIPE.
-    dst_stage_mask: vk::PipelineStageFlags,
+    pub(crate) dst_stage_mask: vk::PipelineStageFlags,
     /// Details of the dependency specific to the usage and the type of resource.
-    details: DependencyDetails
+    pub(crate) details: DependencyDetails
 }
 
 impl Dependency
@@ -59,8 +74,8 @@ impl Dependency
         writeln!(w, "  srcStageMask ..... {:?}", self.src_stage_mask);
         writeln!(w, "  dstStageMask ..... {:?}", self.dst_stage_mask);
         match &self.details {
-            &DependencyDetails::Image { old_layout, new_layout } => {
-                writeln!(w, "  oldLayout ........ {:?}", old_layout);
+            &DependencyDetails::Image { new_layout } => {
+                //writeln!(w, "  oldLayout ........ {:?}", old_layout);
                 writeln!(w, "  newLayout ........ {:?}", new_layout);
             },
             &DependencyDetails::Attachment { ref attachment_description } => {
@@ -70,8 +85,7 @@ impl Dependency
                 writeln!(w, "  initialLayout .... {:?}", attachment_description.initial_layout);
                 writeln!(w, "  finalLayout ...... {:?}", attachment_description.final_layout);
             },
-            &DependencyDetails::Buffer {  } => {
-            },
+            &DependencyDetails::Buffer {  } => {},
         }
     }
 }
@@ -88,11 +102,13 @@ pub(crate) enum DependencyDetails
     /// Image dependency: either a sampled image or a storage image.
     /// This produces the image barrier.
     Image {
-        old_layout: vk::ImageLayout,
+        /// The layout expected by the target.
         new_layout: vk::ImageLayout,
     },
     /// Image used as an attachment.
     Attachment {
+        /// Attachment description. note that some of the properties inside are filled
+        /// During the scheduling passes.
         attachment_description: vk::AttachmentDescription,
     },
     /// Details specific to buffer data.
@@ -138,61 +154,62 @@ impl ResourceRef
 }
 
 
-/*
 /// A transient resource that lives only during one frame and is reclaimed after.
 /// The attached storage can be aliased between resources if the system determines that
 /// no overlap is possible.
-pub(crate) enum TransientResource
+pub(crate) struct Resource
 {
-    Texture(Texture),
-    Buffer(Buffer),
-}*/
+    pub(crate) name: String,
+    pub(crate) details: ResourceDetails,
+}
 
-/*impl TransientResource
-{
-}*/
-
-pub(crate) enum TransientResource
+pub(crate) enum ResourceDetails
 {
     Buffer(BufferResource),
     Image(ImageResource)
 }
 
-impl TransientResource
+impl Resource
 {
-    fn new_image(create_info: &vk::ImageCreateInfo) -> TransientResource {
-        TransientResource::Image(ImageResource { create_info: create_info.clone() })
+    fn new_image(name: impl Into<String>, create_info: &vk::ImageCreateInfo) -> Resource {
+        Resource {
+            name: name.into(),
+            details: ResourceDetails::Image(ImageResource { create_info: create_info.clone() })
+        }
     }
 
-    fn new_buffer(create_info: &vk::BufferCreateInfo) -> TransientResource {
-        TransientResource::Buffer(BufferResource { create_info: create_info.clone() })
+    fn new_buffer(name: impl Into<String>, create_info: &vk::BufferCreateInfo) -> Resource {
+        Resource {
+            name: name.into(),
+            details: ResourceDetails::Buffer(BufferResource { create_info: create_info.clone() })
+        }
     }
 
     fn as_image(&self) -> Option<&ImageResource> {
-        match self {
-            TransientResource::Image(ref img) => Some(img),
-            TransientResource::Buffer(_) => None
+        match self.details {
+            ResourceDetails::Image(ref img) => Some(img),
+            ResourceDetails::Buffer(_) => None
         }
     }
 
     fn as_image_mut(&mut self) -> Option<&mut ImageResource> {
-        match self {
-            TransientResource::Image(ref mut img) => Some(img),
-            TransientResource::Buffer(_) => None
+        match self.details {
+            ResourceDetails::Image(ref mut img) => Some(img),
+            ResourceDetails::Buffer(_) => None
         }
     }
 
     fn as_buffer(&self) -> Option<&BufferResource> {
-        match self {
-            TransientResource::Image(_) => None,
-            TransientResource::Buffer(ref buf) => Some(buf)
+        match self.details {
+            ResourceDetails::Image(_) => None,
+            ResourceDetails::Buffer(ref buf) => Some(buf)
         }
     }
 
     fn as_buffer_mut(&mut self) -> Option<&mut BufferResource> {
-        match self {
-            TransientResource::Image(_) => None,
-            TransientResource::Buffer(ref mut buf) => Some(buf)
+        match self.details {
+            ResourceDetails::Image(_) => None,
+            ResourceDetails::Buffer(ref mut buf) => Some(buf)
         }
     }
 }
@@ -200,37 +217,16 @@ impl TransientResource
 
 pub struct BufferResource
 {
+    /// Buffer creation info. Some properties are inferred from the dependency graph.
     create_info: vk::BufferCreateInfo,
-    // TODO allocation
 }
 
 pub struct ImageResource
 {
+    /// Buffer creation info. Some properties are inferred from the dependency graph
+    /// (flags, tiling, usage, initial_layout)
     create_info: vk::ImageCreateInfo,
 }
-
-
-/*/// Helper to write graphs
-///
-graph
-    .node()
-    .attribute()
-    .attribute()
-    .build();*/
-/*pub struct GraphvizOutput<'a, W: Write>
-{
-    writer: &'a mut W,
-}
-
-pub struct GraphvizNodeBuilder<'a, W:Write>
-{
-    writer: &'a mut W,
-}
-
-impl GraphvizNodeBuilder
-{
-    fn at
-}*/
 
 /// A frame: manages transient resources within and across frames.
 pub struct Frame<'ctx> {
@@ -238,21 +234,19 @@ pub struct Frame<'ctx> {
     /// The DAG of tasks.
     graph: FrameGraph,
     /// Table of transient resources for this frame.
-    resources: Vec<TransientResource>,
+    resources: Vec<Resource>,
     /// The root node from which all transient resources originates.
     /// This is just here to avoid an Option<> into ResourceRefs
     transient_root: TaskId,
 }
+
 
 impl<'ctx> Frame<'ctx> {
     /// Creates a new frame.
     fn new(context: &'ctx mut Context) -> Frame<'ctx> {
         let mut graph = FrameGraph::new();
         // create a dummy task for the transient root.
-        let transient_root = graph.add_node(Task {
-            creates: Vec::new(),
-            writes: Vec::new(),
-        });
+        let transient_root = graph.add_node(Task::new("ROOT"));
         let mut f = Frame {
             graph,
             context,
@@ -264,11 +258,8 @@ impl<'ctx> Frame<'ctx> {
 
     /// Creates a new task.
     /// Returns the ID to the newly created task.
-    pub fn create_task(&mut self) -> TaskId {
-        self.graph.add_node(Task {
-            creates: Vec::new(),
-            writes: Vec::new()
-        })
+    pub fn create_task<S: Into<String>>(&mut self, name: S) -> TaskId {
+        self.graph.add_node(Task::new(name))
     }
 
     /// Updates the data contained in a texture. This creates a task in the graph.
@@ -311,7 +302,7 @@ impl<'ctx> Frame<'ctx> {
             src_stage_mask,
             dst_stage_mask,
             details: DependencyDetails::Image {
-                old_layout,
+                // old_layout,
                 // transfer to layout suited to shader access
                 new_layout: vk::ImageLayout::ShaderReadOnlyOptimal
             }
@@ -394,7 +385,8 @@ impl<'ctx> Frame<'ctx> {
             initial_layout: vk::ImageLayout::Undefined,
         };
 
-        let resource = self.add_resource(TransientResource::new_image(&image_create_info));
+        let naming_index = self.resources.len();
+        let resource = self.add_resource(Resource::new_image(format!("IMG_{:04}", naming_index), &image_create_info));
 
         ResourceRef {
             task,
@@ -407,14 +399,11 @@ impl<'ctx> Frame<'ctx> {
         }
     }
 
-    fn get_resource_name(&self, r: ResourceId) -> String {
-        match self.resources[r.0 as usize] {
-            TransientResource::Buffer(_) => { format!("BUF_{:08X}", r.0) },
-            TransientResource::Image(_) => { format!("IMG_{:08X}", r.0) },
-        }
+    fn get_resource_name(&self, r: ResourceId) -> &str {
+        &self.resources[r.0 as usize].name
     }
 
-    fn add_resource(&mut self, r: TransientResource) -> ResourceId {
+    fn add_resource(&mut self, r: Resource) -> ResourceId {
         self.resources.push(r);
         ResourceId((self.resources.len()-1) as u32)
     }
@@ -424,20 +413,21 @@ impl<'ctx> Frame<'ctx> {
         // dump resources
         writeln!(w, "--- RESOURCES ---");
         for (i,r) in self.resources.iter().enumerate() {
-            match r {
-                &TransientResource::Image(ref r) => {
-                    writeln!(w, "Image R_{}", i);
-                    writeln!(w, "  imageType ........ {:?}", r.create_info.image_type);
-                    writeln!(w, "  width ............ {}", r.create_info.extent.width);
-                    writeln!(w, "  height ........... {}", r.create_info.extent.height);
-                    writeln!(w, "  depth ............ {}", r.create_info.extent.depth);
-                    writeln!(w, "  format ........... {:?}", r.create_info.format);
-                    writeln!(w, "  usage ............ {:?}", r.create_info.usage);
+
+            match r.details {
+                ResourceDetails::Image(ref img) => {
+                    writeln!(w, "Image {}(#{})", r.name, i);
+                    writeln!(w, "  imageType ........ {:?}", img.create_info.image_type);
+                    writeln!(w, "  width ............ {}", img.create_info.extent.width);
+                    writeln!(w, "  height ........... {}", img.create_info.extent.height);
+                    writeln!(w, "  depth ............ {}", img.create_info.extent.depth);
+                    writeln!(w, "  format ........... {:?}", img.create_info.format);
+                    writeln!(w, "  usage ............ {:?}", img.create_info.usage);
                 },
-                &TransientResource::Buffer(ref r) => {
-                    writeln!(w, "Buffer R_{}", i);
-                    writeln!(w, "  size ............. {}", r.create_info.size);
-                    writeln!(w, "  usage ............ {:?}", r.create_info.usage);
+                ResourceDetails::Buffer(ref buf) => {
+                    writeln!(w, "Buffer {}(#{})", r.name, i);
+                    writeln!(w, "  size ............. {}", buf.create_info.size);
+                    writeln!(w, "  usage ............ {:?}", buf.create_info.usage);
                 }
             }
             writeln!(w);
@@ -447,7 +437,8 @@ impl<'ctx> Frame<'ctx> {
         // tasks
         writeln!(w, "--- TASKS ---");
         for n in self.graph.node_indices() {
-            writeln!(w, "T_{}", n.index());
+            let t = self.graph.node_weight(n).unwrap();
+            writeln!(w, "{} (#{})", t.name, n.index());
         }
         writeln!(w);
 
@@ -455,104 +446,169 @@ impl<'ctx> Frame<'ctx> {
         writeln!(w, "--- DEPS ---");
         for e in self.graph.edge_indices() {
             let (src, dest) = self.graph.edge_endpoints(e).unwrap();
+            let src_task = self.graph.node_weight(src).unwrap();
+            let dest_task = self.graph.node_weight(dest).unwrap();
             let d = self.graph.edge_weight(e).unwrap();
-            writeln!(w, "T_{} -> T_{}", src.index(), dest.index());
+            writeln!(w, "{}(#{}) -> {}(#{})", src_task.name, src.index(), dest_task.name, dest.index());
             d.dump(w);
             writeln!(w);
         }
     }
 
-   /* fn dump_nodes<W: Write>(&self, w: &mut W)
+    fn dump_json<W: Write>(&self, w: W)
     {
-        // dump resources
-        writeln!(w, "--- RESOURCES ---");
-        for (i,r) in self.resources.iter().enumerate() {
-            match r {
-                &TransientResource::Image(ref r) => {
-                    write!(w, "{} [fillcolor=navyblue label=\"", self.get_resource_name(ResourceId(i)));
-                    write!(w, "|Image R_{}\\n", i);
-                    write!(w, "|{{imageType| {:?} }}\\n", r.create_info.image_type);
-                    write!(w, "|{{width    | {}   }}\\n", r.create_info.extent.width);
-                    write!(w, "|{{height   | {}   }}\\n", r.create_info.extent.height);
-                    write!(w, "|{{depth    | {}   }}\\n", r.create_info.extent.depth);
-                    write!(w, "|{{format   | {:?} }}\\n", r.create_info.format);
-                    write!(w, "|{{usage    | {:?} }}\\n", r.create_info.usage);
-                    writeln!(w, "|\"]");
+        let mut ser = json::Serializer::new(w);
+        //let resource = ser.serialize_seq(Some(self.resources.len()));
+
+        //------------------ Tasks ------------------
+        /*{
+            let mut seq = ser.serialize_seq(Some(self.graph.node_count())).unwrap();
+            for n in self.graph.node_indices() {
+                let name = &self.graph.node_weight(n).unwrap().name;
+                seq.serialize_element(&json!({
+                "id": n.index(),
+                "name": name,
+            }));
+            }
+            SerializeSeq::end(seq);
+        }*/
+
+        //------------------ Dependencies ------------------
+        /*for e in self.graph.edge_indices() {
+            let (src, dest) = self.graph.edge_endpoints(e).unwrap();
+            let d = self.graph.edge_weight(e).unwrap();
+
+            let color_code = match &d.details {
+                &DependencyDetails::Image { .. } => {
+                    if d.access_bits.subset(vk::ACCESS_SHADER_WRITE_BIT) { "rw_image" }  else { "read_only_image" }
                 },
-                &TransientResource::Buffer(ref r) => {
+                &DependencyDetails::Attachment { .. } => { "attachment" }
+                &DependencyDetails::Buffer {  } => {
+                    if d.access_bits.subset(vk::ACCESS_SHADER_WRITE_BIT) { "rw_buffer" }  else { "read_only_buffer" }
+                },
+            };
+
+            //------------------ Dependency node ------------------
+            let name = self.get_resource_name(d.resource);
+            {
+                let mut s_dep = ser.serialize_map(None).unwrap();
+                s_dep.serialize_entry("id", &e.index());
+                s_dep.serialize_entry("resource", &d.resource.0);
+                s_dep.serialize_entry("class", &color_code);
+                SerializeMap::end(s_dep);
+            }
+        }*/
+
+
+        //------------------ Dependency edges ------------------
+        /*for e in self.graph.edge_indices() {
+            let (src, dest) = self.graph.edge_endpoints(e).unwrap();
+            {
+                let mut s_edge = ser.serialize_map(None).unwrap();
+                s_edge.serialize_entry("from", &src.index());
+                s_edge.serialize_entry("to", &e.index());
+                SerializeMap::end(s_edge);
+            }
+            {
+                let mut s_edge = ser.serialize_map(None).unwrap();
+                s_edge.serialize_entry("from", &e.index());
+                s_edge.serialize_entry("to", &dest.index());
+                SerializeMap::end(s_edge);
+            }
+        }*/
+    }
+
+    fn dump_graphviz<W: Write>(&self, w: &mut W)
+    {
+        writeln!(w, "digraph G {{");
+        writeln!(w, "node [shape=box, style=filled, fontcolor=white, fontname=monospace];");
+        writeln!(w, "rankdir=LR;");
+        //------------------ Resource nodes ------------------
+        /*for (i,r) in self.resources.iter().enumerate() {
+            match r.details {
+                ResourceDetails::Image(ref r) => {
+                    let name = self.get_resource_name(ResourceId(i as u32));
+                    write!(w, "R_{} [fillcolor=navyblue,label=\"", i);
+                    write!(w, "IMAGE {} ({:04})", name, i);
+                    write!(w, "|{{imageType| {:?} }}", r.create_info.image_type);
+                    write!(w, "|{{width | {} }}", r.create_info.extent.width);
+                    write!(w, "|{{height | {} }}", r.create_info.extent.height);
+                    write!(w, "|{{depth | {} }}", r.create_info.extent.depth);
+                    write!(w, "|{{format | {:?} }}", r.create_info.format);
+                    write!(w, "|{{usage | {:?} }}", r.create_info.usage);
+                    writeln!(w, "\"];");
+                },
+                ResourceDetails::Buffer(ref r) => {
                     write!(w, "R_{} [fillcolor=red4 label=\"", i);
-                    write!(w, "|Buffer R_{}\\n", i);
-                    write!(w, "|{{size   | {:?} }}\\n", r.create_info.size);
-                    write!(w, "|{{usage  | {}   }}\\n", r.create_info.usage);
-                    writeln!(w, "|\"]");
+                    write!(w, "BUFFER {}", i);
+                    write!(w, "|{{size | {:?} }}", r.create_info.size);
+                    write!(w, "|{{usage | {:?} }}", r.create_info.usage);
+                    writeln!(w, "\"];");
                 }
             }
-            writeln!(w);
         }
-        writeln!(w);
+        writeln!(w);*/
 
-        // tasks
-        //writeln!(w, "--- TASKS ---");
+        //------------------ Tasks ------------------
         for n in self.graph.node_indices() {
-            writeln!(w, "T_{}", n.index());
+            let t = self.graph.node_weight(n).unwrap();
+            writeln!(w, "T_{} [fillcolor=red,label=\"{}\"];", n.index(), t.name);
         }
         writeln!(w);
 
-        // dependencies
-        writeln!(w, "--- DEPS ---");
+
+        //------------------ Dependencies ------------------
         for e in self.graph.edge_indices() {
             let (src, dest) = self.graph.edge_endpoints(e).unwrap();
             let d = self.graph.edge_weight(e).unwrap();
 
             let color_code = match &d.details {
                 &DependencyDetails::Image { .. } => {
-                    if d.access_bits & vk::ACCESS_SHADER_WRITE_BIT { "purple4" }  // written image
+                    if d.access_bits.subset(vk::ACCESS_SHADER_WRITE_BIT) { "purple4" }  // written image
                     else { "midnightblue" } // read-only image
                 },
                 &DependencyDetails::Attachment { .. } => { "darkgreen" }
                 &DependencyDetails::Buffer {  } => {
-                    if d.access_bits & vk::ACCESS_SHADER_WRITE_BIT { "violetred4" }  // written
+                    if d.access_bits.subset(vk::ACCESS_SHADER_WRITE_BIT) { "violetred4" }  // written
                     else { "red4" } // read-only
                 },
             };
 
-            //let resource_name =
+            //------------------ Dependency edge ------------------
+            writeln!(w, "T_{} -> D_{};", src.index(), e.index());
+            writeln!(w, "D_{} -> T_{};", e.index(), dest.index());
 
-            writeln!(w, "T_{} -> T_{}", src.index(), dest.index());
-
-            write!(w, "DEP_{} [fillcolor={} label=\"|{} ", i, depcolor,);
-            writeln!(w, "", i);
-
-            writeln!(w, "  resource ......... {:08X}", self.resource.0);
-            writeln!(w, "  access ........... {:?}", self.access_bits);
-            writeln!(w, "  srcStageMask ..... {:?}", self.src_stage_mask);
-            writeln!(w, "  dstStageMask ..... {:?}", self.dst_stage_mask);
+            //------------------ Dependency node ------------------
+            write!(w, "D_{} [fillcolor={},label=< <TABLE>", e.index(), color_code);
+            let name = self.get_resource_name(d.resource);
             match &d.details {
-                &DependencyDetails::Image { old_layout, new_layout } => {
-                    write!(w, "|Image R_{}\\n", d.resource.0);
-                    write!(w, "|{{access       | {}   }}\\n", r.create_info.extent.width);
-                    write!(w, "|{{srcStageMask | {}   }}\\n", r.create_info.extent.height);
-                    write!(w, "|{{dstStageMask | {}   }}\\n", r.create_info.extent.depth);
-                    write!(w, "|{{format       | {:?} }}\\n", r.create_info.format);
-                    write!(w, "|{{usage        | {:?} }}\\n", r.create_info.usage);
-
-                    writeln!(w, "  oldLayout ........ {:?}", old_layout);
-                    writeln!(w, "  newLayout ........ {:?}", new_layout);
+                &DependencyDetails::Image { new_layout } => {
+                    write!(w, "<TR><TD COLSPAN=\"2\">IMAGE {} (#{})</TD></TR>", name, d.resource.0);
+                    write!(w, "<TR><TD>accessBits</TD><TD>{:?}</TD></TR>", d.access_bits);
+                    write!(w, "<TR><TD>srcStageMask</TD><TD>{:?}</TD></TR>", d.src_stage_mask);
+                    write!(w, "<TR><TD>dstStageMask</TD><TD>{:?}</TD></TR>", d.dst_stage_mask);
+                    write!(w, "<TR><TD>newLayout</TD><TD>{:?}</TD></TR>", new_layout);
                 },
                 &DependencyDetails::Attachment { ref attachment_description } => {
-                    writeln!(w, "  format ........... {:?}", attachment_description.format);
-                    writeln!(w, "  loadOp ........... {:?}", attachment_description.load_op);
-                    writeln!(w, "  storeOp .......... {:?}", attachment_description.store_op);
-                    writeln!(w, "  initialLayout .... {:?}", attachment_description.initial_layout);
-                    writeln!(w, "  finalLayout ...... {:?}", attachment_description.final_layout);
+                    write!(w, "<TR><TD COLSPAN=\"2\">ATTACHMENT {} (#{})</TD></TR>", name, d.resource.0);
+                    write!(w, "<TR><TD>accessBits</TD><TD>{:?}</TD></TR>", d.access_bits);
+                    write!(w, "<TR><TD>srcStageMask</TD><TD>{:?}</TD></TR>", d.src_stage_mask);
+                    write!(w, "<TR><TD>dstStageMask</TD><TD>{:?}</TD></TR>", d.dst_stage_mask);
+                    write!(w, "<TR><TD>format</TD><TD>{:?}</TD></TR>", attachment_description.format);
+                    write!(w, "<TR><TD>loadOp</TD><TD>{:?}</TD></TR>", attachment_description.load_op);
+                    write!(w, "<TR><TD>storeOp</TD><TD>{:?}</TD></TR>", attachment_description.store_op);
+                    //write!(w, "|{{initialLayout | {} }}\\n", attachment_description.initial_layout);
+                    write!(w, "<TR><TD>finalLayout</TD><TD>{:?}</TD></TR>", attachment_description.final_layout);
                 },
-                &DependencyDetails::Buffer {  } => {
-                },
+                &DependencyDetails::Buffer {} => {
+                    write!(w, "BUFFER {}(#{})", name, d.resource.0);
+                }
             }
-            d.dump(w);
-            writeln!(w);
+            writeln!(w, " </TABLE> >];");
         }
-    }*/
+
+        writeln!(w, "}}");
+    }
 
     // Blue: sampled image
     // Violet: R/W image
@@ -568,6 +624,8 @@ impl<'ctx> Frame<'ctx> {
     {
         // TODO
         self.dump(&mut stdout());
+        self.dump_graphviz(&mut stdout());
+        self.dump_json(stdout());
     }
 
 }

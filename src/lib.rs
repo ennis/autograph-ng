@@ -6,11 +6,14 @@ extern crate config;
 #[macro_use]
 extern crate ash;
 extern crate winit;
-extern crate winapi;
+//extern crate winapi;
 extern crate pretty_env_logger;
 #[macro_use]
 extern crate log;
 extern crate slotmap;
+extern crate serde;
+#[macro_use]
+extern crate serde_json;
 
 mod texture;
 pub mod format;
@@ -19,6 +22,7 @@ mod buffer_data;
 mod upload_buffer;
 mod fence;
 mod presentation;
+mod graphviz;
 pub mod window;
 pub mod context;
 pub mod frame;

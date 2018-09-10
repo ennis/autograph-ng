@@ -7,7 +7,7 @@ authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
 #edition = '2018'
 
 [dependencies]
-petgraph = "*"
+petgraph = { version = "*", features = ["serde-1"] }
 bitflags = "*"
 toml = "0.4"
 config = "*"
@@ -16,6 +16,8 @@ ash = "*"
 pretty_env_logger = "*"
 log = "*"
 slotmap = "*"
+serde = "*"
+serde_json = "*"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "*", features = ["windef", "winuser"] }

@@ -19,6 +19,7 @@ fn main() {
     //let mut persistent_tex = ctx.create_texture(unimplemented!());
     // create a persistent depth texture.
 
+    let mut first = true;
     loop {
         let mut should_close = false;
         app.events_loop.poll_events(|event| {
@@ -31,21 +32,24 @@ fn main() {
                 _ => ()
             }
 
-            let mut frame = ctx.new_frame();
-            // initial task
-            let t_init = frame.create_task();
-            let r_color_a = frame.image_2d(t_init, (1024, 1024), vk::Format::R16g16b16a16Sfloat);
-            let r_color_b = frame.image_2d(t_init, (1024, 1024), vk::Format::R16g16b16a16Sfloat);
-            // render to target
-            let t_render = frame.create_task();
-            let r_color_a = frame.color_attachment_dependency(t_render, &r_color_a);
-            let r_color_b = frame.color_attachment_dependency(t_render, &r_color_b);
-            // post-process
-            let t_postproc = frame.create_task();
-            frame.image_sample_dependency(t_postproc, &r_color_a);
-            frame.image_sample_dependency(t_postproc, &r_color_b);
-            let r_output = frame.image_2d(t_init, (1024, 1024), vk::Format::R8g8b8a8Srgb);
-            frame.submit();
+            if first {
+                let mut frame = ctx.new_frame();
+                // initial task
+                let t_init = frame.create_task("init");
+                let r_color_a = frame.image_2d(t_init, (1024, 1024), vk::Format::R16g16b16a16Sfloat);
+                let r_color_b = frame.image_2d(t_init, (1024, 1024), vk::Format::R16g16b16a16Sfloat);
+                // render to target
+                let t_render = frame.create_task("render");
+                let r_color_a = frame.color_attachment_dependency(t_render, &r_color_a);
+                let r_color_b = frame.color_attachment_dependency(t_render, &r_color_b);
+                // post-process
+                let t_postproc = frame.create_task("postproc");
+                frame.image_sample_dependency(t_postproc, &r_color_a);
+                frame.image_sample_dependency(t_postproc, &r_color_b);
+                let r_output = frame.image_2d(t_init, (1024, 1024), vk::Format::R8g8b8a8Srgb);
+                frame.submit();
+                first = false;
+            }
 
             // ---- create frame (lock context)
             // let mut frame = ctx.new_frame();
