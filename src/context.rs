@@ -685,6 +685,12 @@ impl Context {
         }
     }
 
+    /*/// Acquires a presentation image.
+    pub fn acquire_presentation_image(&mut self, presentation: Presentation) ->
+    {
+
+    }*/
+
 
     /*/// Initializes OR re-initializes a presentation target.
     fn initialize_presentation_target(&self, target: &PresentationTarget)

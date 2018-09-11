@@ -5,11 +5,35 @@ use std::fs::File;
 
 use ash::vk;
 use petgraph::{Graph, Direction, Directed, graph::NodeIndex};
+use downcast_rs::Downcast;
 
 use context::Context;
 
+/*
+/// An untyped resource index, with one bit that indicates whether the resource is transient
 #[derive(Copy,Clone,Debug,Eq,PartialEq,Ord,PartialOrd,Hash)]
-pub struct ResourceId(pub(crate) u32);
+pub struct ResourceIndex(u32);
+
+impl ResourceIndex {
+    pub fn new_transient(index: usize) -> ResourceIndex {
+        assert!(index <= (1u32 << 31));
+        ResourceIndex(index & (1u32 << 31))
+    }
+
+    pub fn is_transient(&self) -> bool {
+        return (self.0 & (1u32 << 31)) != 0;
+    }
+
+    pub fn index(&self) -> usize {
+        return (self.0 & !(1u32 << 31)) as usize;
+    }
+}*/
+
+#[derive(Copy,Clone,Debug,Eq,PartialEq,Ord,PartialOrd,Hash)]
+pub struct ImageId(pub(crate) u32);
+
+#[derive(Copy,Clone,Debug,Eq,PartialEq,Ord,PartialOrd,Hash)]
+pub struct BufferId(pub(crate) u32);
 
 /*bitflags! {
     /// What is the dependency going to be used for?
@@ -127,87 +151,79 @@ impl ResourceRef
 }
 
 
-/// A transient resource that lives only during one frame and is reclaimed after.
-/// The attached storage can be aliased between resources if the system determines that
-/// no overlap is possible.
-pub(crate) struct Resource
+/// Trait representing the shared functionality and properties of resources (buffers and images).
+pub trait Resource: Downcast
 {
-    pub(crate) name: String,
-    pub(crate) details: ResourceDetails,
+    fn name(&self) -> &str;
 }
-
-pub(crate) enum ResourceDetails
-{
-    Buffer(BufferResource),
-    Image(ImageResource)
-}
-
-impl Resource
-{
-    fn new_image(name: impl Into<String>, create_info: &vk::ImageCreateInfo) -> Resource {
-        Resource {
-            name: name.into(),
-            details: ResourceDetails::Image(ImageResource { create_info: create_info.clone() })
-        }
-    }
-
-    fn new_buffer(name: impl Into<String>, create_info: &vk::BufferCreateInfo) -> Resource {
-        Resource {
-            name: name.into(),
-            details: ResourceDetails::Buffer(BufferResource { create_info: create_info.clone() })
-        }
-    }
-
-    pub(crate) fn as_image(&self) -> Option<&ImageResource> {
-        match self.details {
-            ResourceDetails::Image(ref img) => Some(img),
-            ResourceDetails::Buffer(_) => None
-        }
-    }
-
-    pub(crate) fn as_image_mut(&mut self) -> Option<&mut ImageResource> {
-        match self.details {
-            ResourceDetails::Image(ref mut img) => Some(img),
-            ResourceDetails::Buffer(_) => None
-        }
-    }
-
-    pub(crate) fn as_buffer(&self) -> Option<&BufferResource> {
-        match self.details {
-            ResourceDetails::Image(_) => None,
-            ResourceDetails::Buffer(ref buf) => Some(buf)
-        }
-    }
-
-    pub(crate) fn as_buffer_mut(&mut self) -> Option<&mut BufferResource> {
-        match self.details {
-            ResourceDetails::Image(_) => None,
-            ResourceDetails::Buffer(ref mut buf) => Some(buf)
-        }
-    }
-}
-
+impl_downcast!(Resource);
 
 pub struct BufferResource
 {
+    /// Name of the resource. May not uniquely identify the resource;
+    pub(crate) name: String,
     /// Buffer creation info. Some properties are inferred from the dependency graph.
-    create_info: vk::BufferCreateInfo,
+    pub(crate) create_info: vk::BufferCreateInfo,
+    /// Buffer resource + associated memory allocation, None if not yet allocated.
+    pub(crate) buffer: Option<vk::Buffer>,
+}
+
+impl BufferResource
+{
+    pub(crate) fn new(name: impl Into<String>, create_info: &vk::BufferCreateInfo) -> BufferResource {
+        BufferResource {
+            name: name.into(),
+            create_info: create_info.clone(),
+            buffer: None
+        }
+    }
+}
+
+impl Resource for BufferResource
+{
+    fn name(&self) -> &str {
+        &self.name
+    }
 }
 
 pub struct ImageResource
 {
+    /// Name of the resource. May not uniquely identify the resource;
+    pub(crate) name: String,
     /// Buffer creation info. Some properties are inferred from the dependency graph
     /// (flags, tiling, usage, initial_layout)
     pub(crate) create_info: vk::ImageCreateInfo,
+    /// Image resource + associated memory allocation.
+    pub(crate) image: Option<vk::Image>,
 }
 
-/// A frame: manages transient resources within and across frames.
+impl ImageResource
+{
+    pub(crate) fn new(name: impl Into<String>, create_info: &vk::ImageCreateInfo) -> ImageResource {
+        ImageResource {
+            name: name.into(),
+            create_info: create_info.clone(),
+            image: None,
+        }
+    }
+}
+
+impl Resource for ImageResource
+{
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+/// A frame: manages transient resources within a frame.
 pub struct Frame<'ctx> {
     pub(crate) context: &'ctx mut Context,
     /// The DAG of tasks.
     pub(crate) graph: FrameGraph,
-    /// Table of transient resources for this frame.
-    pub(crate) resources: Vec<Resource>,
+    /// Table of images used in this frame.
+    pub(crate) images: Vec<ImageResource>,
+    /// Table of buffers used in this frame (transient or persistent).
+    pub(crate) buffers: Vec<BufferResource>,
     /// The root node from which all transient resources originates.
     /// This is just here to avoid an Option<> into ResourceRefs
     pub(crate) transient_root: TaskId,
@@ -336,7 +352,9 @@ impl<'ctx> Frame<'ctx> {
 
     /// Creates a transient 2D image associated with the specified task.
     /// The initial layout of the image is inferred from its usage in depending tasks.
-    pub fn create_image_2d(&mut self, task: TaskId, (width, height): (u32,u32), format: vk::Format) -> ResourceRef {
+    pub fn create_image_2d(&mut self, (width, height): (u32,u32), format: vk::Format) -> ResourceRef {
+        // create a task associated with this creation op
+        let task = self.create_task("dummy");
         let image_create_info = vk::ImageCreateInfo {
             s_type: vk::StructureType::ImageCreateInfo,
             p_next: ptr::null(),

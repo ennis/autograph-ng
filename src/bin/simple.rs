@@ -22,7 +22,8 @@ fn downsample(frame: &mut Frame, input: ResourceRef) -> ResourceRef
         frame.image_sample_dependency(t, &r_last);
         cur_w /= 2;
         cur_h /= 2;
-        r_last = frame.create_image_2d(t, (cur_w, cur_h), vk::Format::R16g16b16a16Sfloat);
+        let r_target = frame.create_image_2d((cur_w, cur_h), vk::Format::R16g16b16a16Sfloat);
+        r_last = frame.color_attachment_dependency(t, 0, &r_target);
     }
 
     r_last
@@ -53,12 +54,13 @@ fn main() {
                 _ => ()
             }
 
+
             if first {
                 let mut frame = ctx.new_frame();
                 // initial task
                 let t_init = frame.create_task("init");
-                let r_color_a = frame.create_image_2d(t_init, (1024, 1024), vk::Format::R16g16b16a16Sfloat);
-                let r_color_b = frame.create_image_2d(t_init, (1024, 1024), vk::Format::R16g16b16a16Sfloat);
+                let r_color_a = frame.create_image_2d((1024, 1024), vk::Format::R16g16b16a16Sfloat);
+                let r_color_b = frame.create_image_2d((1024, 1024), vk::Format::R16g16b16a16Sfloat);
                 // render to target
                 let t_render = frame.create_task("render");
                 let r_color_a = frame.color_attachment_dependency(t_render, 0, &r_color_a);
@@ -69,7 +71,7 @@ fn main() {
                 let t_postproc = frame.create_task("postproc");
                 frame.image_sample_dependency(t_postproc, &r_color_a);
                 frame.image_sample_dependency(t_postproc, &r_color_b);
-                let r_output = frame.create_image_2d(t_init, (1024, 1024), vk::Format::R8g8b8a8Srgb);
+                let r_output = frame.create_image_2d((1024, 1024), vk::Format::R8g8b8a8Srgb);
                 frame.color_attachment_dependency(t_postproc, 0, &r_output);
                 frame.submit();
                 first = false;
@@ -105,6 +107,7 @@ fn main() {
             // Resource creation:
             // - in a node?
             // - outside, by the system?
+            // - by specialized nodes: cannot both use and create a resource in the same node.
 
             // Graph:
             // Node = pass type (graphics or compute), callback function

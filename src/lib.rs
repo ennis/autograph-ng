@@ -15,6 +15,8 @@ extern crate slotmap;
 extern crate serde;
 #[macro_use]
 extern crate serde_json;
+#[macro_use]
+extern crate downcast_rs;
 
 pub mod texture;
 pub mod format;
