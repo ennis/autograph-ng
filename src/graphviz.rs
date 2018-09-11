@@ -105,7 +105,7 @@ impl<'ctx> Frame<'ctx>
                         else { "midnightblue" } // read-only image
                 },
                 &DependencyDetails::Attachment { .. } => { "darkgreen" }
-                &DependencyDetails::Buffer {  } => {
+                &DependencyDetails::Buffer { .. } => {
                     if d.access_bits.subset(vk::ACCESS_SHADER_WRITE_BIT) { "violetred4" }  // written
                         else { "red4" } // read-only
                 },
@@ -119,19 +119,18 @@ impl<'ctx> Frame<'ctx>
             write!(w, "D_{} [shape=none,width=0,height=0,margin=0,label=<<FONT> \
                        <TABLE BGCOLOR=\"{}\" CELLSPACING=\"0\" ALIGN=\"LEFT\" >", e.index(), color_code);
 
-            let name = self.get_resource_name(d.resource);
             match &d.details {
-                &DependencyDetails::Image { new_layout } => {
-                    /*let res = &self.resources[d.resource.0 as usize].as_image().unwrap().create_info;
-                    let details = format!("{}x{}x{} [{}]")*/
-                    write!(w, "<TR><TD ALIGN=\"LEFT\" COLSPAN=\"2\"><B>IMAGE {} (#{})</B></TD></TR>", name, d.resource.0);
+                &DependencyDetails::Image { id, new_layout } => {
+                    let name = self.images[id.0 as usize].name();
+                    write!(w, "<TR><TD ALIGN=\"LEFT\" COLSPAN=\"2\"><B>IMAGE {} (#{})</B></TD></TR>", name, id.0);
                     write!(w, "<TR><TD ALIGN=\"LEFT\">accessBits</TD><TD ALIGN=\"RIGHT\">{}</TD></TR>", format_access_flags(d.access_bits));
                     write!(w, "<TR><TD ALIGN=\"LEFT\">srcStageMask</TD><TD ALIGN=\"RIGHT\">{}</TD></TR>", format_pipeline_stage_mask(d.src_stage_mask));
                     write!(w, "<TR><TD ALIGN=\"LEFT\">dstStageMask</TD><TD ALIGN=\"RIGHT\">{}</TD></TR>", format_pipeline_stage_mask(d.dst_stage_mask));
                     write!(w, "<TR><TD ALIGN=\"LEFT\">newLayout</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>", new_layout);
                 },
-                &DependencyDetails::Attachment { index, ref description } => {
-                    write!(w, "<TR><TD ALIGN=\"LEFT\" COLSPAN=\"2\"><B>ATTACHMENT {} (#{})</B></TD></TR>", name, d.resource.0);
+                &DependencyDetails::Attachment { id, index, ref description } => {
+                    let name = self.images[id.0 as usize].name();
+                    write!(w, "<TR><TD ALIGN=\"LEFT\" COLSPAN=\"2\"><B>ATTACHMENT {} (#{})</B></TD></TR>", name, id.0);
                     write!(w, "<TR><TD ALIGN=\"LEFT\">index</TD><TD ALIGN=\"RIGHT\">{}</TD></TR>", index);
                     write!(w, "<TR><TD ALIGN=\"LEFT\">accessBits</TD><TD ALIGN=\"RIGHT\">{}</TD></TR>", format_access_flags(d.access_bits));
                     write!(w, "<TR><TD ALIGN=\"LEFT\">srcStageMask</TD><TD ALIGN=\"RIGHT\">{}</TD></TR>", format_pipeline_stage_mask(d.src_stage_mask));
@@ -141,8 +140,9 @@ impl<'ctx> Frame<'ctx>
                     write!(w, "<TR><TD ALIGN=\"LEFT\">storeOp</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>", description.store_op);
                     write!(w, "<TR><TD ALIGN=\"LEFT\">finalLayout</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>", description.final_layout);
                 },
-                &DependencyDetails::Buffer {} => {
-                    write!(w, "<TR><TD ALIGN=\"LEFT\" COLSPAN=\"2\"><B>BUFFER {} (#{})</B></TD></TR>", name, d.resource.0);
+                &DependencyDetails::Buffer { id } => {
+                    let name = self.buffers[id.0 as usize].name();
+                    write!(w, "<TR><TD ALIGN=\"LEFT\" COLSPAN=\"2\"><B>BUFFER {} (#{})</B></TD></TR>", name, id.0);
                 }
             }
             writeln!(w, "</TABLE></FONT>>];");

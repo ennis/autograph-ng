@@ -8,7 +8,7 @@ use gfx2::window::*;
 use gfx2::frame::*;
 use gfx2::texture::get_texture_mip_map_count;
 
-fn downsample(frame: &mut Frame, input: ResourceRef) -> ResourceRef
+fn downsample(frame: &mut Frame, input: ImageRef) -> ImageRef
 {
     let create_info = frame.get_image_create_info(&input).clone();
     let (w,h) = (create_info.extent.width, create_info.extent.height);

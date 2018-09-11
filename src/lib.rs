@@ -29,6 +29,7 @@ mod graphviz;
 pub mod window;
 pub mod context;
 pub mod frame;
+mod resource;
 
 // re-export vulkan as gfx2::vk
 pub use ash::vk;

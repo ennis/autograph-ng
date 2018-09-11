@@ -19,7 +19,8 @@ use slotmap::{SlotMap, Key};
 use upload_buffer::UploadBuffer;
 use buffer::{BufferSlice, BufferDesc, BufferStorage};
 use texture::{TextureDesc, TextureObject};
-use frame::{TaskId, ResourceId};
+use frame::{TaskId};
+use resource::{Resource, BufferResource, ImageResource};
 
 pub type VkEntry1 = ash::Entry<V1_0>;
 pub type VkInstance1 = ash::Instance<V1_0>;
@@ -513,6 +514,8 @@ pub struct Context {
     pub(crate) max_in_flight_frames: u8,
     pub(crate) image_available: vk::Semaphore,
     pub(crate) render_finished: vk::Semaphore,
+    pub(crate) images: SlotMap<ImageResource>,
+    pub(crate) buffers: SlotMap<ImageResource>,
 }
 
 impl Context {
@@ -664,7 +667,9 @@ impl Context {
                 swapchain_loader,
                 max_in_flight_frames: max_in_flight_frames as u8,
                 image_available,
-                render_finished
+                render_finished,
+                images: SlotMap::new(),
+                buffers: SlotMap::new(),
             }, presentation_handles)
         }
     }
