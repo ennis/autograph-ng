@@ -18,9 +18,10 @@ impl<'ctx> Frame<'ctx>
     {
         // We want a "good" toposort that minimizes the lifetimes of resources
         // to increase memory aliasing.
-        // This is the "Directed Minimum Linear Arrangement" (Directed minLA) algorithm.
+        // This is the "Directed Minimum Linear Arrangement" (Directed minLA) problem,
+        // or the "minimum storage-time sequencing" problem.
         // However, finding an optimal solution is NP-hard,
-        // so instead,  do a stable toposort of the graph and hope that
+        // so instead, do a stable toposort of the graph and hope that
         // the user did not add tasks in a weird order.
         // In most cases, the toposort shouldn't change anything.
 
