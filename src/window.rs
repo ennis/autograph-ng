@@ -1,54 +1,40 @@
 //! Boilerplate code for creating a window and an OpenGL context with winit/glutin.
 
-use std::ffi::{CString, CStr};
-use std::ptr;
-use std::os::raw::{c_char, c_void};
+use std::ffi::{CStr, CString};
 use std::mem;
-use std::u32;
+use std::os::raw::{c_char, c_void};
+use std::ptr;
 use std::rc::Rc;
+use std::u32;
 
-use winit;
-use config;
 use ash;
 use ash::extensions;
 use ash::vk;
+use config;
 use pretty_env_logger;
+use winit;
 
-use context::{Context, PresentationTarget, Presentation};
+use context::{Context, Presentation, PresentationTarget};
 
 // re-export window event handling stuff.
 pub use winit::EventsLoop;
-pub use winit::WindowBuilder;
 pub use winit::Window;
-pub use winit::{Event,
-                 WindowEvent,
-                 MouseButton,
-                 MouseScrollDelta,
-                 KeyboardInput,
-                 VirtualKeyCode,
-                 ElementState,
-                 ModifiersState,
-                 DeviceId,
-                 AxisId,
-                 Touch,
-                 ButtonId,
-                 TouchPhase,
-                 dpi::{LogicalPosition,
-                       LogicalSize,
-                       PhysicalPosition,
-                       PhysicalSize}};
+pub use winit::WindowBuilder;
+pub use winit::{
+    dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize},
+    AxisId, ButtonId, DeviceId, ElementState, Event, KeyboardInput, ModifiersState, MouseButton,
+    MouseScrollDelta, Touch, TouchPhase, VirtualKeyCode, WindowEvent,
+};
 
-pub struct App
-{
+pub struct App {
     pub cfg: config::Config,
     pub events_loop: winit::EventsLoop,
     pub window: Rc<winit::Window>,
     pub context: Context,
-    pub presentation: Presentation
+    pub presentation: Presentation,
 }
 
-impl App
-{
+impl App {
     pub fn new() -> App {
         pretty_env_logger::init();
         let mut cfg = config::Config::default();
@@ -56,30 +42,31 @@ impl App
         load_environment_config(&mut cfg);
 
         let mut events_loop = create_events_loop();
-        let (mut window, mut context, mut presentation) = create_window_and_context(&events_loop, &cfg);
+        let (mut window, mut context, mut presentation) =
+            create_window_and_context(&events_loop, &cfg);
 
         App {
             cfg,
             events_loop,
             window,
             context,
-            presentation
+            presentation,
         }
     }
 }
 
-pub fn load_environment_config(cfg: &mut config::Config)
-{
+pub fn load_environment_config(cfg: &mut config::Config) {
     cfg.merge(config::Environment::with_prefix("GFX")).unwrap();
 }
 
-pub fn create_events_loop() -> EventsLoop
-{
+pub fn create_events_loop() -> EventsLoop {
     winit::EventsLoop::new()
 }
 
-pub fn create_window_and_context(events_loop: &EventsLoop, cfg: &config::Config) -> (Rc<Window>, Context, Presentation)
-{
+pub fn create_window_and_context(
+    events_loop: &EventsLoop,
+    cfg: &config::Config,
+) -> (Rc<Window>, Context, Presentation) {
     let window_width = cfg.get::<u32>("gfx.window.width").unwrap();
     let window_height = cfg.get::<u32>("gfx.window.height").unwrap();
     let fullscreen = cfg.get::<u32>("gfx.window.fullscreen").unwrap();
@@ -96,9 +83,10 @@ pub fn create_window_and_context(events_loop: &EventsLoop, cfg: &config::Config)
     let presentation_target = PresentationTarget::Window(window.clone());
 
     // context
-    let (context, presentations) = Context::new(&[&presentation_target], cfg);
+    let (context, mut presentations) = Context::new(&[&presentation_target], cfg);
+    let presentation = presentations.drain(..).next().unwrap();
 
-    (window, context, presentations.first().unwrap().clone())
+    (window, context, presentation)
 }
 
 // create instance

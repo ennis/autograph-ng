@@ -1,5 +1,5 @@
-use format::Format;
 use bitflags::*;
+use format::Format;
 use std::cmp::max;
 
 /// The dimensions of a texture.
@@ -66,7 +66,6 @@ impl Default for TextureDesc {
         }
     }
 }
-
 
 /// Wrapper for OpenGL textures.
 ///

@@ -1,4 +1,4 @@
-use super::buffer::{BufferStorage, BufferUsage, BufferSlice};
+use super::buffer::{BufferSlice, BufferStorage, BufferUsage};
 use super::buffer_data::BufferData;
 use super::context::{Context, FrameNumber};
 use std::cell::RefCell;
@@ -84,8 +84,7 @@ impl UploadBuffer {
         align: usize,
         frame_number: FrameNumber,
         reclaim_until: FrameNumber,
-    ) -> BufferSlice
-    {
+    ) -> BufferSlice {
         let byte_size = mem::size_of_val(data);
         let ptr = data as *const T as *const u8;
         let slice = self
@@ -116,13 +115,13 @@ impl UploadBuffer {
     ) -> Option<BufferSlice> {
         //debug!("alloc size={}, align={}, fence_value={:?}", size, align, fence_value);
         if let Some(offset) = self.try_allocate_contiguous(size, align, frame_number) {
-            Some(BufferSlice {offset, size})
+            Some(BufferSlice { offset, size })
         } else {
             // reclaim and try again (not enough contiguous free space)
             // FIXME unconditionally reclaim?
             self.reclaim(reclaim_until);
             if let Some(offset) = self.try_allocate_contiguous(size, align, frame_number) {
-                Some(BufferSlice {offset, size})
+                Some(BufferSlice { offset, size })
             } else {
                 None
             }
@@ -154,7 +153,8 @@ impl UploadBuffer {
         } else {
             // begin_ptr > write_ptr
             // reclaim space in the middle
-            if let Some(newptr) = align_offset(align, size, state.write, state.begin - state.write) {
+            if let Some(newptr) = align_offset(align, size, state.write, state.begin - state.write)
+            {
                 state.write = newptr;
             } else {
                 return None;
@@ -177,11 +177,11 @@ impl UploadBuffer {
         let mut state = self.state.borrow_mut();
         while !state.regions.is_empty()
             && state.regions.front().unwrap().frame_number <= reclaim_until
-            {
-                let region = state.regions.pop_front().unwrap();
-                //debug!("reclaiming region {}-{} because all commands using these regions have completed (region={:?} < last_completed_fence_step={:?})", region.begin_ptr, region.end_ptr, region.fence_value, last_completed_fence_step);
-                state.begin = region.end_ptr;
-                state.used -= region.end_ptr - region.begin_ptr;
-            }
+        {
+            let region = state.regions.pop_front().unwrap();
+            //debug!("reclaiming region {}-{} because all commands using these regions have completed (region={:?} < last_completed_fence_step={:?})", region.begin_ptr, region.end_ptr, region.fence_value, last_completed_fence_step);
+            state.begin = region.end_ptr;
+            state.used -= region.end_ptr - region.begin_ptr;
+        }
     }
 }

@@ -1,26 +1,26 @@
 //! Context creation
 //! A `Context` wraps a vulkan instance, device, and swapchain.
-use std::rc::Rc;
-use std::ffi::{CString, CStr};
-use std::ptr;
-use std::os::raw::{c_char, c_void};
-use std::mem;
-use std::u32;
 use std::cell::Cell;
+use std::ffi::{CStr, CString};
+use std::mem;
+use std::os::raw::{c_char, c_void};
+use std::ptr;
+use std::rc::Rc;
+use std::u32;
 
-use config::Config;
 use ash;
-use ash::vk;
 use ash::extensions;
 use ash::version::{DeviceV1_0, EntryV1_0, InstanceV1_0, V1_0};
+use ash::vk;
+use config::Config;
+use slotmap::{Key, SlotMap};
 use winit::Window;
-use slotmap::{SlotMap, Key};
 
-use upload_buffer::UploadBuffer;
-use buffer::{BufferSlice, BufferDesc, BufferStorage};
+use buffer::{BufferDesc, BufferSlice, BufferStorage};
+use frame::TaskId;
+use resource::*;
 use texture::{TextureDesc, TextureObject};
-use frame::{TaskId};
-use resource::{Resource, BufferResource, ImageResource};
+use upload_buffer::UploadBuffer;
 
 pub type VkEntry1 = ash::Entry<V1_0>;
 pub type VkInstance1 = ash::Instance<V1_0>;
@@ -69,8 +69,7 @@ unsafe extern "system" fn vulkan_debug_callback(
 }
 
 /// Return value of `create_device_and_queues`
-struct DeviceAndQueues
-{
+struct DeviceAndQueues {
     physical_device: vk::PhysicalDevice,
     vkd: VkDevice1,
     graphics_queue_family_index: u32,
@@ -86,8 +85,8 @@ unsafe fn create_device_and_queues(
     vki: &VkInstance1,
     surface_loader: &extensions::Surface,
     surface: Option<vk::SurfaceKHR>,
-    config: &Config) -> DeviceAndQueues
-{
+    config: &Config,
+) -> DeviceAndQueues {
     let physical_devices = vki
         .enumerate_physical_devices()
         .expect("Physical device error");
@@ -101,26 +100,33 @@ unsafe fn create_device_and_queues(
     'outer: for physical_device in physical_devices.iter() {
         // Print physical device name
         let dev_info = vki.get_physical_device_properties(*physical_device);
-        let dev_name  = unsafe { CStr::from_ptr(&dev_info.device_name[0]).to_owned().into_string().unwrap() };
+        let dev_name = unsafe {
+            CStr::from_ptr(&dev_info.device_name[0])
+                .to_owned()
+                .into_string()
+                .unwrap()
+        };
         info!("Physical device: {}", dev_name);
 
         let queue_family_props = vki.get_physical_device_queue_family_properties(*physical_device);
         for (queue_family_index, ref queue_family_info) in queue_family_props.iter().enumerate() {
-            info!("Queue family #{}: {:?}", queue_family_index, queue_family_info);
+            info!(
+                "Queue family #{}: {:?}",
+                queue_family_index, queue_family_info
+            );
             // does the queue supports graphics?
             let supports_graphics = queue_family_info.queue_flags.subset(vk::QUEUE_GRAPHICS_BIT);
 
             // is the queue compatible with the surface we just created?
-            let supports_surface =
-                if let Some(surface) = surface {
-                    surface_loader.get_physical_device_surface_support_khr(
-                        *physical_device,
-                        queue_family_index as u32,
-                        surface,
-                    )
-                } else {
-                    true
-                };
+            let supports_surface = if let Some(surface) = surface {
+                surface_loader.get_physical_device_surface_support_khr(
+                    *physical_device,
+                    queue_family_index as u32,
+                    surface,
+                )
+            } else {
+                true
+            };
             if supports_graphics && supports_surface {
                 // OK, choose this queue and physical device.
                 selected_physical_device = Some(*physical_device);
@@ -174,18 +180,18 @@ unsafe fn create_device_and_queues(
             graphics_queue_family_index: selected_queue_family_index,
             present_queue_family_index: selected_queue_family_index,
             vkd,
-            physical_device: selected_physical_device
+            physical_device: selected_physical_device,
         }
-
     } else {
         panic!("Unable to find a suitable physical device and queue family");
     }
 }
 
-
 /// Helper function to create a command pool for a given queue family.
-unsafe fn create_command_pool_for_queue(vkd: &VkDevice1, queue_family_index: u32) -> vk::CommandPool
-{
+unsafe fn create_command_pool_for_queue(
+    vkd: &VkDevice1,
+    queue_family_index: u32,
+) -> vk::CommandPool {
     let command_pool_create_info = vk::CommandPoolCreateInfo {
         s_type: vk::StructureType::CommandPoolCreateInfo,
         p_next: ptr::null(),
@@ -193,11 +199,11 @@ unsafe fn create_command_pool_for_queue(vkd: &VkDevice1, queue_family_index: u32
         queue_family_index,
     };
 
-    vkd.create_command_pool(&command_pool_create_info, None).unwrap()
+    vkd.create_command_pool(&command_pool_create_info, None)
+        .unwrap()
 }
 
 pub type FrameNumber = u64;
-
 
 #[cfg(all(unix, not(target_os = "android"), not(target_os = "macos")))]
 pub(crate) unsafe fn create_surface(
@@ -244,7 +250,7 @@ pub(crate) unsafe fn create_surface(
         s_type: vk::StructureType::MacOSSurfaceCreateInfoMvk,
         p_next: ptr::null(),
         flags: Default::default(),
-        p_view: window.get_nsview() as *const vk::types::c_void
+        p_view: window.get_nsview() as *const vk::types::c_void,
     };
 
     let macos_surface_loader =
@@ -289,8 +295,8 @@ pub(crate) fn create_swapchain(
     physical_device: vk::PhysicalDevice,
     window_width: u32,
     window_height: u32,
-    surface: vk::SurfaceKHR) -> vk::SwapchainKHR
-{
+    surface: vk::SurfaceKHR,
+) -> vk::SwapchainKHR {
     let surface_formats = surface_loader
         .get_physical_device_surface_formats_khr(physical_device, surface)
         .unwrap();
@@ -302,8 +308,7 @@ pub(crate) fn create_swapchain(
                 color_space: sfmt.color_space,
             },
             _ => sfmt.clone(),
-        })
-        .nth(0)
+        }).nth(0)
         .expect("Unable to find a suitable surface format");
     let surface_capabilities = surface_loader
         .get_physical_device_surface_capabilities_khr(physical_device, surface)
@@ -311,9 +316,9 @@ pub(crate) fn create_swapchain(
     let mut desired_image_count = surface_capabilities.min_image_count + 1;
     if surface_capabilities.max_image_count > 0
         && desired_image_count > surface_capabilities.max_image_count
-        {
-            desired_image_count = surface_capabilities.max_image_count;
-        }
+    {
+        desired_image_count = surface_capabilities.max_image_count;
+    }
     let surface_resolution = match surface_capabilities.current_extent.width {
         u32::MAX => vk::Extent2D {
             width: window_width,
@@ -324,9 +329,9 @@ pub(crate) fn create_swapchain(
     let pre_transform = if surface_capabilities
         .supported_transforms
         .subset(vk::SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
-        {
-            vk::SURFACE_TRANSFORM_IDENTITY_BIT_KHR
-        } else {
+    {
+        vk::SURFACE_TRANSFORM_IDENTITY_BIT_KHR
+    } else {
         surface_capabilities.current_transform
     };
     let present_modes = surface_loader
@@ -365,20 +370,21 @@ pub(crate) fn create_swapchain(
     }
 }
 
-pub(crate) unsafe fn create_semaphore(vkd: &VkDevice1) -> vk::Semaphore
-{
+pub(crate) unsafe fn create_semaphore(vkd: &VkDevice1) -> vk::Semaphore {
     let info = vk::SemaphoreCreateInfo {
         s_type: vk::StructureType::SemaphoreCreateInfo,
         flags: vk::SemaphoreCreateFlags::default(),
-        p_next: ptr::null()
+        p_next: ptr::null(),
     };
-    vkd.create_semaphore(&info, None).expect("failed to create semaphore")
+    vkd.create_semaphore(&info, None)
+        .expect("failed to create semaphore")
 }
 
+//--------------------------------------------------------------------------------------------------
+// PRESENTATION
+
 /// Resources associated to a presentation target.
-///
-pub(crate) struct PresentationInternal
-{
+pub struct Presentation {
     /// Presentation target.
     pub(crate) target: PresentationTarget,
     /// The surface: initialized when creating the context.
@@ -386,22 +392,22 @@ pub(crate) struct PresentationInternal
     /// The swapchain: initialized when creating the context.
     pub(crate) swapchain: vk::SwapchainKHR,
     /// Images in the swapchain.
-    pub(crate) images: Vec<vk::Image>,
+    pub(crate) images: Vec<Image>,
 }
 
-impl PresentationInternal
-{
+impl Presentation {
     /// Destroys the resources associated with the presentation object.
     /// Returns a reference to the presentation target passed on creation,
     /// for an eventual re-use.
-    pub(crate) unsafe fn destroy(mut self,
-                                 vkd: &VkDevice1,
-                                 surface_ext: &extensions::Surface,
-                                 swapchain_ext: &extensions::Swapchain) -> PresentationTarget
-    {
+    pub(crate) unsafe fn destroy(
+        mut self,
+        vkd: &VkDevice1,
+        surface_ext: &extensions::Surface,
+        swapchain_ext: &extensions::Swapchain,
+    ) -> PresentationTarget {
         // destroy image views
         for img in self.images.drain(..) {
-            vkd.destroy_image(img, None);
+            vkd.destroy_image(img.image.unwrap(), None);
         }
         // destroy swapchain
         swapchain_ext.destroy_swapchain_khr(self.swapchain, None);
@@ -418,11 +424,11 @@ impl PresentationInternal
         vkd: &VkDevice1,
         surface_ext: &extensions::Surface,
         swapchain_ext: &extensions::Swapchain,
-        physical_device: vk::PhysicalDevice)
-    {
+        physical_device: vk::PhysicalDevice,
+    ) {
         // destroy image views
         for img in self.images.drain(..) {
-            vkd.destroy_image(img, None);
+            vkd.destroy_image(img.image.unwrap(), None);
         }
         // destroy swapchain
         swapchain_ext.destroy_swapchain_khr(self.swapchain, None);
@@ -430,7 +436,11 @@ impl PresentationInternal
         match self.target {
             PresentationTarget::Window(ref window) => {
                 let hidpi_factor = window.get_hidpi_factor();
-                let (window_width, window_height): (u32, u32) = window.get_inner_size().unwrap().to_physical(hidpi_factor).into();
+                let (window_width, window_height): (u32, u32) = window
+                    .get_inner_size()
+                    .unwrap()
+                    .to_physical(hidpi_factor)
+                    .into();
                 // re-create swapchain
                 self.swapchain = create_swapchain(
                     vke,
@@ -441,57 +451,20 @@ impl PresentationInternal
                     physical_device,
                     window_width,
                     window_height,
-                    self.surface);
+                    self.surface,
+                );
             }
         }
     }
-
-    /*/// Creates the resources associated with the presentation target.
-    pub(crate) unsafe fn create(
-        vkd: &VkDevice1,
-        surface_ext: &extensions::Surface,
-        swapchain_ext: &extensions::Swapchain,
-        presentation_target: PresentationTarget,
-        previous: Option<PresentationInternal>) -> PresentationInternal
-    {
-        // TODO if initialized, delete image views and swapchain
-        // TODO create swapchain
-        // TODO create image views
-    }*/
-
-    /*pub(crate) fn new(surface: vk::SurfaceKHR,
-                      swapchain_loader: &extensions::Swapchain,
-                      swapchain: vk::SwapchainKHR) -> PresentationTargetInternal
-    {
-        PresentationTargetInternal {
-            surface,
-            swapchain,
-            images
-        }
-    }*/
-}
-
-type PresentationId = Key;
-
-/// A `presentation` object bundles a vulkan surface, swapchain,
-/// and a reference to the winit window.
-/// Note: this is just a handle type. Dropping it won't free it's contents.
-#[derive(Clone)]
-pub struct Presentation
-{
-    /*/// The window for which we created a surface.
-    /// Note: maybe it's possible to create surfaces without a window in vulkan?
-    pub(crate) window: Option<Rc<Window>>,*/
-    /// ID in the map of presentations owned by the context.
-    pub(crate) id: PresentationId,
 }
 
 #[derive(Clone)]
-pub enum PresentationTarget
-{
-    Window(Rc<Window>)
+pub enum PresentationTarget {
+    Window(Rc<Window>),
 }
 
+//--------------------------------------------------------------------------------------------------
+// CONTEXT
 
 /// Main graphics context.
 /// Handles allocation of persistent resources.
@@ -510,32 +483,42 @@ pub struct Context {
     pub(crate) present_queue_command_pool: vk::CommandPool,
     pub(crate) surface_loader: extensions::Surface,
     pub(crate) swapchain_loader: extensions::Swapchain,
-    pub(crate) presentations: SlotMap<PresentationInternal>,
+    //pub(crate) presentations: SlotMap<PresentationInternal>,
     pub(crate) max_in_flight_frames: u8,
     pub(crate) image_available: vk::Semaphore,
     pub(crate) render_finished: vk::Semaphore,
-    pub(crate) images: SlotMap<ImageResource>,
-    pub(crate) buffers: SlotMap<ImageResource>,
+    //pub(crate) images: SlotMap<ImageResource>,
+    //pub(crate) buffers: SlotMap<ImageResource>,
 }
 
 impl Context {
-
     /// Creates a new context and associated `Presentation` objects.
-    pub fn new(presentation_targets: &[&PresentationTarget], cfg: &Config) -> (Context, Vec<Presentation>)
-    {
+    pub fn new(
+        presentation_targets: &[&PresentationTarget],
+        cfg: &Config,
+    ) -> (Context, Vec<Presentation>) {
         // Load settings
-        let initial_upload_buffer_size = cfg.get::<usize>("gfx.default_upload_buffer_size").unwrap();
+        let initial_upload_buffer_size =
+            cfg.get::<usize>("gfx.default_upload_buffer_size").unwrap();
         let max_in_flight_frames = cfg.get::<usize>("gfx.max_in_flight_frames").unwrap();
-        let vk_instance_extensions = cfg.get::<Vec<String>>("gfx.vulkan.instance_extensions").unwrap();
+        let vk_instance_extensions = cfg
+            .get::<Vec<String>>("gfx.vulkan.instance_extensions")
+            .unwrap();
         let vk_layers = cfg.get::<Vec<String>>("gfx.vulkan.layers").unwrap();
 
         unsafe {
             let vke = VkEntry1::new().unwrap();
-            let app_raw_name = CStr::from_bytes_with_nul(b"Autograph/GFX\0").unwrap().as_ptr();
+            let app_raw_name = CStr::from_bytes_with_nul(b"Autograph/GFX\0")
+                .unwrap()
+                .as_ptr();
 
             let mut layer_names = Vec::new();
             layer_names.push(CString::new("VK_LAYER_LUNARG_standard_validation").unwrap());
-            layer_names.extend(vk_layers.iter().map(|name| CString::new(name.clone()).unwrap()));
+            layer_names.extend(
+                vk_layers
+                    .iter()
+                    .map(|name| CString::new(name.clone()).unwrap()),
+            );
             let layers_names_raw: Vec<*const c_char> = layer_names
                 .iter()
                 .map(|raw_name| raw_name.as_ptr())
@@ -568,22 +551,29 @@ impl Context {
             let debug_info = vk::DebugReportCallbackCreateInfoEXT {
                 s_type: vk::StructureType::DebugReportCallbackCreateInfoExt,
                 p_next: ptr::null(),
-                flags: vk::DEBUG_REPORT_ERROR_BIT_EXT | vk::DEBUG_REPORT_WARNING_BIT_EXT
-                    | vk::DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT | vk::DEBUG_REPORT_DEBUG_BIT_EXT | vk::DEBUG_REPORT_INFORMATION_BIT_EXT,
+                flags: vk::DEBUG_REPORT_ERROR_BIT_EXT
+                    | vk::DEBUG_REPORT_WARNING_BIT_EXT
+                    | vk::DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT
+                    | vk::DEBUG_REPORT_DEBUG_BIT_EXT
+                    | vk::DEBUG_REPORT_INFORMATION_BIT_EXT,
                 pfn_callback: vulkan_debug_callback,
                 p_user_data: ptr::null_mut(),
             };
 
             //---------------------------------
             // set debug report callback
-            let debug_report_loader = extensions::DebugReport::new(&vke, &vki).expect("Unable to load debug report");
+            let debug_report_loader =
+                extensions::DebugReport::new(&vke, &vki).expect("Unable to load debug report");
             let debug_call_back = debug_report_loader
                 .create_debug_report_callback_ext(&debug_info, None)
                 .unwrap();
 
             //---------------------------------
             // we have an instance, now create a device that best fits the presentation target
-            assert!(presentation_targets.len() <= 1, "Cannot yet specify more than one presentation target");
+            assert!(
+                presentation_targets.len() <= 1,
+                "Cannot yet specify more than one presentation target"
+            );
 
             // create surfaces for each presentation target
             let mut surfaces = Vec::new();
@@ -591,7 +581,7 @@ impl Context {
                 let surf = match t {
                     PresentationTarget::Window(ref window) => {
                         create_surface(&vke, &vki, window).expect("Unable to create a surface")
-                    },
+                    }
                     _ => {
                         panic!("Cannot create a surface without a window");
                     }
@@ -600,85 +590,111 @@ impl Context {
             }
 
             // create device and queues
-            let surface_loader = extensions::Surface::new(&vke, &vki).expect("Unable to load surface extension");
-            let device_and_queues = create_device_and_queues(&vke, &vki, &surface_loader, surfaces.first().cloned(), cfg);
+            let surface_loader =
+                extensions::Surface::new(&vke, &vki).expect("Unable to load surface extension");
+            let device_and_queues = create_device_and_queues(
+                &vke,
+                &vki,
+                &surface_loader,
+                surfaces.first().cloned(),
+                cfg,
+            );
 
             //---------------------------------
             // create swapchains for each initial presentation target
-            let swapchain_loader =
-                extensions::Swapchain::new(&vki, &device_and_queues.vkd).expect("Unable to load swapchain extension");
+            let swapchain_loader = extensions::Swapchain::new(&vki, &device_and_queues.vkd)
+                .expect("Unable to load swapchain extension");
 
-            let mut presentations = SlotMap::new();
-            let mut presentation_handles = Vec::new();
+            let mut presentations = Vec::new();
 
-            for (i,t) in presentation_targets.iter().enumerate() {
+            for (i, t) in presentation_targets.iter().enumerate() {
                 let surface = surfaces[i];
                 match t {
                     PresentationTarget::Window(ref window) => {
                         let hidpi_factor = window.get_hidpi_factor();
-                        let (window_width, window_height): (u32, u32) = window.get_inner_size().unwrap().to_physical(hidpi_factor).into();
+                        let (window_width, window_height): (u32, u32) = window
+                            .get_inner_size()
+                            .unwrap()
+                            .to_physical(hidpi_factor)
+                            .into();
                         // FIXME: should put swapchain parameters in PresentationTarget
                         let swapchain = create_swapchain(
-                            &vke, &vki, &device_and_queues.vkd,
-                            &surface_loader, &swapchain_loader,
+                            &vke,
+                            &vki,
+                            &device_and_queues.vkd,
+                            &surface_loader,
+                            &swapchain_loader,
                             device_and_queues.physical_device,
-                            window_width, window_height,
-                            surface);
-                        let swapchain_images = swapchain_loader.get_swapchain_images_khr(swapchain).unwrap();
+                            window_width,
+                            window_height,
+                            surface,
+                        );
+                        let mut swapchain_images = swapchain_loader
+                            .get_swapchain_images_khr(swapchain)
+                            .unwrap();
+                        let swapchain_images = swapchain_images
+                            .drain(..)
+                            .map(|img| {
+                                Image {
+                                    name: "presentation image".to_owned(),  // FIXME
+                                    create_info: unsafe { mem::uninitialized() },    // FIXME HARDER
+                                    image: Some(img)
+                                }
+                            }).collect::<Vec<_>>();
 
-                        presentation_handles.push(
-                            Presentation {
-                                //window: Some(window.clone()),
-                                id: presentations.insert(PresentationInternal {
-                                    target: (*t).clone(),
-                                    surface,
-                                    swapchain,
-                                    images: swapchain_images
-                                })
-                            });
-                    },
-                    _ => panic!("Cannot create a swapchain without a window")
+                        presentations.push(Presentation {
+                            target: (*t).clone(),
+                            surface,
+                            swapchain,
+                            images: swapchain_images,
+                        });
+                    }
+                    _ => panic!("Cannot create a swapchain without a window"),
                 }
             }
 
             //---------------------------------
             // create command pools
-            let present_pool = create_command_pool_for_queue(&device_and_queues.vkd, device_and_queues.present_queue_family_index);
-            let graphics_pool = create_command_pool_for_queue(&device_and_queues.vkd, device_and_queues.graphics_queue_family_index);
+            let present_pool = create_command_pool_for_queue(
+                &device_and_queues.vkd,
+                device_and_queues.present_queue_family_index,
+            );
+            let graphics_pool = create_command_pool_for_queue(
+                &device_and_queues.vkd,
+                device_and_queues.graphics_queue_family_index,
+            );
 
             //---------------------------------
             // create semaphores to sync between the draw and present queues
             let image_available = create_semaphore(&device_and_queues.vkd);
             let render_finished = create_semaphore(&device_and_queues.vkd);
 
-            (Context {
-                vke,
-                vki,
+            (
+                Context {
+                    vke,
+                    vki,
+                    physical_device: device_and_queues.physical_device,
+                    vkd: device_and_queues.vkd,
+                    graphics_queue_family_index: device_and_queues.graphics_queue_family_index,
+                    present_queue_family_index: device_and_queues.present_queue_family_index,
+                    graphics_queue: device_and_queues.graphics_queue,
+                    present_queue: device_and_queues.present_queue,
+                    graphics_queue_command_pool: graphics_pool,
+                    present_queue_command_pool: present_pool,
+                    surface_loader,
+                    swapchain_loader,
+                    max_in_flight_frames: max_in_flight_frames as u8,
+                    image_available,
+                    render_finished,
+                },
                 presentations,
-                physical_device: device_and_queues.physical_device,
-                vkd: device_and_queues.vkd,
-                graphics_queue_family_index: device_and_queues.graphics_queue_family_index,
-                present_queue_family_index: device_and_queues.present_queue_family_index,
-                graphics_queue: device_and_queues.graphics_queue,
-                present_queue: device_and_queues.present_queue,
-                graphics_queue_command_pool: graphics_pool,
-                present_queue_command_pool: present_pool,
-                surface_loader,
-                swapchain_loader,
-                max_in_flight_frames: max_in_flight_frames as u8,
-                image_available,
-                render_finished,
-                images: SlotMap::new(),
-                buffers: SlotMap::new(),
-            }, presentation_handles)
+            )
         }
     }
 
     /// Reinitializes a presentation object.
-    pub fn reset_presentation(&mut self, presentation: Presentation)
-    {
+    pub fn reset_presentation(&mut self, presentation: &mut Presentation) {
         // TODO: wait for all commands complete before deleting the resources associated with the presentation.
-        let presentation = self.presentations.get_mut(presentation.id).expect("invalid presentation handle");
         unsafe {
             presentation.recreate_swapchain(
                 &self.vke,
@@ -686,16 +702,46 @@ impl Context {
                 &self.vkd,
                 &self.surface_loader,
                 &self.swapchain_loader,
-                self.physical_device);
+                self.physical_device,
+            );
         }
     }
 
-    /*/// Acquires a presentation image.
-    pub fn acquire_presentation_image(&mut self, presentation: Presentation) ->
-    {
+    /// Acquires a presentation image.
+    pub fn acquire_presentation_image<'a>(&mut self, presentation: &'a Presentation) -> &'a Image {
+        let next_image = unsafe {
+            self.swapchain_loader.acquire_next_image_khr(presentation.swapchain, u64::max_value(), self.image_available, vk::Fence::null()).unwrap()
+        };
+        let img = &presentation.images[next_image as usize];
+        img
+    }
 
-    }*/
-
+    /// Creates a persistent image resource.
+    pub fn create_image_2d(&mut self, (width, height): (u32, u32), format: vk::Format) -> Image {
+        let image_create_info = vk::ImageCreateInfo {
+            s_type: vk::StructureType::ImageCreateInfo,
+            p_next: ptr::null(),
+            flags: vk::ImageCreateFlags::default(),
+            image_type: vk::ImageType::Type2d,
+            format,
+            extent: vk::Extent3D {
+                width,
+                height,
+                depth: 1,
+            },
+            mip_levels: 1,                    // FIXME
+            array_layers: 1,                  // FIXME
+            samples: vk::SAMPLE_COUNT_1_BIT,  // FIXME
+            tiling: vk::ImageTiling::Optimal, // FIXME
+            // inferred from the graph
+            usage: vk::ImageUsageFlags::default(),
+            sharing_mode: vk::SharingMode::Exclusive, // FIXME
+            queue_family_index_count: 0,              // FIXME
+            p_queue_family_indices: ptr::null(),
+            initial_layout: vk::ImageLayout::Undefined, // inferred
+        };
+        Image::new("unnamed", &image_create_info)
+    }
 
     /*/// Initializes OR re-initializes a presentation target.
     fn initialize_presentation_target(&self, target: &PresentationTarget)
@@ -727,5 +773,4 @@ impl Context {
     pub fn create_buffer(&mut self, desc: &BufferDesc) -> Buffer {
         unimplemented!()
     }*/
-
 }

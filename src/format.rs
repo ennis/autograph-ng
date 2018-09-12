@@ -240,7 +240,8 @@ impl FormatInfo {
         (self.component_bits[0]
             + self.component_bits[1]
             + self.component_bits[2]
-            + self.component_bits[3]) as usize / 8
+            + self.component_bits[3]) as usize
+            / 8
     }
 }
 

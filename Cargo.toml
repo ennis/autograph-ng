@@ -19,6 +19,7 @@ slotmap = "*"
 serde = "*"
 serde_json = "*"
 downcast-rs = "*"
+boow = "*"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "*", features = ["windef", "winuser"] }

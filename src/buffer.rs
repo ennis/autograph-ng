@@ -7,13 +7,12 @@ pub enum BufferUsage {
     Upload,
     Default,
     Readback,
-    Unspecified
+    Unspecified,
 }
 
 /// Describes a buffer.
 #[derive(Copy, Clone, Debug)]
-pub struct BufferDesc
-{
+pub struct BufferDesc {
     //pub offset: usize,
     pub size: usize,
     pub usage: BufferUsage,
@@ -21,23 +20,20 @@ pub struct BufferDesc
 
 /// A slice into a buffer.
 #[derive(Copy, Clone, Debug)]
-pub struct BufferSlice
-{
+pub struct BufferSlice {
     pub offset: usize,
-    pub size: usize
+    pub size: usize,
 }
 
 /// Raw OpenGL buffer object.
-pub(crate) struct BufferStorage
-{
+pub(crate) struct BufferStorage {
     //pub(crate) obj: GLuint,
     pub(crate) size: usize,
     pub(crate) usage: BufferUsage,
     //pub(crate) flags: GLuint,
 }
 
-impl Drop for BufferStorage
-{
+impl Drop for BufferStorage {
     fn drop(&mut self) {
         unimplemented!()
     }
@@ -74,8 +70,7 @@ unsafe fn create_buffer<T: BufferData + ?Sized>(
     obj
 }*/
 
-impl BufferStorage
-{
+impl BufferStorage {
     pub(crate) fn new(size: usize, usage: BufferUsage) -> BufferStorage {
         //unimplemented!()
         //let flags = usage_to_creation_flags(usage);
@@ -87,10 +82,7 @@ impl BufferStorage
         }
     }
 
-    pub(crate) fn with_data<T: BufferData + ?Sized>(
-        usage: BufferUsage,
-        data: &T,
-    ) -> BufferStorage {
+    pub(crate) fn with_data<T: BufferData + ?Sized>(usage: BufferUsage, data: &T) -> BufferStorage {
         let size = mem::size_of_val(data);
         unimplemented!()
         //let flags = usage_to_creation_flags(usage);
@@ -99,8 +91,7 @@ impl BufferStorage
             size,
             usage,
             flags
-        }*/
-    }
+        }*/    }
 
     pub(crate) unsafe fn map_all(&self) -> *mut c_void {
         /*let flags = match self.usage {

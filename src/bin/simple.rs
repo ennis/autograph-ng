@@ -1,18 +1,17 @@
-extern crate gfx2;
 extern crate ash;
+extern crate gfx2;
 
 use std::env;
 
-use gfx2::vk;
-use gfx2::window::*;
 use gfx2::frame::*;
 use gfx2::texture::get_texture_mip_map_count;
+use gfx2::vk;
+use gfx2::window::*;
 
-fn downsample(frame: &mut Frame, input: ImageRef) -> ImageRef
-{
+fn downsample(frame: &mut Frame, input: ImageRef) -> ImageRef {
     let create_info = frame.get_image_create_info(&input).clone();
-    let (w,h) = (create_info.extent.width, create_info.extent.height);
-    let count = get_texture_mip_map_count(w,h);
+    let (w, h) = (create_info.extent.width, create_info.extent.height);
+    let count = get_texture_mip_map_count(w, h);
 
     let mut r_last = input;
     let mut cur_w = w;
@@ -37,9 +36,8 @@ fn main() {
     let ctx = &mut app.context;
     let window = &mut app.window;
 
-    // create a persistent framebuffer texture.
-    //let mut persistent_tex = ctx.create_texture(unimplemented!());
-    // create a persistent depth texture.
+    // create a persistent image.
+    let mut persistent_img = ctx.create_image_2d((1024, 1024), vk::Format::R8g8b8a8Srgb);
 
     let mut first = true;
     loop {
@@ -47,13 +45,15 @@ fn main() {
         app.events_loop.poll_events(|event| {
             // event handling
             match event {
-                Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+                Event::WindowEvent {
+                    event: WindowEvent::CloseRequested,
+                    ..
+                } => {
                     should_close = true;
-                },
+                }
                 // if resize, then delete persistent resources and re-create
-                _ => ()
+                _ => (),
             }
-
 
             if first {
                 let mut frame = ctx.new_frame();
@@ -71,8 +71,9 @@ fn main() {
                 let t_postproc = frame.create_task("postproc");
                 frame.image_sample_dependency(t_postproc, &r_color_a);
                 frame.image_sample_dependency(t_postproc, &r_color_b);
-                let r_output = frame.create_image_2d((1024, 1024), vk::Format::R8g8b8a8Srgb);
+                let r_output = frame.import_image(&persistent_img);
                 frame.color_attachment_dependency(t_postproc, 0, &r_output);
+                frame.schedule();
                 frame.submit();
                 first = false;
             }
@@ -109,41 +110,6 @@ fn main() {
             // - outside, by the system?
             // - by specialized nodes: cannot both use and create a resource in the same node.
 
-            // Graph:
-            // Node = pass type (graphics or compute), callback function
-            // callback function parameters:
-            //  - command buffer, within a subpass instance initialized with the correct attachments
-            //  - container object that holds all requested resources in their correct state (all images, sampled images, buffer, storage buffer, uniform buffers, etc.)
-            // The callback just has to submit the draw command.
-            // Edge = dependency
-            // - toposort
-            // - check for concurrent read/write hazards
-            // - infer usage of resources from graphs (mutate graph)
-            // - schedule renderpasses
-            // - reorder to minimize layout transitions
-            // - allocate resources
-            // - group in render passes (draw commands with the same attachments; notably: chains without `sample` dependencies)
-            //      - new dependency type: attachment input
-            //      - at least one subpass for each different attachment?
-            //      - minimize the number of attachments
-            //      - a sample dependency always breaks the render pass
-            // - heuristic for renderpasses:
-            //      - schedule a pass (starting from the first one)
-            //      - follow all output attachments
-            //      - if no successor has a sample-dependency, and NO OTHER ATTACHMENTS, then merge the successors into the renderpass
-            //      - schedule_renderpasses()
-            //      - create dependencies between subpasses (e.g. output-to-input attachment)
-            //      - user-provided hints?
-            // - schedule renderpasses (dependencies between renderpasses: e.g. layout transitions)
-            // - insert memory barriers
-            // - insert layout transitions
-            //
-            // Various graphs:
-            // - initial graph
-            // - graph with render passes
-            // - graph with render passes and explicit layout transitions
-
-
             // things that we need to clear the buffer:
             // (A) acquire next image in swapchain
             // (B) allocate command buffer
@@ -158,9 +124,10 @@ fn main() {
             // submit the frame to the command queue
             //frame.finish();
             //window.swap_buffers();
-
         });
-        if should_close { break }
+        if should_close {
+            break;
+        }
     }
 
     // delete persistent textures.
