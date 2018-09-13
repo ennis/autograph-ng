@@ -212,6 +212,8 @@ impl<'ctx> Frame<'ctx> {
     }
 
     pub fn image_sample_dependency(&mut self, task: TaskId, img: &ImageRef) {
+        // FIXME limitation to avoid toposort
+        assert!(img.task < task, "Task cannot depend on the output a later task");
         // increase read count
         img.set_read();
         // fetch info about the resource
@@ -250,6 +252,8 @@ impl<'ctx> Frame<'ctx> {
         attachment_index: u32,
         img: &ImageRef,
     ) -> ImageRef {
+        // FIXME limitation to avoid toposort
+        assert!(img.task < task, "Task cannot depend on the output a later task");
         // ensure exclusive access to resource.
         img.set_write();
         let image_info = self.get_image_create_info(img).clone();
@@ -365,7 +369,6 @@ impl<'ctx> Frame<'ctx> {
 
     /// Imports a persistent image for use in the frame graph.
     pub fn import_image(&mut self, img: &'ctx Image) -> ImageRef
-//where 'ctx: 'img
     {
         let task = self.create_task("import");
         self.images.push(FrameResource {

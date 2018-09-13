@@ -14,14 +14,21 @@ impl<'ctx> Frame<'ctx>
 {
     pub fn schedule(&mut self)
     {
-        // issue: this is not an optimal toposort: we want to minimize the lifetime of resources
+        // FIXME avoid toposort here, because the algo in petgraph
+        // produces an ordering that is not optimal for aliasing.
+        // Instead, assume that the creation order specified by the user is better.
+        // The topological ordering is checked on-the-fly during task submission.
+        //
+        // Note: the optimal solution to this problem is given by the
+        // "directed minimum linear arrangement".
+        
         // so that they can be aliased.
         // Solution: Directed Minimum Linear Arrangement of a Directed Graph
 
-        let sorted = toposort(&self.graph, None).expect("Dependency graph has cycles");
+        //let sorted = toposort(&self.graph, None).expect("Dependency graph has cycles");
         // print some info about the graph.
-        info!("Frame info:");
 
+        info!("Frame info:");
         for n in sorted.iter() {
             let task = self.graph.node_weight(*n).unwrap();
             info!("  {}(#{})", task.name, n.index());
