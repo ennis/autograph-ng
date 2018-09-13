@@ -1,4 +1,5 @@
 //#![feature(rust_2018_preview, uniform_paths)]
+#![feature(vec_remove_item)]
 extern crate petgraph;
 #[macro_use]
 extern crate bitflags;

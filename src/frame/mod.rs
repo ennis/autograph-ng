@@ -60,6 +60,10 @@ pub(crate) enum DependencyDetails {
         id: ImageId,
         /// The layout expected by the target.
         new_layout: vk::ImageLayout,
+        /*/// Required usage bits.
+        usage: vk::ImageUsageFlags*/
+        /*/// If the image is going to be used as an attachment.
+        attachment: Option<Dependency>*/
     },
     /// Image used as an attachment.
     Attachment {
@@ -70,6 +74,8 @@ pub(crate) enum DependencyDetails {
         /// Attachment description. note that some of the properties inside are filled
         /// During the scheduling passes.
         description: vk::AttachmentDescription,
+       /* /// Required usage bits.
+        usage: vk::ImageUsageFlags*/
     },
     /// Details specific to buffer data.
     Buffer {

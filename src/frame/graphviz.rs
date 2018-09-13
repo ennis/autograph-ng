@@ -157,9 +157,10 @@ impl<'ctx> Frame<'ctx> {
             let t = self.graph.node_weight(n).unwrap();
             writeln!(
                 w,
-                "T_{} [shape=diamond, fontcolor=black, label=\"{}\"];",
+                "T_{} [shape=diamond, fontcolor=black, label=\"{} (#{})\"];",
                 n.index(),
-                t.name
+                t.name,
+                n.index()
             );
         }
         writeln!(w);

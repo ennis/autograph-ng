@@ -17,12 +17,12 @@ fn downsample(frame: &mut Frame, input: ImageRef) -> ImageRef {
     let mut cur_w = w;
     let mut cur_h = h;
     for i in 0..count {
+        let r_target = frame.create_image_2d((cur_w, cur_h), vk::Format::R16g16b16a16Sfloat);
         let t = frame.create_task("downsample");
         frame.image_sample_dependency(t, &r_last);
+        r_last = frame.color_attachment_dependency(t, 0, &r_target);
         cur_w /= 2;
         cur_h /= 2;
-        let r_target = frame.create_image_2d((cur_w, cur_h), vk::Format::R16g16b16a16Sfloat);
-        r_last = frame.color_attachment_dependency(t, 0, &r_target);
     }
 
     r_last
@@ -68,10 +68,10 @@ fn main() {
                 // downsample one
                 let r_color_b = downsample(&mut frame, r_color_b);
                 // post-process
+                let r_output = frame.import_image(&persistent_img);
                 let t_postproc = frame.create_task("postproc");
                 frame.image_sample_dependency(t_postproc, &r_color_a);
                 frame.image_sample_dependency(t_postproc, &r_color_b);
-                let r_output = frame.import_image(&persistent_img);
                 frame.color_attachment_dependency(t_postproc, 0, &r_output);
                 frame.schedule();
                 frame.submit();
