@@ -6,38 +6,127 @@
 //! * creates and schedules renderpasses
 //!
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use super::*;
 
 use petgraph::algo::toposort;
+use petgraph::visit::{VisitMap, Visitable};
+use time;
 
-
-fn extend_subgraph(g: &FrameGraph, prev: &[TaskId]) -> Vec<Vec<TaskId>>
-{
-    g.node_indices()
-        .filter(|n| !prev.contains(n))
-        .filter(|&n|
-            g.neighbors_directed(n, Direction::Incoming).all(|nn| prev.contains(&nn))
-        )
-        .map(|n| {
-            let mut subg = prev.to_vec();
-            subg.push(n);
-            subg
-        })
-        .collect()
+pub fn measure_time<F: FnOnce()>(f: F) -> u64 {
+    let start = time::PreciseTime::now();
+    f();
+    let duration = start.to(time::PreciseTime::now());
+    duration.num_microseconds().unwrap() as u64
 }
 
-fn subgraph_cut(g: &FrameGraph, sub: &[TaskId]) -> u32
-{
+fn extend_subgraph(g: &FrameGraph, prev: &[TaskId], cut: u32) -> Vec<(u32, Vec<TaskId>)> {
+    let greedy = true;
+
+    //----------------------------------------------------------------------------------------------
+    // compute the set of all neighbors of the prev subgraph
+    /*let mut visited = RefCell::new(g.visit_map());
+    prev.iter().flat_map(|&n| {
+        // all neighbors that were not already visited and that go outwards prev
+        // and have all their incoming edges inside the set
+        g.neighbors_directed(n, Direction::Outgoing)
+            .filter(|&nn| visited.borrow_mut().visit(nn))
+            .filter(|nn| !prev.contains(nn))
+            .filter(|&nn| g.neighbors_directed(nn, Direction::Incoming).all(|nnn| prev.contains(&nnn)))
+    }).chain(
+        // also consider incoming externals that are not already in the set
+        g.externals(Direction::Incoming).filter(|nn| !prev.contains(nn))
+    ).map(|n| {
+        //
+        let i = g.edges_directed(n, Direction::Incoming).count() as u32;
+        let o = g.edges_directed(n, Direction::Outgoing).count() as u32;
+        //(cut - i + o, sub)
+        let mut sub = prev.to_vec();
+        sub.push(n);
+        (cut - i + o, sub)
+    }).collect()*/
+
+    //----------------------------------------------------------------------------------------------
+    // greedy version of the above (keep only new subgraphs that minimize the new cut)
+    /*let mut visited = RefCell::new(g.visit_map());
+    let (ncut, next) = prev
+        .iter()
+        .flat_map(|&n| {
+            // all neighbors that were not already visited and that go outwards prev
+            // and have all their incoming edges inside the set
+            g.neighbors_directed(n, Direction::Outgoing)
+                .filter(|&nn| visited.borrow_mut().visit(nn))
+                .filter(|nn| !prev.contains(nn))
+                .filter(|&nn| {
+                    g.neighbors_directed(nn, Direction::Incoming)
+                        .all(|nnn| prev.contains(&nnn))
+                })
+        }).chain(
+            // also consider incoming externals that are not already in the set
+            g.externals(Direction::Incoming)
+                .filter(|nn| !prev.contains(nn)),
+        ).map(|n| {
+            //
+            let i = g.edges_directed(n, Direction::Incoming).count() as u32;
+            let o = g.edges_directed(n, Direction::Outgoing).count() as u32;
+            (cut - i + o, n)
+        }).min_by(|a, b| a.0.cmp(&b.0))
+        .unwrap();
+
+    let mut sub = prev.to_vec();
+    sub.push(next);
+    vec![(ncut, sub)]*/
+
+    //----------------------------------------------------------------------------------------------
+    // greedy version of the above (keep only new subgraphs that minimize the new cut)
+    /*let r = g
+        .node_indices()
+        .filter(|n| !prev.contains(n))
+        .filter(|&n| {
+            g.neighbors_directed(n, Direction::Incoming)
+                .all(|nn| prev.contains(&nn))
+        }).map(|n| {
+            let i = g.edges_directed(n, Direction::Incoming).count() as u32;
+            let o = g.edges_directed(n, Direction::Outgoing).count() as u32;
+            (cut - i + o, n)
+        }).min_by(|a, b| a.0.cmp(&b.0));
+
+    let mut sub = prev.to_vec();
+    if let Some((ncut, next)) = r {
+        sub.push(next);
+        vec![(ncut, sub)]
+    } else {
+        vec![]
+    }*/
+
+    //----------------------------------------------------------------------------------------------
+    // this version is a bit slower
+    g.node_indices()
+        .filter(|n| !prev.contains(n))
+        .filter(|&n| {
+            g.neighbors_directed(n, Direction::Incoming)
+                .all(|nn| prev.contains(&nn))
+        }).map(|n| {
+        // we know the cut of prev: quick way
+        // to calculate the cut prev + n
+        let i = g.neighbors_directed(n, Direction::Incoming).count() as u32;
+        let o = g.neighbors_directed(n, Direction::Outgoing).count() as u32;
+        let mut sub = prev.to_vec();
+        sub.push(n);
+        (cut - i + o, sub)
+    }).collect()
+}
+
+fn subgraph_cut(g: &FrameGraph, sub: &[TaskId]) -> u32 {
     sub.iter().fold(0, |count, &n|
         // all outgoing neighbors that do not end up in the set
         count + g.neighbors_directed(n, Direction::Outgoing).filter(|nn| !sub.contains(nn)).count() as u32
     )
 }
 
-fn update_score(t: &mut HashMap<Vec<TaskId>, (u32,TaskId)>, sub: &[TaskId], score: u32)
-{
+fn update_score(t: &mut HashMap<Vec<TaskId>, (u32, TaskId)>, sub: &[TaskId], score: u32) {
     let mut sorted = sub.to_vec();
     let last = sub.last().unwrap().clone();
     sorted.sort();
@@ -46,44 +135,77 @@ fn update_score(t: &mut HashMap<Vec<TaskId>, (u32,TaskId)>, sub: &[TaskId], scor
             if e.0 > score {
                 *e = (score, last);
             }
-        })
-        .or_insert((score, last));
+        }).or_insert((score, last));
 }
 
-fn minimal_linear_ordering(g: &FrameGraph)
-{
+fn minimal_linear_ordering(g: &FrameGraph) {
     let n = g.node_count();
 
     let mut t = HashMap::new();
     // init with externals
     for ext in g.externals(Direction::Incoming) {
-        t.insert(vec![ext], (1, ext));
+        let score = subgraph_cut(g, &[ext]);
+        t.insert(vec![ext], (score, ext));
     }
 
+    /*for (k,v) in t.iter() {
+        for n in k.iter() {
+            print!("{},", n.index());
+        }
+        println!("COST={}", v.0);
+    }*/
+
+    // calculate the highest node rank (num incoming + outgoing edges).
+    let max_rank = g
+        .node_indices()
+        .map(|n| {
+            g.edges_directed(n, Direction::Outgoing).count()
+                + g.edges_directed(n, Direction::Incoming).count()
+        }).max()
+        .unwrap() as u32;
+    debug!("scheduling: max_rank = {}", max_rank);
+
     for i in 1..=n {
-        println!("Calculating partial orderings of size {}...", i);
+        debug!(
+            "scheduling: calculating partial orderings of size {} ({} orderings)...",
+            i,
+            t.len()
+        );
         // collect subgraphs to explore
         // must clone because we modify the hash map
         let subgs = t.keys().cloned().collect::<Vec<Vec<_>>>();
         // update scores of partial orderings
         // in hash map: (score, rightmost vertex)
-        for sub in subgs.iter() {
-            let esubs = extend_subgraph(g, sub);
+        for sub in subgs.iter().filter(|sub| sub.len() == i) {
+            let esubs = extend_subgraph(g, sub, t[sub].0);
             for esub in esubs.iter() {
                 // calc score
-                let score = subgraph_cut(g, esub);
+                //let score = subgraph_cut(g, &esub.1);
+                let score = esub.0;
+                print!("ORDERING: ");
+                for n in esub.1.iter() {
+                    print!("{},", n.index());
+                }
+                println!(" SCORE: {}", esub.0);
                 // update score in hash map
-                update_score(&mut t, esub, score);
+                // don't add the ordering to the map if it's already over max rank
+                if score <= max_rank {
+                    // this is expensive
+                    update_score(&mut t, &esub.1, score);
+                }
             }
         }
+
+        /*// remove all entries that are already over max rank
+        let size_before = t.len();
+        t.retain(|k, v| v.0 <= max_rank);
+        let num_culled = size_before - t.len();
+        debug!(
+            "scheduling: culled {}/{} partial orderings",
+            num_culled, size_before
+        );*/
     }
 
-    for (k,v) in t.iter() {
-        for n in k.iter() {
-            print!("{},", n.index());
-        }
-        println!("COST={}", v.0);
-    }
 
     // recover minimal ordering
     let mut minimal_ordering = Vec::new();
@@ -91,14 +213,15 @@ fn minimal_linear_ordering(g: &FrameGraph)
     sub.sort();
 
     while !sub.is_empty() {
-        let task = t.get(&sub).unwrap().1;
+        let (cost,task) = t.get(&sub).unwrap();
+        println!("size {} cost {}", sub.len(), cost);
         minimal_ordering.push(task);
         sub.remove_item(&task);
     }
 
     minimal_ordering.reverse();
 
-    println!("MINIMAL ORDERING:");
+    println!("scheduling: minimal ordering found:");
     for n in minimal_ordering.iter() {
         print!("{},", n.index());
     }
@@ -106,35 +229,47 @@ fn minimal_linear_ordering(g: &FrameGraph)
     println!();
 }
 
-impl<'ctx> Frame<'ctx>
-{
-
-    fn infer_image_usage(&self, img: ImageId) -> vk::ImageUsageFlags
-    {
+impl<'ctx> Frame<'ctx> {
+    fn infer_image_usage(&self, img: ImageId) -> vk::ImageUsageFlags {
         // Collect all dependencies on this image.
         self.graph.edge_references().filter_map(|d| {
             let d = d.weight();
             match d.details {
-                DependencyDetails::Attachment { id, index, ref description } if id == img => {
-                    if d.access_bits.intersects(vk::ACCESS_COLOR_ATTACHMENT_READ_BIT | vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT) {
+                DependencyDetails::Attachment {
+                    id,
+                    index,
+                    ref description,
+                }
+                    if id == img =>
+                {
+                    if d.access_bits.intersects(
+                        vk::ACCESS_COLOR_ATTACHMENT_READ_BIT
+                            | vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                    ) {
                         Some(vk::IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
-                    } else if d.access_bits.intersects(vk::ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | vk::ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT) {
+                    } else if d.access_bits.intersects(
+                        vk::ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT
+                            | vk::ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                    ) {
                         Some(vk::IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
-                    } else if d.access_bits.intersects(vk::ACCESS_INPUT_ATTACHMENT_READ_BIT) {
+                    } else if d
+                        .access_bits
+                        .intersects(vk::ACCESS_INPUT_ATTACHMENT_READ_BIT)
+                    {
                         Some(vk::IMAGE_USAGE_INPUT_ATTACHMENT_BIT)
                     } else {
                         None
                     }
-                },
+                }
                 DependencyDetails::Image { id, new_layout } if id == img => {
+                    if d.access_bits
+                        .intersects(vk::ACCESS_SHADER_READ_BIT | vk::ACCESS_SHADER_WRITE_BIT)
                     {
-                        if d.access_bits.intersects(vk::ACCESS_SHADER_READ_BIT | vk::ACCESS_SHADER_WRITE_BIT) {
-                            Some(vk::IMAGE_USAGE_STORAGE_BIT)
-                        } else {
-                            Some(vk::IMAGE_USAGE_SAMPLED_BIT)
-                        }
+                        Some(vk::IMAGE_USAGE_STORAGE_BIT)
+                    } else {
+                        Some(vk::IMAGE_USAGE_SAMPLED_BIT)
                     }
-                },
+                }
                 _ => None,
             }
         });
@@ -145,8 +280,7 @@ impl<'ctx> Frame<'ctx>
         unimplemented!()
     }
 
-    pub fn schedule(&mut self)
-    {
+    pub fn schedule(&mut self) {
         // FIXME avoid toposort here, because the algo in petgraph
         // produces an ordering that is not optimal for aliasing.
         // Instead, assume that the creation order specified by the user is better.
@@ -166,7 +300,13 @@ impl<'ctx> Frame<'ctx>
         // * vk::ImageCreateInfo::usage (vk::ImageUsageFlags)
         //      (look for all transitive dependencies, starting from the creation node)
         // * vk::ImageCreateInfo::initial_layout (vk::ImageLayout)
-        minimal_linear_ordering(&self.graph);
+        let st = measure_time(|| {
+            minimal_linear_ordering(&self.graph);
+        });
+        info!("scheduling took {}µs", st);
+
+        // variant 1: 8_316_419 µs
+        // variant 2: 7_367_404 µs (score calculated on the fly)
 
         /*info!("Frame info:");
         for n in sorted.iter() {
@@ -175,7 +315,6 @@ impl<'ctx> Frame<'ctx>
         }*/
     }
 }
-
 
 // Graph:
 // Node = pass type (graphics or compute), callback function
@@ -210,4 +349,3 @@ impl<'ctx> Frame<'ctx>
 // - initial graph
 // - graph with render passes
 // - graph with render passes and explicit layout transitions
-

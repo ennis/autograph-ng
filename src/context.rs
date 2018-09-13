@@ -636,9 +636,9 @@ impl Context {
                             .drain(..)
                             .map(|img| {
                                 Image {
-                                    name: "presentation image".to_owned(),  // FIXME
-                                    create_info: unsafe { mem::uninitialized() },    // FIXME HARDER
-                                    image: Some(img)
+                                    name: "presentation image".to_owned(),        // FIXME
+                                    create_info: unsafe { mem::uninitialized() }, // FIXME HARDER
+                                    image: Some(img),
                                 }
                             }).collect::<Vec<_>>();
 
@@ -710,7 +710,13 @@ impl Context {
     /// Acquires a presentation image.
     pub fn acquire_presentation_image<'a>(&mut self, presentation: &'a Presentation) -> &'a Image {
         let next_image = unsafe {
-            self.swapchain_loader.acquire_next_image_khr(presentation.swapchain, u64::max_value(), self.image_available, vk::Fence::null()).unwrap()
+            self.swapchain_loader
+                .acquire_next_image_khr(
+                    presentation.swapchain,
+                    u64::max_value(),
+                    self.image_available,
+                    vk::Fence::null(),
+                ).unwrap()
         };
         let img = &presentation.images[next_image as usize];
         img

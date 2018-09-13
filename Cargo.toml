@@ -1,5 +1,8 @@
 #cargo-features = ["edition"]
 
+[profile.release]
+debug = true
+
 [package]
 name = "gfx2"
 version = "0.1.0"
@@ -20,6 +23,7 @@ serde = "*"
 serde_json = "*"
 downcast-rs = "*"
 boow = "*"
+time = "*"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "*", features = ["windef", "winuser"] }

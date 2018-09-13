@@ -20,6 +20,7 @@ extern crate serde_json;
 #[macro_use]
 extern crate downcast_rs;
 extern crate boow;
+extern crate time;
 
 mod buffer;
 mod buffer_data;

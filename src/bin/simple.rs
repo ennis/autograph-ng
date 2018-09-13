@@ -16,7 +16,7 @@ fn downsample(frame: &mut Frame, input: ImageRef) -> ImageRef {
     let mut r_last = input;
     let mut cur_w = w;
     let mut cur_h = h;
-    for i in 0..count {
+    for i in 0..3 {
         let r_target = frame.create_image_2d((cur_w, cur_h), vk::Format::R16g16b16a16Sfloat);
         let t = frame.create_task("downsample");
         frame.image_sample_dependency(t, &r_last);
