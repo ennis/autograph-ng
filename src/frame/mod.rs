@@ -50,6 +50,15 @@ pub(crate) struct Dependency {
     pub(crate) details: DependencyDetails,
 }
 
+pub(crate) struct AttachmentDependencyDetails
+{
+    /// Index of the attachment.
+    index: u32,
+    /// Attachment description. note that some of the properties inside are filled
+    /// During the scheduling passes.
+    description: vk::AttachmentDescription,
+}
+
 /// Details of a dependency that is specific to the usage of the resource, and its
 /// type.
 pub(crate) enum DependencyDetails {
@@ -60,27 +69,17 @@ pub(crate) enum DependencyDetails {
         id: ImageId,
         /// The layout expected by the target.
         new_layout: vk::ImageLayout,
-        /*/// Required usage bits.
-        usage: vk::ImageUsageFlags*/
-        /*/// If the image is going to be used as an attachment.
-        attachment: Option<Dependency>*/
-    },
-    /// Image used as an attachment.
-    Attachment {
-        /// The resource depended on.
-        id: ImageId,
-        /// Index of the attachment.
-        index: u32,
-        /// Attachment description. note that some of the properties inside are filled
-        /// During the scheduling passes.
-        description: vk::AttachmentDescription,
-        /* /// Required usage bits.
-        usage: vk::ImageUsageFlags*/
+        /// Required usage bits.
+        usage: vk::ImageUsageFlags,
+        /// If the image is going to be used as an attachment.
+        attachment: Option<AttachmentDependencyDetails>
     },
     /// Details specific to buffer data.
     Buffer {
         /// The resource depended on.
         id: BufferId,
+        /// Required usage bits.
+        usage: vk::BufferUsageFlags,
     },
 }
 
@@ -107,7 +106,7 @@ pub struct TaskOutputRef<T> {
 }
 
 impl<T> TaskOutputRef<T> {
-    pub(crate) fn set_read(&self) {
+    pub(crate) fn set_write(&self) {
         // TODO display more info about the conflict
         assert!(
             !(self.read.get() || self.written.get()),
@@ -116,7 +115,7 @@ impl<T> TaskOutputRef<T> {
         self.written.set(true);
     }
 
-    pub(crate) fn set_write(&self) {
+    pub(crate) fn set_read(&self) {
         // TODO display more info about the conflict
         assert!(!self.written.get(), "read/write conflict");
         self.read.set(true);
@@ -128,43 +127,77 @@ pub type BufferRef = TaskOutputRef<BufferId>;
 
 //--------------------------------------------------------------------------------------------------
 
-enum FrameResourceStatus {
-    /// Persistent resource imported into the graph.
-    Imported,
-    /// Transient resource: goes down at the end of the frame.
-    Transient,
+pub(crate) struct ImageDesc
+{
+    pub(crate) create_info: vk::ImageCreateInfo
+}
+
+pub(crate) struct BufferDesc
+{
+    pub(crate) create_info: vk::BufferCreateInfo
 }
 
 /// A resource (image or buffer) used in a frame.
-pub struct FrameResource<'imp, T: Resource> {
-    resource: Bow<'imp, T>,
+pub enum FrameResource<'imp, T: Resource, D> {
+    Imported {
+        resource: & 'imp T,
+    },
+    Transient {
+        name: String,
+        description: D,
+        resource: Option<T>
+    }
 }
 
-impl<'imp, T: Resource> FrameResource<'imp, T> {
+impl<'imp, T: Resource, D> FrameResource<'imp, T, D> {
+
     pub(crate) fn name(&self) -> &str {
-        self.resource.name()
+        match self {
+            FrameResource::Imported { resource } => { resource.name() },
+            FrameResource::Transient { ref name, .. } => { name }
+        }
     }
 
     pub(crate) fn is_imported(&self) -> bool {
-        match self.resource {
-            Bow::Owned(_) => false,
-            _ => true,
+        match self {
+            FrameResource::Imported { .. } => true,
+            _ => false,
+        }
+    }
+
+    pub fn new_transient(name: String, description: D) -> FrameResource<'imp, T, D> {
+        FrameResource::Transient {
+            name,
+            description,
+            resource: None
+        }
+    }
+
+    pub fn new_imported(resource: &'imp T) -> FrameResource<'imp, T, D> {
+        FrameResource::Imported {
+            resource
         }
     }
 }
 
-type ImageFrameResource<'imp> = FrameResource<'imp, Image>;
-type BufferFrameResource<'imp> = FrameResource<'imp, Buffer>;
+type ImageFrameResource<'imp> = FrameResource<'imp, Image, ImageDesc>;
+type BufferFrameResource<'imp> = FrameResource<'imp, Buffer, BufferDesc>;
 
 impl<'imp> ImageFrameResource<'imp> {
     pub fn get_create_info(&self) -> &vk::ImageCreateInfo {
-        &self.resource.create_info
+        match self {
+            FrameResource::Imported { resource } => { resource.create_info() },
+            FrameResource::Transient { ref description, .. } => { &description.create_info }
+        }
     }
 }
 
 impl<'imp> BufferFrameResource<'imp> {
     pub fn get_create_info(&self) -> &vk::BufferCreateInfo {
-        &self.resource.create_info
+        match self {
+            FrameResource::Imported { resource } => { resource.create_info() },
+            FrameResource::Transient { ref description, .. } => { &description.create_info }
+        }
     }
 }
 
@@ -218,11 +251,11 @@ impl<'ctx> Frame<'ctx> {
     }
 
     pub fn image_sample_dependency(&mut self, task: TaskId, img: &ImageRef) {
-        // FIXME limitation to avoid toposort
+        /*// FIXME limitation to avoid toposort
         assert!(
             img.task < task,
             "Task cannot depend on the output a later task"
-        );
+        );*/
         // increase read count
         img.set_read();
         // fetch info about the resource
@@ -248,6 +281,8 @@ impl<'ctx> Frame<'ctx> {
                     id: img.id,
                     // transfer to layout suited to shader access
                     new_layout: vk::ImageLayout::ShaderReadOnlyOptimal,
+                    usage: vk::IMAGE_USAGE_SAMPLED_BIT,
+                    attachment: None
                 },
             },
         );
@@ -261,11 +296,11 @@ impl<'ctx> Frame<'ctx> {
         attachment_index: u32,
         img: &ImageRef,
     ) -> ImageRef {
-        // FIXME limitation to avoid toposort
+        /*// FIXME limitation to avoid toposort
         assert!(
             img.task < task,
             "Task cannot depend on the output a later task"
-        );
+        );*/
         // ensure exclusive access to resource.
         img.set_write();
         let image_info = self.get_image_create_info(img).clone();
@@ -298,10 +333,14 @@ impl<'ctx> Frame<'ctx> {
                 access_bits: access,
                 src_stage_mask,
                 dst_stage_mask,
-                details: DependencyDetails::Attachment {
+                details: DependencyDetails::Image {
                     id: img.id,
-                    index: attachment_index,
-                    description: attachment_desc,
+                    usage: vk::IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                    new_layout: vk::ImageLayout::ColorAttachmentOptimal,
+                    attachment: Some(AttachmentDependencyDetails {
+                        index: attachment_index,
+                        description: attachment_desc,
+                    })
                 },
             },
         );
@@ -322,37 +361,36 @@ impl<'ctx> Frame<'ctx> {
     pub fn create_image_2d(&mut self, (width, height): (u32, u32), format: vk::Format) -> ImageRef {
         // create a task associated with this creation op
         let task = self.create_task("dummy");
-        let image_create_info = vk::ImageCreateInfo {
-            s_type: vk::StructureType::ImageCreateInfo,
-            p_next: ptr::null(),
-            flags: vk::ImageCreateFlags::default(),
-            image_type: vk::ImageType::Type2d,
-            format,
-            extent: vk::Extent3D {
-                width,
-                height,
-                depth: 1,
-            },
-            mip_levels: 1,                    // FIXME
-            array_layers: 1,                  // FIXME
-            samples: vk::SAMPLE_COUNT_1_BIT,  // FIXME
-            tiling: vk::ImageTiling::Optimal, // FIXME
-            // inferred from the graph
-            usage: vk::ImageUsageFlags::default(),
-            sharing_mode: vk::SharingMode::Exclusive, // FIXME
-            queue_family_index_count: 0,              // FIXME
-            p_queue_family_indices: ptr::null(),
-            initial_layout: vk::ImageLayout::Undefined, // inferred
+        let desc = ImageDesc {
+            create_info: vk::ImageCreateInfo {
+                s_type: vk::StructureType::ImageCreateInfo,
+                p_next: ptr::null(),
+                flags: vk::ImageCreateFlags::default(),
+                image_type: vk::ImageType::Type2d,
+                format,
+                extent: vk::Extent3D {
+                    width,
+                    height,
+                    depth: 1,
+                },
+                mip_levels: 1,                    // FIXME
+                array_layers: 1,                  // FIXME
+                samples: vk::SAMPLE_COUNT_1_BIT,  // FIXME
+                tiling: vk::ImageTiling::Optimal, // FIXME
+                // inferred from the graph
+                usage: vk::ImageUsageFlags::default(),
+                sharing_mode: vk::SharingMode::Exclusive, // FIXME
+                queue_family_index_count: 0,              // FIXME
+                p_queue_family_indices: ptr::null(),
+                initial_layout: vk::ImageLayout::Undefined, // inferred
+            }
         };
 
         // get an index to generate a name for this resource.
         // It's not crucial that we get a unique one,
         // as the name of resources are here for informative purposes only.
         let naming_index = self.images.len();
-        let new_id = self.add_image_resource(Image::new(
-            format!("IMG_{:04}", naming_index),
-            &image_create_info,
-        ));
+        let new_id = self.add_image_resource(format!("IMG_{:04}", naming_index), desc);
 
         ImageRef {
             task,
@@ -364,27 +402,21 @@ impl<'ctx> Frame<'ctx> {
     }
 
     /// Adds a transient buffer resource.
-    pub(crate) fn add_buffer_resource(&mut self, resource: Buffer) -> BufferId {
-        self.buffers.push(FrameResource {
-            resource: Bow::Owned(resource),
-        });
+    pub(crate) fn add_buffer_resource(&mut self, name: String, desc: BufferDesc) -> BufferId {
+        self.buffers.push(BufferFrameResource::new_transient(name, desc));
         BufferId((self.buffers.len() - 1) as u32)
     }
 
     /// Adds a transient image resource.
-    pub(crate) fn add_image_resource(&mut self, resource: Image) -> ImageId {
-        self.images.push(FrameResource {
-            resource: Bow::Owned(resource),
-        });
+    pub(crate) fn add_image_resource(&mut self, name: String, desc: ImageDesc) -> ImageId {
+        self.images.push(ImageFrameResource::new_transient(name, desc));
         ImageId((self.images.len() - 1) as u32)
     }
 
     /// Imports a persistent image for use in the frame graph.
     pub fn import_image(&mut self, img: &'ctx Image) -> ImageRef {
         let task = self.create_task("import");
-        self.images.push(FrameResource {
-            resource: Bow::Borrowed(img),
-        });
+        self.images.push(ImageFrameResource::new_imported(img));
         let id = ImageId((self.images.len() - 1) as u32);
         ImageRef {
             id,
@@ -438,46 +470,41 @@ impl<'ctx> Frame<'ctx> {
             let d = self.graph.edge_weight(e).unwrap();
 
             match &d.details {
-                &DependencyDetails::Image { id, new_layout } => {
-                    writeln!(
-                        w,
-                        "IMAGE ACCESS {}(#{}) -> {}(#{})",
-                        src_task.name,
-                        src.index(),
-                        dest_task.name,
-                        dest.index()
-                    );
+                &DependencyDetails::Image { id, new_layout, usage, ref attachment } => {
+                    if attachment.is_some() {
+                        writeln!(
+                            w,
+                            "ATTACHMENT {}(#{}) -> {}(#{})",
+                            src_task.name,
+                            src.index(),
+                            dest_task.name,
+                            dest.index()
+                        );
+                    } else {
+                        writeln!(
+                            w,
+                            "IMAGE ACCESS {}(#{}) -> {}(#{})",
+                            src_task.name,
+                            src.index(),
+                            dest_task.name,
+                            dest.index()
+                        );
+                    }
                     writeln!(w, "  resource ......... {:08X}", id.0);
                     writeln!(w, "  access ........... {:?}", d.access_bits);
                     writeln!(w, "  srcStageMask ..... {:?}", d.src_stage_mask);
                     writeln!(w, "  dstStageMask ..... {:?}", d.dst_stage_mask);
                     writeln!(w, "  newLayout ........ {:?}", new_layout);
+                    if let Some(ref attachment) = attachment {
+                        writeln!(w, "  index ............ {}", attachment.index);
+                        writeln!(w, "  format ........... {:?}", attachment.description.format);
+                        writeln!(w, "  loadOp ........... {:?}", attachment.description.load_op);
+                        writeln!(w, "  storeOp .......... {:?}", attachment.description.store_op);
+                        writeln!(w, "  initialLayout .... {:?}", attachment.description.initial_layout);
+                        writeln!(w, "  finalLayout ...... {:?}", attachment.description.final_layout);
+                    }
                 }
-                &DependencyDetails::Attachment {
-                    id,
-                    index,
-                    ref description,
-                } => {
-                    writeln!(
-                        w,
-                        "ATTACHMENT {}(#{}) -> {}(#{})",
-                        src_task.name,
-                        src.index(),
-                        dest_task.name,
-                        dest.index()
-                    );
-                    writeln!(w, "  resource ......... {:08X}", id.0);
-                    writeln!(w, "  access ........... {:?}", d.access_bits);
-                    writeln!(w, "  srcStageMask ..... {:?}", d.src_stage_mask);
-                    writeln!(w, "  dstStageMask ..... {:?}", d.dst_stage_mask);
-                    writeln!(w, "  index ............ {}", index);
-                    writeln!(w, "  format ........... {:?}", description.format);
-                    writeln!(w, "  loadOp ........... {:?}", description.load_op);
-                    writeln!(w, "  storeOp .......... {:?}", description.store_op);
-                    writeln!(w, "  initialLayout .... {:?}", description.initial_layout);
-                    writeln!(w, "  finalLayout ...... {:?}", description.final_layout);
-                }
-                &DependencyDetails::Buffer { id } => {
+                &DependencyDetails::Buffer { id, .. } => {
                     writeln!(
                         w,
                         "BUFFER ACCESS {}(#{}) -> {}(#{})",
@@ -500,7 +527,8 @@ impl<'ctx> Frame<'ctx> {
         // TODO
         self.dump(&mut stdout());
         let mut dot = File::create("graph.dot").unwrap();
-        self.dump_graphviz(&mut dot);
+        let ordering = self.schedule();
+        self.dump_graphviz(&mut dot, Some(&ordering));
     }
 }
 

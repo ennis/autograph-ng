@@ -8,24 +8,25 @@ use gfx2::texture::get_texture_mip_map_count;
 use gfx2::vk;
 use gfx2::window::*;
 
-fn downsample(frame: &mut Frame, input: ImageRef) -> ImageRef {
+fn downsample(frame: &mut Frame, input: &ImageRef) -> ImageRef {
     let create_info = frame.get_image_create_info(&input).clone();
     let (w, h) = (create_info.extent.width, create_info.extent.height);
     let count = get_texture_mip_map_count(w, h);
 
-    let mut r_last = input;
+    let mut r_last = None;
     let mut cur_w = w;
     let mut cur_h = h;
     for i in 0..3 {
-        let r_target = frame.create_image_2d((cur_w, cur_h), vk::Format::R16g16b16a16Sfloat);
         let t = frame.create_task("downsample");
-        frame.image_sample_dependency(t, &r_last);
-        r_last = frame.color_attachment_dependency(t, 0, &r_target);
+        frame.image_sample_dependency(t, r_last.as_ref().unwrap_or(input));
+        let r_target = frame.create_image_2d((cur_w, cur_h), vk::Format::R16g16b16a16Sfloat);
+        r_last = Some(frame.color_attachment_dependency(t, 0, &r_target));
+
         cur_w /= 2;
         cur_h /= 2;
     }
 
-    r_last
+    r_last.unwrap()
 }
 
 fn main() {
@@ -66,14 +67,17 @@ fn main() {
                 let r_color_a = frame.color_attachment_dependency(t_render, 0, &r_color_a);
                 let r_color_b = frame.color_attachment_dependency(t_render, 1, &r_color_b);
                 // downsample one
-                let r_color_b = downsample(&mut frame, r_color_b);
+                let r_color_c = downsample(&mut frame, &r_color_b);
                 // post-process
-                let r_output = frame.import_image(&persistent_img);
                 let t_postproc = frame.create_task("postproc");
+                //frame.image_sample_dependency(t_postproc, &r_color_a);
+                //frame.image_sample_dependency(t_postproc, &r_color_a);
+                //frame.image_sample_dependency(t_postproc, &r_color_a);
                 frame.image_sample_dependency(t_postproc, &r_color_a);
                 frame.image_sample_dependency(t_postproc, &r_color_b);
+                frame.image_sample_dependency(t_postproc, &r_color_c);
+                let r_output = frame.import_image(&persistent_img);
                 frame.color_attachment_dependency(t_postproc, 0, &r_output);
-                frame.schedule();
                 frame.submit();
                 first = false;
             }

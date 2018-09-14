@@ -20,7 +20,7 @@ use buffer::{BufferDesc, BufferSlice, BufferStorage};
 use frame::TaskId;
 use resource::*;
 use texture::{TextureDesc, TextureObject};
-use upload_buffer::UploadBuffer;
+use alloc::Allocator;
 
 pub type VkEntry1 = ash::Entry<V1_0>;
 pub type VkInstance1 = ash::Instance<V1_0>;
@@ -489,6 +489,7 @@ pub struct Context {
     pub(crate) render_finished: vk::Semaphore,
     //pub(crate) images: SlotMap<ImageResource>,
     //pub(crate) buffers: SlotMap<ImageResource>,
+    pub(crate) allocator: Allocator,
 }
 
 impl Context {
@@ -668,6 +669,7 @@ impl Context {
             // create semaphores to sync between the draw and present queues
             let image_available = create_semaphore(&device_and_queues.vkd);
             let render_finished = create_semaphore(&device_and_queues.vkd);
+            let allocator = Allocator::new(&vki, &device_and_queues.vkd, device_and_queues.physical_device);
 
             (
                 Context {
@@ -686,6 +688,7 @@ impl Context {
                     max_in_flight_frames: max_in_flight_frames as u8,
                     image_available,
                     render_finished,
+                    allocator
                 },
                 presentations,
             )

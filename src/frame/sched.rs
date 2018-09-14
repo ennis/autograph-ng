@@ -15,38 +15,67 @@ use petgraph::algo::toposort;
 use petgraph::visit::{VisitMap, Visitable};
 use time;
 
-pub fn measure_time<F: FnOnce()>(f: F) -> u64 {
+pub fn measure_time<R, F: FnOnce() -> R>(f: F) -> (u64, R) {
     let start = time::PreciseTime::now();
-    f();
+    let r = f();
     let duration = start.to(time::PreciseTime::now());
-    duration.num_microseconds().unwrap() as u64
+    (duration.num_microseconds().unwrap() as u64, r)
 }
 
-fn extend_subgraph(g: &FrameGraph, prev: &[TaskId], cut: u32) -> Vec<(u32, Vec<TaskId>)> {
+#[derive(Copy, Clone, Debug)]
+struct PartialOrdering {
+    /// Total cost of the ordering
+    cost: u32,
+    /// Cut
+    cut: u32,
+    /// Rightmost item
+    right: TaskId,
+}
+
+/*fn extend_subgraph(
+    g: &FrameGraph,
+    prev: &[TaskId],
+    cost: u32,
+    cut: u32,
+) -> Vec<(Vec<TaskId>, PartialOrdering)> {
     let greedy = true;
 
     //----------------------------------------------------------------------------------------------
     // compute the set of all neighbors of the prev subgraph
-    /*let mut visited = RefCell::new(g.visit_map());
-    prev.iter().flat_map(|&n| {
-        // all neighbors that were not already visited and that go outwards prev
-        // and have all their incoming edges inside the set
-        g.neighbors_directed(n, Direction::Outgoing)
-            .filter(|&nn| visited.borrow_mut().visit(nn))
-            .filter(|nn| !prev.contains(nn))
-            .filter(|&nn| g.neighbors_directed(nn, Direction::Incoming).all(|nnn| prev.contains(&nnn)))
-    }).chain(
-        // also consider incoming externals that are not already in the set
-        g.externals(Direction::Incoming).filter(|nn| !prev.contains(nn))
-    ).map(|n| {
-        //
-        let i = g.edges_directed(n, Direction::Incoming).count() as u32;
-        let o = g.edges_directed(n, Direction::Outgoing).count() as u32;
-        //(cut - i + o, sub)
-        let mut sub = prev.to_vec();
-        sub.push(n);
-        (cut - i + o, sub)
-    }).collect()*/
+    let mut visited = RefCell::new(g.visit_map());
+    prev.iter()
+        .flat_map(|&n| {
+            // all neighbors that were not already visited and that go outwards prev
+            // and have all their incoming edges inside the set
+            g.neighbors_directed(n, Direction::Outgoing)
+                .filter(|&nn| visited.borrow_mut().visit(nn))
+                .filter(|nn| !prev.contains(nn))
+                .filter(|&nn| {
+                    g.neighbors_directed(nn, Direction::Incoming)
+                        .all(|nnn| prev.contains(&nnn))
+                })
+        }).chain(
+            // also consider incoming externals that are not already in the set
+            g.externals(Direction::Incoming)
+                .filter(|nn| !prev.contains(nn)),
+        ).map(|n| {
+            //
+            let i = g.edges_directed(n, Direction::Incoming).count() as u32;
+            let o = g.edges_directed(n, Direction::Outgoing).count() as u32;
+            // new cut = cut - i + o
+            let ncut = cut - i + o;
+            // new cost = cost + ncut
+            let mut sub = prev.to_vec();
+            sub.push(n);
+            (
+                sub,
+                PartialOrdering {
+                    cost: cost + ncut,
+                    cut: ncut,
+                    right: n,
+                },
+            )
+        }).collect()
 
     //----------------------------------------------------------------------------------------------
     // greedy version of the above (keep only new subgraphs that minimize the new cut)
@@ -103,7 +132,7 @@ fn extend_subgraph(g: &FrameGraph, prev: &[TaskId], cut: u32) -> Vec<(u32, Vec<T
 
     //----------------------------------------------------------------------------------------------
     // this version is a bit slower
-    g.node_indices()
+    /*g.node_indices()
         .filter(|n| !prev.contains(n))
         .filter(|&n| {
             g.neighbors_directed(n, Direction::Incoming)
@@ -116,8 +145,8 @@ fn extend_subgraph(g: &FrameGraph, prev: &[TaskId], cut: u32) -> Vec<(u32, Vec<T
         let mut sub = prev.to_vec();
         sub.push(n);
         (cut - i + o, sub)
-    }).collect()
-}
+    }).collect()*/}
+*/
 
 fn subgraph_cut(g: &FrameGraph, sub: &[TaskId]) -> u32 {
     sub.iter().fold(0, |count, &n|
@@ -126,36 +155,25 @@ fn subgraph_cut(g: &FrameGraph, sub: &[TaskId]) -> u32 {
     )
 }
 
-fn update_score(t: &mut HashMap<Vec<TaskId>, (u32, TaskId)>, sub: &[TaskId], score: u32) {
-    let mut sorted = sub.to_vec();
-    let last = sub.last().unwrap().clone();
-    sorted.sort();
-    t.entry(sorted)
-        .and_modify(|e| {
-            if e.0 > score {
-                *e = (score, last);
-            }
-        }).or_insert((score, last));
-}
-
-fn minimal_linear_ordering(g: &FrameGraph) {
+fn minimal_linear_ordering(g: &FrameGraph) -> Vec<TaskId> {
     let n = g.node_count();
 
     let mut t = HashMap::new();
     // init with externals
-    for ext in g.externals(Direction::Incoming) {
-        let score = subgraph_cut(g, &[ext]);
-        t.insert(vec![ext], (score, ext));
+    for task in g.externals(Direction::Incoming) {
+        let cut = subgraph_cut(g, &[task]);
+        t.insert(
+            vec![task],
+            PartialOrdering {
+                cost: 0,
+                cut,
+                right: task,
+            },
+        );
     }
 
-    /*for (k,v) in t.iter() {
-        for n in k.iter() {
-            print!("{},", n.index());
-        }
-        println!("COST={}", v.0);
-    }*/
-
     // calculate the highest node rank (num incoming + outgoing edges).
+    // used to filter suboptimal solutions early.
     let max_rank = g
         .node_indices()
         .map(|n| {
@@ -165,47 +183,75 @@ fn minimal_linear_ordering(g: &FrameGraph) {
         .unwrap() as u32;
     debug!("scheduling: max_rank = {}", max_rank);
 
+    // fill table containing the cost of the optimal arrangement of each subset of the graph.
     for i in 1..=n {
-        debug!(
-            "scheduling: calculating partial orderings of size {} ({} orderings)...",
-            i,
-            t.len()
-        );
         // collect subgraphs to explore
         // must clone because we modify the hash map
-        let subgs = t.keys().cloned().collect::<Vec<Vec<_>>>();
+        let subs = t.keys().filter(|sub| sub.len() == i).cloned().collect::<Vec<Vec<_>>>();
+        debug!(
+            "scheduling: calculating partial orderings of size {} ({} starting subsets)...",
+            i+1,
+            subs.len()
+        );
         // update scores of partial orderings
         // in hash map: (score, rightmost vertex)
-        for sub in subgs.iter().filter(|sub| sub.len() == i) {
-            let esubs = extend_subgraph(g, sub, t[sub].0);
-            for esub in esubs.iter() {
-                // calc score
-                //let score = subgraph_cut(g, &esub.1);
-                let score = esub.0;
-                print!("ORDERING: ");
-                for n in esub.1.iter() {
-                    print!("{},", n.index());
-                }
-                println!(" SCORE: {}", esub.0);
-                // update score in hash map
-                // don't add the ordering to the map if it's already over max rank
-                if score <= max_rank {
-                    // this is expensive
-                    update_score(&mut t, &esub.1, score);
-                }
-            }
+        for sub in subs.iter() {
+            // cost and cut of the optimal ordering for subset sub
+            let (cost, cut) = {
+                let ord = t[sub];
+                (ord.cost, ord.cut)
+            };
+            // enumerate new topological orderings of size i+1 from existing sub
+            // somewhat slower version:
+            // .filter(|n| !sub.contains(n))
+            // .filter(|&n| {
+            //      g.neighbors_directed(n, Direction::Incoming)
+            //        .all(|nn| sub.contains(&nn))
+            //  })
+            let mut visited = RefCell::new(g.visit_map());
+            sub.iter()
+                .flat_map(|&n| {
+                    // all neighbors that were not already visited and that go outwards prev
+                    // and have all their incoming edges inside the set
+                    g.neighbors_directed(n, Direction::Outgoing)
+                        .filter(|&nn| visited.borrow_mut().visit(nn))
+                        .filter(|nn| !sub.contains(nn))
+                        .filter(|&nn| {
+                            g.neighbors_directed(nn, Direction::Incoming)
+                                .all(|nnn| sub.contains(&nnn))
+                        })
+                }).chain(
+                    // also consider incoming externals that are not already in the set
+                    g.externals(Direction::Incoming)
+                        .filter(|nn| !sub.contains(nn)),
+                ).for_each(|n| {
+                    // build the new ordering for subset sub + {n},
+                    // calculate the cost, and update the subset table if
+                    // the ordering has a lower cost.
+                    let i = g.edges_directed(n, Direction::Incoming).count() as u32;
+                    let o = g.edges_directed(n, Direction::Outgoing).count() as u32;
+                    let ncut = cut - i + o;
+                    let ncost = cost + ncut;
+                    // don't bother if it's already over max rank
+                    if ncut <= max_rank {
+                        let mut nsub = sub.clone();
+                        nsub.push(n);
+                        nsub.sort();
+                        let nord = PartialOrdering {
+                            cost: cost + ncut,
+                            cut: ncut,
+                            right: n,
+                        };
+                        t.entry(nsub)
+                            .and_modify(|e| {
+                                if e.cost > nord.cost {
+                                    *e = nord;
+                                }
+                            }).or_insert(nord);
+                    }
+                });
         }
-
-        /*// remove all entries that are already over max rank
-        let size_before = t.len();
-        t.retain(|k, v| v.0 <= max_rank);
-        let num_culled = size_before - t.len();
-        debug!(
-            "scheduling: culled {}/{} partial orderings",
-            num_culled, size_before
-        );*/
     }
-
 
     // recover minimal ordering
     let mut minimal_ordering = Vec::new();
@@ -213,10 +259,10 @@ fn minimal_linear_ordering(g: &FrameGraph) {
     sub.sort();
 
     while !sub.is_empty() {
-        let (cost,task) = t.get(&sub).unwrap();
-        println!("size {} cost {}", sub.len(), cost);
-        minimal_ordering.push(task);
-        sub.remove_item(&task);
+        let ord = t.get(&sub).unwrap();
+        println!("size {} cost {}", sub.len(), ord.cost);
+        minimal_ordering.push(ord.right);
+        sub.remove_item(&ord.right);
     }
 
     minimal_ordering.reverse();
@@ -227,60 +273,57 @@ fn minimal_linear_ordering(g: &FrameGraph) {
     }
     println!();
     println!();
+
+    minimal_ordering
 }
 
 impl<'ctx> Frame<'ctx> {
-    fn infer_image_usage(&self, img: ImageId) -> vk::ImageUsageFlags {
-        // Collect all dependencies on this image.
-        self.graph.edge_references().filter_map(|d| {
+
+    fn collect_resource_usages(&mut self)
+    {
+        for d in self.graph.edge_references()
+        {
             let d = d.weight();
             match d.details {
-                DependencyDetails::Attachment {
+                DependencyDetails::Image {
                     id,
-                    index,
-                    ref description,
-                }
-                    if id == img =>
-                {
-                    if d.access_bits.intersects(
-                        vk::ACCESS_COLOR_ATTACHMENT_READ_BIT
-                            | vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                    ) {
-                        Some(vk::IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
-                    } else if d.access_bits.intersects(
-                        vk::ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT
-                            | vk::ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                    ) {
-                        Some(vk::IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
-                    } else if d
-                        .access_bits
-                        .intersects(vk::ACCESS_INPUT_ATTACHMENT_READ_BIT)
-                    {
-                        Some(vk::IMAGE_USAGE_INPUT_ATTACHMENT_BIT)
-                    } else {
-                        None
+                    new_layout,
+                    usage,
+                    ref attachment,
+                } => {
+                    match &mut self.images[id.0 as usize] {
+                         FrameResource::Transient { ref mut description, .. } => {
+                             // update usage flags
+                             description.create_info.usage |= usage;
+                         },
+                         FrameResource::Imported { resource } => {
+                             // TODO check usage flags
+                         }
+                    }
+                },
+                DependencyDetails::Buffer {
+                    id, usage
+                } => {
+                    match &mut self.buffers[id.0 as usize] {
+                        FrameResource::Transient { ref mut description, .. } => {
+                            // update usage flags
+                            description.create_info.usage |= usage;
+                        },
+                        FrameResource::Imported { resource } => {
+                            // TODO check usage flags
+                        }
                     }
                 }
-                DependencyDetails::Image { id, new_layout } if id == img => {
-                    if d.access_bits
-                        .intersects(vk::ACCESS_SHADER_READ_BIT | vk::ACCESS_SHADER_WRITE_BIT)
-                    {
-                        Some(vk::IMAGE_USAGE_STORAGE_BIT)
-                    } else {
-                        Some(vk::IMAGE_USAGE_SAMPLED_BIT)
-                    }
-                }
-                _ => None,
             }
-        });
+        }
 
-        // add the VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT if the image is never accessed as
+        // FIXME add the VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT if the image is never accessed as
         // an image, sampled, or accessed by the host.
         // also, should add the VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT to the allocation.
         unimplemented!()
     }
 
-    pub fn schedule(&mut self) {
+    pub fn schedule(&mut self) -> Vec<TaskId> {
         // FIXME avoid toposort here, because the algo in petgraph
         // produces an ordering that is not optimal for aliasing.
         // Instead, assume that the creation order specified by the user is better.
@@ -291,28 +334,13 @@ impl<'ctx> Frame<'ctx> {
         // to "minimum storage-time sequencing".
         // However, this is an NP-hard problem.
 
-        //let sorted = toposort(&self.graph, None).expect("Dependency graph has cycles");
 
-        // infer usage of resources:
-        // * vk::AttachmentDescription::initial_layout (vk::ImageLayout)
-        // * vk::ImageCreateInfo::tiling (vk::ImageTiling)
-        //      (use optimal)
-        // * vk::ImageCreateInfo::usage (vk::ImageUsageFlags)
-        //      (look for all transitive dependencies, starting from the creation node)
-        // * vk::ImageCreateInfo::initial_layout (vk::ImageLayout)
-        let st = measure_time(|| {
-            minimal_linear_ordering(&self.graph);
+        let (st, result) = measure_time(|| {
+            minimal_linear_ordering(&self.graph)
         });
-        info!("scheduling took {}µs", st);
+        debug!("graph scheduling took {}µs", st);
+        result
 
-        // variant 1: 8_316_419 µs
-        // variant 2: 7_367_404 µs (score calculated on the fly)
-
-        /*info!("Frame info:");
-        for n in sorted.iter() {
-            let task = self.graph.node_weight(*n).unwrap();
-            info!("  {}(#{})", task.name, n.index());
-        }*/
     }
 }
 

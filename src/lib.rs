@@ -30,8 +30,8 @@ pub mod format;
 pub mod frame;
 mod resource;
 pub mod texture;
-mod upload_buffer;
 pub mod window;
+pub mod alloc;
 
 // re-export vulkan as gfx2::vk
 pub use ash::vk;
