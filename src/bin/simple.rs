@@ -78,9 +78,9 @@ fn main() {
                 frame.image_sample_dependency(t_postproc, &r_color_c);
                 let r_output = frame.import_image(&persistent_img);
                 // join on all the reads of r_aux, because we are going to write to it.
-                let r_aux = frame.sync_image(&r_aux);
+                //let r_aux = frame.sync_image(&r_aux);
                 let r_output = frame.color_attachment_dependency(t_postproc, 0, &r_output);
-                let r_aux = frame.color_attachment_dependency(t_postproc, 1, &r_aux);
+                //let r_aux = frame.color_attachment_dependency(t_postproc, 1, &r_aux);
                 // present
                 frame.present(&r_output);
                 frame.submit();

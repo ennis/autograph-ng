@@ -92,7 +92,7 @@ impl UploadBuffer {
             .expect("upload buffer is full"); // TODO expand? wait? return None?
         unsafe {
             // This is safe because `allocate` makes sure that the target memory region at mapped_region+offset
-            // is sufficiently large to accomodate the data.
+            // is sufficiently large to accommodate the data.
             // Also, the data we copy is 'static and does not contain any references.
             // FIXME we assume that the reference to 'data' does not point to a memory region
             // FIXME inside the mapped buffer: is that okay? the client should have no way to create

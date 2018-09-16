@@ -461,6 +461,7 @@ impl<'ctx> Frame<'ctx> {
 //
 //    -> OPTION: could force sequencing of reads, in addition to writes
 //    -> to write a resource, must sync on all pending reads
+//    -> SOLUTION: add special "sequence" dependencies
 //
 // Next step: build command buffers
 // - for each job, create command buffer, traverse graph
