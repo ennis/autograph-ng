@@ -22,6 +22,7 @@ extern crate downcast_rs;
 extern crate boow;
 extern crate time;
 
+pub mod alloc;
 mod buffer;
 mod buffer_data;
 pub mod context;
@@ -31,7 +32,6 @@ pub mod frame;
 mod resource;
 pub mod texture;
 pub mod window;
-pub mod alloc;
 
 // re-export vulkan as gfx2::vk
 pub use ash::vk;

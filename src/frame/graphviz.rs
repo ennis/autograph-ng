@@ -119,11 +119,16 @@ fn format_access_flags(flags: vk::AccessFlags) -> String {
 }
 
 impl<'ctx> Frame<'ctx> {
-    pub(crate) fn dump_graphviz<W: Write>(&self, w: &mut W, ordering: Option<&[TaskId]>) {
+    pub(crate) fn dump_graphviz<W: Write>(
+        &self,
+        w: &mut W,
+        ordering: Option<&[TaskId]>,
+        show_details: bool,
+    ) {
         writeln!(w, "digraph G {{");
         writeln!(
             w,
-            "node [shape=box, style=filled, fontcolor=white, fontname=monospace];"
+            "node [shape=box, style=filled, fontcolor=black, fontname=monospace];"
         );
         writeln!(w, "rankdir=LR;");
         //------------------ Resource nodes ------------------
@@ -153,18 +158,43 @@ impl<'ctx> Frame<'ctx> {
         writeln!(w);*/
 
         //------------------ Tasks ------------------
-        for n in self.graph.node_indices() {
-            let t = self.graph.node_weight(n).unwrap();
-            writeln!(
-                w,
-                "T_{} [shape=diamond, fontcolor=black, label=\"{} (#{})\"];",
-                n.index(),
-                t.name,
-                n.index()
-            );
-        }
-        writeln!(w);
+        // filter tasks by assigned queues
 
+        // present queue subgraph
+        writeln!(w, "subgraph cluster_present {{");
+        writeln!(w, "fontname=monospace;");
+        writeln!(w, "label=\"Present queue\";");
+        writeln!(w, "labeljust=\"r\";");
+        writeln!(
+            w,
+            "node [shape=diamond, fontcolor=black, style=filled, fillcolor=\"brown1\"];"
+        );
+        self.graph
+            .node_indices()
+            .map(|n| (n.index(), self.graph.node_weight(n).unwrap()))
+            .filter(|(_, t)| t.queue.is_some())
+            .for_each(|(i, t)| {
+                writeln!(w, "T_{} [label=\"{} (ID:{})\"];", i, t.name, i);
+            });
+        writeln!(w, "}}");
+
+        // graphics queue subgraph
+        writeln!(w, "subgraph cluster_default {{");
+        writeln!(w, "fontname=monospace;");
+        writeln!(w, "label=\"Default queue\";");
+        writeln!(w, "labeljust=\"r\";");
+        writeln!(
+            w,
+            "node [shape=diamond, fontcolor=black, style=filled, fillcolor=\"goldenrod1\"];"
+        );
+        self.graph
+            .node_indices()
+            .map(|n| (n.index(), self.graph.node_weight(n).unwrap()))
+            .filter(|(_, t)| t.queue.is_none())
+            .for_each(|(i, t)| {
+                writeln!(w, "T_{} [label=\"{} (ID:{})\"];", i, t.name, i);
+            });
+        writeln!(w, "}}");
 
         //------------------ Ordering ------------------
         if let Some(ordering) = ordering {
@@ -181,109 +211,140 @@ impl<'ctx> Frame<'ctx> {
 
             let color_code = match &d.details {
                 &DependencyDetails::Image { id, .. } => {
-                    //let imported = self.images[id.0 as usize].is_imported();
-                    if d.access_bits.intersects(vk::ACCESS_COLOR_ATTACHMENT_READ_BIT | vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT) {
-                        "darkgreen"
-                    } else if d.access_bits.intersects(vk::ACCESS_SHADER_WRITE_BIT) {
-                        "purple4"
+                    let imported = self.images[id.0 as usize].is_imported();
+                    if imported {
+                        if d.access_bits.intersects(
+                            vk::ACCESS_COLOR_ATTACHMENT_READ_BIT
+                                | vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                        ) {
+                            "mediumpurple2"
+                        } else if d.access_bits.intersects(vk::ACCESS_SHADER_WRITE_BIT) {
+                            "mediumpurple1"
+                        } else {
+                            "plum"
+                        }
                     } else {
-                        "midnightblue"
+                        if d.access_bits.intersects(
+                            vk::ACCESS_COLOR_ATTACHMENT_READ_BIT
+                                | vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                        ) {
+                            "lightblue3"
+                        } else if d.access_bits.intersects(vk::ACCESS_SHADER_WRITE_BIT) {
+                            "mediumpurple1"
+                        } else {
+                            "lightcyan1"
+                        }
                     }
                 }
                 &DependencyDetails::Buffer { id, .. } => {
                     if d.access_bits.intersects(vk::ACCESS_SHADER_WRITE_BIT) {
                         // let imported = self.images[id.0 as usize].is_imported();
                         "violetred4"
+                    } else {
+                        "mediumpurple1"
                     }
-                    // written
-                    else {
-                        "red4"
-                    } // read-only
-                }
+                },
+                _ => ""
             };
 
             //------------------ Dependency edge ------------------
-            writeln!(w, "T_{} -> D_{} [constrain=false];", src.index(), e.index());
-            writeln!(w, "D_{} -> T_{};", e.index(), dest.index());
-
-            //------------------ Dependency node ------------------
-            write!(
-                w,
-                "D_{} [shape=none,width=0,height=0,margin=0,label=<<FONT> \
-                 <TABLE BGCOLOR=\"{}\" CELLSPACING=\"0\" ALIGN=\"LEFT\" >",
-                e.index(),
-                color_code
-            );
-
             match &d.details {
-                &DependencyDetails::Image { id, new_layout, usage, ref attachment } => {
-                    let name = self.images[id.0 as usize].name();
-                    if let Some(_) = attachment {
-                        write!(
-                            w,
-                            "<TR><TD ALIGN=\"LEFT\" COLSPAN=\"2\"><B>ATTACHMENT {} (#{})</B></TD></TR>",
-                            name, id.0
-                        );
-                    } else {
-                        write!(
-                            w,
-                            "<TR><TD ALIGN=\"LEFT\" COLSPAN=\"2\"><B>IMAGE {} (#{})</B></TD></TR>",
-                            name, id.0
-                        );
-                    }
-                    write!(
-                        w,
-                        "<TR><TD ALIGN=\"LEFT\">accessBits</TD><TD ALIGN=\"RIGHT\">{}</TD></TR>",
-                        format_access_flags(d.access_bits)
-                    );
-                    write!(
-                        w,
-                        "<TR><TD ALIGN=\"LEFT\">srcStageMask</TD><TD ALIGN=\"RIGHT\">{}</TD></TR>",
-                        format_pipeline_stage_mask(d.src_stage_mask)
-                    );
-                    write!(
-                        w,
-                        "<TR><TD ALIGN=\"LEFT\">dstStageMask</TD><TD ALIGN=\"RIGHT\">{}</TD></TR>",
-                        format_pipeline_stage_mask(d.dst_stage_mask)
-                    );
-                    write!(
-                        w,
-                        "<TR><TD ALIGN=\"LEFT\">newLayout</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>",
-                        new_layout
-                    );
-                    if let Some(ref attachment) = attachment {
-                        write!(
-                            w,
-                            "<TR><TD ALIGN=\"LEFT\">format</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>",
-                            attachment.description.format
-                        );
-                        write!(
-                            w,
-                            "<TR><TD ALIGN=\"LEFT\">loadOp</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>",
-                            attachment.description.load_op
-                        );
-                        write!(
-                            w,
-                            "<TR><TD ALIGN=\"LEFT\">storeOp</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>",
-                            attachment.description.store_op
-                        );
-                        write!(
-                            w,
-                            "<TR><TD ALIGN=\"LEFT\">finalLayout</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>",
-                            attachment.description.final_layout
-                        );
-                    }
+                &DependencyDetails::Sequence => {
+                    // no associated resource
+                    writeln!(w, "T_{} -> T_{} [constrain=false, style=dotted];", src.index(), dest.index());
                 }
-                &DependencyDetails::Buffer { id, .. } => {
-                    let name = self.buffers[id.0 as usize].name();
+                _ => {
+                    // there is an associated resource
+                    writeln!(w, "T_{} -> D_{} [constrain=false];", src.index(), e.index());
+                    writeln!(w, "D_{} -> T_{};", e.index(), dest.index());
                     write!(
                         w,
-                        "<TR><TD ALIGN=\"LEFT\" COLSPAN=\"2\"><B>BUFFER {} (#{})</B></TD></TR>",
-                        name, id.0
+                        "D_{} [shape=none,width=0,height=0,margin=0,label=<<FONT> \
+                <TABLE BORDER=\"0\" CELLBORDER=\"1\" BGCOLOR=\"{}\" CELLSPACING=\"0\" ALIGN=\"LEFT\" >",
+                        e.index(),
+                        color_code
                     );
+
+                    //------------------ Dependency node ------------------
+                    match &d.details {
+                        &DependencyDetails::Image {
+                            id,
+                            new_layout,
+                            usage,
+                            ref attachment,
+                        } => {
+                            let img = &self.images[id.0 as usize];
+                            if let Some(_) = attachment {
+                                write!(
+                                    w,
+                                    "<TR><TD ALIGN=\"LEFT\" COLSPAN=\"2\">Attachment {} (ID:{})<BR/>{}</TD></TR>",
+                                    img.name(), id.0, if img.is_imported() { "Imported" } else { "" }
+                                );
+                            } else {
+                                write!(
+                                    w,
+                                    "<TR><TD ALIGN=\"LEFT\" COLSPAN=\"2\">Image {} (ID:{})<BR/>{}</TD></TR>",
+                                    img.name(), id.0, if img.is_imported() { "Imported" } else { "" }
+                                );
+                            }
+                            if show_details {
+                                write!(
+                                    w,
+                                    "<TR><TD ALIGN=\"LEFT\">accessBits</TD><TD ALIGN=\"RIGHT\">{}</TD></TR>",
+                                    format_access_flags(d.access_bits)
+                                );
+                                write!(
+                                    w,
+                                    "<TR><TD ALIGN=\"LEFT\">srcStageMask</TD><TD ALIGN=\"RIGHT\">{}</TD></TR>",
+                                    format_pipeline_stage_mask(d.src_stage_mask)
+                                );
+                                write!(
+                                    w,
+                                    "<TR><TD ALIGN=\"LEFT\">dstStageMask</TD><TD ALIGN=\"RIGHT\">{}</TD></TR>",
+                                    format_pipeline_stage_mask(d.dst_stage_mask)
+                                );
+                                write!(
+                                    w,
+                                    "<TR><TD ALIGN=\"LEFT\">newLayout</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>",
+                                    new_layout
+                                );
+                                if let Some(ref attachment) = attachment {
+                                    write!(
+                                        w,
+                                        "<TR><TD ALIGN=\"LEFT\">format</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>",
+                                        attachment.description.format
+                                    );
+                                    write!(
+                                        w,
+                                        "<TR><TD ALIGN=\"LEFT\">loadOp</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>",
+                                        attachment.description.load_op
+                                    );
+                                    write!(
+                                        w,
+                                        "<TR><TD ALIGN=\"LEFT\">storeOp</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>",
+                                        attachment.description.store_op
+                                    );
+                                    write!(
+                                        w,
+                                        "<TR><TD ALIGN=\"LEFT\">finalLayout</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>",
+                                        attachment.description.final_layout
+                                    );
+                                }
+                            }
+                        }
+                        &DependencyDetails::Buffer { id, .. } => {
+                            let name = self.buffers[id.0 as usize].name();
+                            write!(
+                                w,
+                                "<TR><TD ALIGN=\"LEFT\" COLSPAN=\"2\">Buffer {} (ID:{})</TD></TR>",
+                                name, id.0
+                            );
+                        },
+                        _ => unreachable!()
+                    }
+                    writeln!(w, "</TABLE></FONT>>];");
                 }
             }
-            writeln!(w, "</TABLE></FONT>>];");
         }
 
         writeln!(w, "}}");

@@ -16,11 +16,11 @@ use config::Config;
 use slotmap::{Key, SlotMap};
 use winit::Window;
 
+use alloc::Allocator;
 use buffer::{BufferDesc, BufferSlice, BufferStorage};
 use frame::TaskId;
 use resource::*;
 use texture::{TextureDesc, TextureObject};
-use alloc::Allocator;
 
 pub type VkEntry1 = ash::Entry<V1_0>;
 pub type VkInstance1 = ash::Instance<V1_0>;
@@ -202,8 +202,6 @@ unsafe fn create_command_pool_for_queue(
     vkd.create_command_pool(&command_pool_create_info, None)
         .unwrap()
 }
-
-pub type FrameNumber = u64;
 
 #[cfg(all(unix, not(target_os = "android"), not(target_os = "macos")))]
 pub(crate) unsafe fn create_surface(
@@ -464,7 +462,45 @@ pub enum PresentationTarget {
 }
 
 //--------------------------------------------------------------------------------------------------
+// SYNC GROUPS
+
+/// A sync group regroups resources that should wait on (one or more) semaphores before being used again.
+/// Resources are assigned SyncGroupIds when they are submitted to the pipeline.
+pub(crate) struct SyncGroup {}
+
+//--------------------------------------------------------------------------------------------------
 // CONTEXT
+
+/// A frame number. Represents a point in time that corresponds to the completion
+/// of a frame.
+/// E.g. a value of 42 represents the instant of completion of frame 42.
+/// The frames start at 1. The value 0 is reserved.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct FrameNumber(u64);
+
+impl FrameNumber {
+    /*pub(crate) const fn none() -> FrameNumber {
+        FrameNumber(0)
+    }*/
+
+    pub(crate) fn is_none(&self) -> bool {
+        self.0 == 0
+    }
+
+    pub(crate) fn new(i: u64) -> FrameNumber {
+        FrameNumber(i)
+    }
+
+    pub(crate) fn next(&self) -> FrameNumber {
+        FrameNumber(self.0 + 1)
+    }
+
+    pub(crate) fn next_n(&self, frames: u64) -> FrameNumber {
+        FrameNumber(self.0 + frames)
+    }
+}
+
+pub const FRAME_NONE: FrameNumber = FrameNumber(0);
 
 /// Main graphics context.
 /// Handles allocation of persistent resources.
@@ -490,6 +526,10 @@ pub struct Context {
     //pub(crate) images: SlotMap<ImageResource>,
     //pub(crate) buffers: SlotMap<ImageResource>,
     pub(crate) allocator: Allocator,
+    /// Last completed frame index.
+    pub(crate) last_retired_frame: FrameNumber,
+    /// Last submitted frame index.
+    pub(crate) last_submitted_frame: FrameNumber,
 }
 
 impl Context {
@@ -635,11 +675,14 @@ impl Context {
                             .unwrap();
                         let swapchain_images = swapchain_images
                             .drain(..)
-                            .map(|img| {
+                            .enumerate()
+                            .map(|(i, img)| {
                                 Image {
-                                    name: "presentation image".to_owned(),        // FIXME
-                                    create_info: unsafe { mem::uninitialized() }, // FIXME HARDER
+                                    name: "presentation image".to_owned(), // FIXME
+                                    create_info: unsafe { mem::zeroed() }, // FIXME HARDER
                                     image: Some(img),
+                                    swapchain_index: Some(i as u32),
+                                    last_used: FRAME_NONE,
                                 }
                             }).collect::<Vec<_>>();
 
@@ -669,7 +712,11 @@ impl Context {
             // create semaphores to sync between the draw and present queues
             let image_available = create_semaphore(&device_and_queues.vkd);
             let render_finished = create_semaphore(&device_and_queues.vkd);
-            let allocator = Allocator::new(&vki, &device_and_queues.vkd, device_and_queues.physical_device);
+            let allocator = Allocator::new(
+                &vki,
+                &device_and_queues.vkd,
+                device_and_queues.physical_device,
+            );
 
             (
                 Context {
@@ -688,7 +735,9 @@ impl Context {
                     max_in_flight_frames: max_in_flight_frames as u8,
                     image_available,
                     render_finished,
-                    allocator
+                    allocator,
+                    last_retired_frame: FRAME_NONE,
+                    last_submitted_frame: FRAME_NONE,
                 },
                 presentations,
             )
