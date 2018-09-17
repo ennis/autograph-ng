@@ -32,7 +32,7 @@ pub mod frame;
 mod resource;
 pub mod texture;
 pub mod window;
-//mod sync;
+mod sync;
 
 // re-export vulkan as gfx2::vk
 pub use ash::vk;
