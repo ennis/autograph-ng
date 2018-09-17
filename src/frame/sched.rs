@@ -32,122 +32,6 @@ struct PartialOrdering {
     right: TaskId,
 }
 
-/*fn extend_subgraph(
-    g: &FrameGraph,
-    prev: &[TaskId],
-    cost: u32,
-    cut: u32,
-) -> Vec<(Vec<TaskId>, PartialOrdering)> {
-    let greedy = true;
-
-    //----------------------------------------------------------------------------------------------
-    // compute the set of all neighbors of the prev subgraph
-    let mut visited = RefCell::new(g.visit_map());
-    prev.iter()
-        .flat_map(|&n| {
-            // all neighbors that were not already visited and that go outwards prev
-            // and have all their incoming edges inside the set
-            g.neighbors_directed(n, Direction::Outgoing)
-                .filter(|&nn| visited.borrow_mut().visit(nn))
-                .filter(|nn| !prev.contains(nn))
-                .filter(|&nn| {
-                    g.neighbors_directed(nn, Direction::Incoming)
-                        .all(|nnn| prev.contains(&nnn))
-                })
-        }).chain(
-            // also consider incoming externals that are not already in the set
-            g.externals(Direction::Incoming)
-                .filter(|nn| !prev.contains(nn)),
-        ).map(|n| {
-            //
-            let i = g.edges_directed(n, Direction::Incoming).count() as u32;
-            let o = g.edges_directed(n, Direction::Outgoing).count() as u32;
-            // new cut = cut - i + o
-            let ncut = cut - i + o;
-            // new cost = cost + ncut
-            let mut sub = prev.to_vec();
-            sub.push(n);
-            (
-                sub,
-                PartialOrdering {
-                    cost: cost + ncut,
-                    cut: ncut,
-                    right: n,
-                },
-            )
-        }).collect()
-
-    //----------------------------------------------------------------------------------------------
-    // greedy version of the above (keep only new subgraphs that minimize the new cut)
-    /*let mut visited = RefCell::new(g.visit_map());
-    let (ncut, next) = prev
-        .iter()
-        .flat_map(|&n| {
-            // all neighbors that were not already visited and that go outwards prev
-            // and have all their incoming edges inside the set
-            g.neighbors_directed(n, Direction::Outgoing)
-                .filter(|&nn| visited.borrow_mut().visit(nn))
-                .filter(|nn| !prev.contains(nn))
-                .filter(|&nn| {
-                    g.neighbors_directed(nn, Direction::Incoming)
-                        .all(|nnn| prev.contains(&nnn))
-                })
-        }).chain(
-            // also consider incoming externals that are not already in the set
-            g.externals(Direction::Incoming)
-                .filter(|nn| !prev.contains(nn)),
-        ).map(|n| {
-            //
-            let i = g.edges_directed(n, Direction::Incoming).count() as u32;
-            let o = g.edges_directed(n, Direction::Outgoing).count() as u32;
-            (cut - i + o, n)
-        }).min_by(|a, b| a.0.cmp(&b.0))
-        .unwrap();
-
-    let mut sub = prev.to_vec();
-    sub.push(next);
-    vec![(ncut, sub)]*/
-
-    //----------------------------------------------------------------------------------------------
-    // greedy version of the above (keep only new subgraphs that minimize the new cut)
-    /*let r = g
-        .node_indices()
-        .filter(|n| !prev.contains(n))
-        .filter(|&n| {
-            g.neighbors_directed(n, Direction::Incoming)
-                .all(|nn| prev.contains(&nn))
-        }).map(|n| {
-            let i = g.edges_directed(n, Direction::Incoming).count() as u32;
-            let o = g.edges_directed(n, Direction::Outgoing).count() as u32;
-            (cut - i + o, n)
-        }).min_by(|a, b| a.0.cmp(&b.0));
-
-    let mut sub = prev.to_vec();
-    if let Some((ncut, next)) = r {
-        sub.push(next);
-        vec![(ncut, sub)]
-    } else {
-        vec![]
-    }*/
-
-    //----------------------------------------------------------------------------------------------
-    // this version is a bit slower
-    /*g.node_indices()
-        .filter(|n| !prev.contains(n))
-        .filter(|&n| {
-            g.neighbors_directed(n, Direction::Incoming)
-                .all(|nn| prev.contains(&nn))
-        }).map(|n| {
-        // we know the cut of prev: quick way
-        // to calculate the cut prev + n
-        let i = g.neighbors_directed(n, Direction::Incoming).count() as u32;
-        let o = g.neighbors_directed(n, Direction::Outgoing).count() as u32;
-        let mut sub = prev.to_vec();
-        sub.push(n);
-        (cut - i + o, sub)
-    }).collect()*/}
-*/
-
 fn subgraph_cut(g: &FrameGraph, sub: &[TaskId]) -> u32 {
     sub.iter().fold(0, |count, &n|
         // all outgoing neighbors that do not end up in the set
@@ -233,6 +117,7 @@ fn minimal_linear_ordering(g: &FrameGraph) -> Vec<TaskId> {
                     // calculate the cost, and update the subset table if
                     // the ordering has a lower cost.
                     // FIXME external resources don't count! since they don't alias memory
+                    // FIXME count unique resources, not edges
                     let i = g.edges_directed(n, Direction::Incoming).count() as u32;
                     let o = g.edges_directed(n, Direction::Outgoing).count() as u32;
                     let ncut = cut - i + o;
@@ -265,19 +150,19 @@ fn minimal_linear_ordering(g: &FrameGraph) -> Vec<TaskId> {
 
     while !sub.is_empty() {
         let ord = t.get(&sub).unwrap();
-        println!("size {} cost {}", sub.len(), ord.cost);
+        //println!("size {} cost {}", sub.len(), ord.cost);
         minimal_ordering.push(ord.right);
         sub.remove_item(&ord.right);
     }
 
     minimal_ordering.reverse();
 
-    println!("scheduling: minimal ordering found:");
+    /*println!("scheduling: minimal ordering found:");
     for n in minimal_ordering.iter() {
         print!("{},", n.index());
     }
     println!();
-    println!();
+    println!();*/
 
     minimal_ordering
 }
@@ -441,7 +326,8 @@ impl<'ctx> Frame<'ctx> {
 //
 // Synchronization of external resources:
 // - issue: can change queues (don't assume that they are all used on the same queue)
-// - can read on a queue, read on the other => will still need a
+// - can read on a queue, read on the other
+// - exit tasks: put a semaphore in the command stream, to be waited on by the entry (import) task
 //
 // Limitation:
 // - cannot sequence (multiple) reads followed by a write!

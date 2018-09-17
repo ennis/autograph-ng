@@ -16,7 +16,7 @@ fn downsample(frame: &mut Frame, input: &ImageRef, aux: &ImageRef) -> ImageRef {
     let mut r_last = None;
     let mut cur_w = w;
     let mut cur_h = h;
-    for i in 0..3 {
+    for i in 0..count {
         let t = frame.create_task("downsample");
         frame.image_sample_dependency(t, r_last.as_ref().unwrap_or(input));
         frame.image_sample_dependency(t, aux);

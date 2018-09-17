@@ -28,6 +28,9 @@ pub trait Resource: Downcast {
 }
 impl_downcast!(Resource);
 
+
+
+
 //--------------------------------------------------------------------------------------------------
 // Buffer
 
@@ -94,6 +97,8 @@ pub struct Image {
     pub(crate) last_used: FrameNumber,
     /// If the image is part of the swapchain, that's its index. Otherwise, None.
     pub(crate) swapchain_index: Option<u32>,
+    /*/// TODO document
+    pub(crate) wait_lists: [Vec<vk::Semaphore>; MAX_FRAMES_IN_FLIGHT];*/
 }
 
 impl Image {

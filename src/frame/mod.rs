@@ -56,6 +56,23 @@ pub(crate) struct Dependency {
     pub(crate) details: DependencyDetails,
 }
 
+impl Dependency
+{
+    pub(crate) fn get_image_id(&self) -> Option<ImageId> {
+        match self.details {
+            DependencyDetails::Image { id , .. } => Some(id),
+            _ => None
+        }
+    }
+
+    pub(crate) fn get_buffer_id(&self) -> Option<BufferId> {
+        match self.details {
+            DependencyDetails::Buffer { id, .. } => Some(id),
+            _ => None
+        }
+    }
+}
+
 pub(crate) struct AttachmentDependencyDetails {
     /// Index of the attachment.
     index: u32,
@@ -308,31 +325,32 @@ impl<'ctx> Frame<'ctx> {
         );
     }
 
+
+    /// Creates a task that has a dependency on all the specified tasks.
+    fn make_sequence_task(&mut self, name: impl Into<String>, tasks: &[TaskId]) -> TaskId
+    {
+        // create the sync task
+        let seq_task = self.create_task(name);
+        // add a sequence dep to all of those
+        for t in tasks.iter() {
+            self.sequence_dependency(*t, seq_task);
+        }
+        seq_task
+    }
+
     /// Waits for all reads to the specified resource to finish,
     /// and returns a virgin handle (no pending reads or writes)
     /// for reading and writing to this resource.
-    pub fn sync_image(&mut self, img: &ImageRef) -> ImageRef
+    pub fn sequence_image(&mut self, img: &ImageRef) -> ImageRef
     {
         // search for all tasks that read from img
-        let tasks = self.graph.edge_references()
-            .filter_map(|e| {
-                let d = e.weight();
-                match d.details {
-                    DependencyDetails::Image { id, .. } if id == img.id => Some(e.target()),
-                    _ => None
-                }
-            }).collect::<Vec<_>>();
-        // create the sync task
-        let sync_task = self.create_task("sync_image");
-        // add a sequence dep to all of those
-        for t in tasks.iter() {
-            self.sequence_dependency(*t, sync_task);
-        }
+        let tasks = self.collect_last_uses_of_image(img.id);
+        let seq_task = self.make_sequence_task("sync", &tasks);
         // now we can return a virgin handle to the resource
         ImageRef {
             id: img.id,
             src_stage_mask: vk::PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,    // FIXME we don't really know, but we can assume that it's one of the read stages
-            task: sync_task,
+            task: seq_task,
             written: Cell::new(false),
             read: Cell::new(false)
         }
@@ -537,6 +555,60 @@ impl<'ctx> Frame<'ctx> {
         }
     }
 
+
+    /// Collects all tasks using this resource but that do not produce another version of it.
+    fn collect_last_uses_of_image(&self, img: ImageId) -> Vec<TaskId>
+    {
+        let uses = self.graph.node_indices()
+            .filter(|n| {
+                // is the resource used in an incoming dependency?
+                let incoming = self.graph.edges_directed(*n, Direction::Incoming)
+                    .any(|e| { e.weight().get_image_id() == Some(img) });
+                // does not appear in any outgoing dependency
+                let outgoing = self.graph.edges_directed(*n, Direction::Outgoing)
+                    .any(|e| { e.weight().get_image_id() == Some(img) });
+
+                incoming && !outgoing
+            }).collect::<Vec<_>>();
+
+        uses
+    }
+
+    /// Collects all tasks using this resource but that do not produce another version of it.
+    fn collect_last_uses_of_buffer(&self, buf: BufferId) -> Vec<TaskId>
+    {
+        let uses = self.graph.node_indices()
+            .filter(|n| {
+                // is the resource used in an incoming dependency?
+                let incoming = self.graph.edges_directed(*n, Direction::Incoming)
+                    .any(|e| { e.weight().get_buffer_id() == Some(buf) });
+                // does not appear in any outgoing dependency
+                let outgoing = self.graph.edges_directed(*n, Direction::Outgoing)
+                    .any(|e| { e.weight().get_buffer_id() == Some(buf) });
+
+                incoming && !outgoing
+            }).collect::<Vec<_>>();
+
+        uses
+    }
+
+    /// Inserts 'exit tasks' for all external resources imported into the graph.
+    fn insert_exit_tasks(&mut self)
+    {
+        // find last uses of each external resource
+        let tasks_to_create = self.images.iter().enumerate().filter(|(_,img)| img.is_imported()).map(|(i,img)| {
+            let i = ImageId(i as u32);
+            (i, self.collect_last_uses_of_image(i))
+        }).collect::<Vec<_>>();
+
+        // add tasks
+        for t in tasks_to_create.iter() {
+            // on which queue?
+            self.make_sequence_task("exit", &t.1);
+        }
+
+    }
+
     fn dump<W: Write>(&self, w: &mut W) {
         // dump resources
         writeln!(w, "--- RESOURCES ---");
@@ -670,6 +742,7 @@ impl<'ctx> Frame<'ctx> {
 
     pub fn submit(mut self) {
         // TODO
+        self.insert_exit_tasks();
         self.dump(&mut stdout());
         let mut dot = File::create("graph.dot").unwrap();
         let ordering = self.schedule();
