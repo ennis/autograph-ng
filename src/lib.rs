@@ -26,13 +26,12 @@ pub mod alloc;
 mod buffer;
 mod buffer_data;
 pub mod context;
-mod fence;
 pub mod format;
 pub mod frame;
 mod resource;
+mod sync;
 pub mod texture;
 pub mod window;
-mod sync;
 
 // re-export vulkan as gfx2::vk
 pub use ash::vk;
@@ -107,6 +106,9 @@ pub use ash::vk;
 //      + expected behavior
 //      - one Rc allocation for each object
 //      - convoluted
+//
+// TODO: introduce wrappers for owned vulkan objects.
+// Idea: do not store a backref to device, but instead panic (drop bomb) when dropped implicitly.
 
 // STEP 0: window and event loop.
 // STEP 1: clear the framebuffer.

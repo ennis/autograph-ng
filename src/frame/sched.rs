@@ -157,13 +157,6 @@ fn minimal_linear_ordering(g: &FrameGraph) -> Vec<TaskId> {
 
     minimal_ordering.reverse();
 
-    /*println!("scheduling: minimal ordering found:");
-    for n in minimal_ordering.iter() {
-        print!("{},", n.index());
-    }
-    println!();
-    println!();*/
-
     minimal_ordering
 }
 
@@ -214,6 +207,21 @@ impl<'ctx> Frame<'ctx> {
         // also, should add the VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT to the allocation.
     }
 
+    fn create_semaphores(&mut self) 
+    {
+        // look for every cross-queue dependency
+        self.graph.edge_references()
+            .filter(|e| {
+                let d = e.weight();
+                let t_src = self.graph.node_weight(e.source()).unwrap();
+                let t_dst = self.graph.node_weight(e.target()).unwrap();
+                t_src.queue.is_some() != t_dst.queue.is_some()      // FIXME ash upstream
+            })
+            .for_each(|e| {
+                debug!("Cross-queue dependency: ID:{} -> ID:{}", e.source().index(), e.target().index());
+            });
+    }
+
     pub fn schedule(&mut self) -> Vec<TaskId> {
         // avoid toposort here, because the algo in petgraph
         // produces an ordering that is not optimal for aliasing.
@@ -222,15 +230,23 @@ impl<'ctx> Frame<'ctx> {
         // This gives (I think) a task order that leads to better memory aliasing.
         // Note: the directed minLA problem is NP-hard, but seems to be manageable
         // in most cases?
+        debug!("begin scheduling");
         let (t_ordering, result) = measure_time(|| minimal_linear_ordering(&self.graph));
 
         let (t_resource_usages, ()) = measure_time(|| {
             self.collect_resource_usages();
         });
 
+        let (t_cross_queue_sync, ()) = measure_time(|| {
+            self.create_semaphores();
+        });
+
         debug!("scheduling report:");
         debug!("linear arrangement ........... {}µs", t_ordering);
         debug!("resource usage collection .... {}µs", t_resource_usages);
+        debug!("cross-queue sync ............. {}µs", t_cross_queue_sync);
+
+        debug!("end scheduling");
 
         result
     }

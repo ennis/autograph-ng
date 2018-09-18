@@ -20,8 +20,8 @@ use alloc::Allocator;
 use buffer::{BufferDesc, BufferSlice, BufferStorage};
 use frame::TaskId;
 use resource::*;
+use sync::{FrameSync, WaitList};
 use texture::{TextureDesc, TextureObject};
-use sync::FrameSync;
 
 pub type VkEntry1 = ash::Entry<V1_0>;
 pub type VkInstance1 = ash::Instance<V1_0>;
@@ -545,6 +545,7 @@ impl Context {
             .unwrap();
         let vk_layers = cfg.get::<Vec<String>>("gfx.vulkan.layers").unwrap();
 
+        // TODO split up the unsafe block
         unsafe {
             let vke = VkEntry1::new().unwrap();
             let app_raw_name = CStr::from_bytes_with_nul(b"Autograph/GFX\0")
@@ -677,10 +678,11 @@ impl Context {
                             .map(|(i, img)| {
                                 Image {
                                     name: "presentation image".to_owned(), // FIXME
-                                    create_info: unsafe { mem::zeroed() }, // FIXME HARDER
+                                    create_info: mem::zeroed(),            // FIXME HARDER
                                     image: Some(img),
                                     swapchain_index: Some(i as u32),
                                     last_used: FRAME_NONE,
+                                    exit_semaphores: WaitList::new()
                                 }
                             }).collect::<Vec<_>>();
 
@@ -734,7 +736,7 @@ impl Context {
                     image_available,
                     render_finished,
                     allocator,
-                    frame_sync: FrameSync::new(FrameNumber(1), max_frames_in_flight as u32)
+                    frame_sync: FrameSync::new(FrameNumber(1), max_frames_in_flight as u32),
                 },
                 presentations,
             )

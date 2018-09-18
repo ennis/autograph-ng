@@ -243,15 +243,20 @@ impl<'ctx> Frame<'ctx> {
                     } else {
                         "mediumpurple1"
                     }
-                },
-                _ => ""
+                }
+                _ => "",
             };
 
             //------------------ Dependency edge ------------------
             match &d.details {
                 &DependencyDetails::Sequence => {
                     // no associated resource
-                    writeln!(w, "T_{} -> T_{} [constrain=false, style=dotted];", src.index(), dest.index());
+                    writeln!(
+                        w,
+                        "T_{} -> T_{} [constrain=false, style=dotted];",
+                        src.index(),
+                        dest.index()
+                    );
                 }
                 _ => {
                     // there is an associated resource
@@ -339,8 +344,8 @@ impl<'ctx> Frame<'ctx> {
                                 "<TR><TD ALIGN=\"LEFT\" COLSPAN=\"2\">Buffer {} (ID:{})</TD></TR>",
                                 name, id.0
                             );
-                        },
-                        _ => unreachable!()
+                        }
+                        _ => unreachable!(),
                     }
                     writeln!(w, "</TABLE></FONT>>];");
                 }
