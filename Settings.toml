@@ -12,7 +12,7 @@ layers=[]
 debug=true
 
 [gfx]
-max_in_flight_frames=1
+max_frames_in_flight=1
 default_upload_buffer_size=4194304
 
 

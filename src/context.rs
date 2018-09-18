@@ -21,6 +21,7 @@ use buffer::{BufferDesc, BufferSlice, BufferStorage};
 use frame::TaskId;
 use resource::*;
 use texture::{TextureDesc, TextureObject};
+use sync::FrameSync;
 
 pub type VkEntry1 = ash::Entry<V1_0>;
 pub type VkInstance1 = ash::Instance<V1_0>;
@@ -476,7 +477,7 @@ pub(crate) struct SyncGroup {}
 /// E.g. a value of 42 represents the instant of completion of frame 42.
 /// The frames start at 1. The value 0 is reserved.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct FrameNumber(u64);
+pub struct FrameNumber(pub(crate) u64);
 
 impl FrameNumber {
     /*pub(crate) const fn none() -> FrameNumber {
@@ -520,16 +521,13 @@ pub struct Context {
     pub(crate) surface_loader: extensions::Surface,
     pub(crate) swapchain_loader: extensions::Swapchain,
     //pub(crate) presentations: SlotMap<PresentationInternal>,
-    pub(crate) max_in_flight_frames: u8,
+    pub(crate) max_frames_in_flight: u32,
     pub(crate) image_available: vk::Semaphore,
     pub(crate) render_finished: vk::Semaphore,
     //pub(crate) images: SlotMap<ImageResource>,
     //pub(crate) buffers: SlotMap<ImageResource>,
     pub(crate) allocator: Allocator,
-    /// Last completed frame index.
-    pub(crate) last_retired_frame: FrameNumber,
-    /// Last submitted frame index.
-    pub(crate) last_submitted_frame: FrameNumber,
+    pub(crate) frame_sync: FrameSync,
 }
 
 impl Context {
@@ -541,7 +539,7 @@ impl Context {
         // Load settings
         let initial_upload_buffer_size =
             cfg.get::<usize>("gfx.default_upload_buffer_size").unwrap();
-        let max_in_flight_frames = cfg.get::<usize>("gfx.max_in_flight_frames").unwrap();
+        let max_frames_in_flight = cfg.get::<usize>("gfx.max_frames_in_flight").unwrap();
         let vk_instance_extensions = cfg
             .get::<Vec<String>>("gfx.vulkan.instance_extensions")
             .unwrap();
@@ -732,12 +730,11 @@ impl Context {
                     present_queue_command_pool: present_pool,
                     surface_loader,
                     swapchain_loader,
-                    max_in_flight_frames: max_in_flight_frames as u8,
+                    max_frames_in_flight: max_frames_in_flight as u32,
                     image_available,
                     render_finished,
                     allocator,
-                    last_retired_frame: FRAME_NONE,
-                    last_submitted_frame: FRAME_NONE,
+                    frame_sync: FrameSync::new(FrameNumber(1), max_frames_in_flight as u32)
                 },
                 presentations,
             )
