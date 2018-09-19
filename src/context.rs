@@ -20,7 +20,7 @@ use alloc::Allocator;
 use buffer::{BufferDesc, BufferSlice, BufferStorage};
 use frame::TaskId;
 use resource::*;
-use sync::{FrameSync, WaitList};
+use sync::{FrameSync, SyncGroup};
 use texture::{TextureDesc, TextureObject};
 
 pub type VkEntry1 = ash::Entry<V1_0>;
@@ -465,9 +465,11 @@ pub enum PresentationTarget {
 //--------------------------------------------------------------------------------------------------
 // SYNC GROUPS
 
+/*
 /// A sync group regroups resources that should wait on (one or more) semaphores before being used again.
 /// Resources are assigned SyncGroupIds when they are submitted to the pipeline.
 pub(crate) struct SyncGroup {}
+*/
 
 //--------------------------------------------------------------------------------------------------
 // CONTEXT
@@ -682,7 +684,7 @@ impl Context {
                                     image: Some(img),
                                     swapchain_index: Some(i as u32),
                                     last_used: FRAME_NONE,
-                                    exit_semaphores: WaitList::new()
+                                    exit_semaphores: SyncGroup::new()
                                 }
                             }).collect::<Vec<_>>();
 

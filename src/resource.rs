@@ -13,7 +13,7 @@ use downcast_rs::Downcast;
 use slotmap::Key;
 
 use context::{FrameNumber, VkDevice1, FRAME_NONE};
-use sync::{FrameSync, WaitList};
+use sync::{FrameSync, SyncGroup};
 
 //--------------------------------------------------------------------------------------------------
 // Resources
@@ -48,7 +48,7 @@ pub struct Buffer {
     /// Last used frame. Can be `never`
     pub(crate) last_used: FrameNumber,
     /// Used for synchronization between frames.
-    pub(crate) exit_semaphores: WaitList<Vec<vk::Semaphore>>,
+    pub(crate) exit_semaphores: SyncGroup<Vec<vk::Semaphore>>,
 }
 
 impl Buffer {
@@ -59,7 +59,7 @@ impl Buffer {
             create_info: create_info.clone(),
             buffer: None,
             last_used: FRAME_NONE,
-            exit_semaphores: WaitList::new(),
+            exit_semaphores: SyncGroup::new(),
         }
     }
 
@@ -117,7 +117,7 @@ pub struct Image {
     /// If the image is part of the swapchain, that's its index. Otherwise, None.
     pub(crate) swapchain_index: Option<u32>,
     /// Used for synchronization between frames.
-    pub(crate) exit_semaphores: WaitList<Vec<vk::Semaphore>>,
+    pub(crate) exit_semaphores: SyncGroup<Vec<vk::Semaphore>>,
 }
 
 impl Image {
@@ -129,7 +129,7 @@ impl Image {
             image: None,
             swapchain_index: None,
             last_used: FRAME_NONE,
-            exit_semaphores: WaitList::new(),
+            exit_semaphores: SyncGroup::new(),
         }
     }
 
@@ -145,7 +145,7 @@ impl Image {
             image: Some(image),
             swapchain_index: Some(swapchain_index),
             last_used: FRAME_NONE,
-            exit_semaphores: WaitList::new(),
+            exit_semaphores: SyncGroup::new(),
         }
     }
 

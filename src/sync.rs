@@ -38,13 +38,13 @@ pub(crate) struct FrameSync {
 
 /// WaitLists are modified through FrameSync.
 #[derive(Debug)]
-pub(crate) struct WaitList<T> {
+pub(crate) struct SyncGroup<T> {
     objects: VecDeque<FrameBoundObject<T>>,
 }
 
-impl<T> WaitList<T> {
-    pub(crate) fn new() -> WaitList<T> {
-        WaitList {
+impl<T> SyncGroup<T> {
+    pub(crate) fn new() -> SyncGroup<T> {
+        SyncGroup {
             objects: VecDeque::new(),
         }
     }

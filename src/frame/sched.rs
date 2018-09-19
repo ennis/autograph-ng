@@ -160,6 +160,35 @@ fn minimal_linear_ordering(g: &FrameGraph) -> Vec<TaskId> {
     minimal_ordering
 }
 
+/// A sequence of tasks belonging to the same queue that can be submitted in the same command buffer.
+pub(crate) struct TaskGroup
+{
+    /// DOC subgraph.
+    tasks: Vec<TaskId>,
+    /// DOC Semaphores to wait.
+    wait_semaphores: Vec<vk::Semaphore>,
+    /// DOC Semaphores to signal.
+    signal_semaphores: Vec<vk::Semaphore>,
+}
+
+type TaskGroupId = u32;
+
+fn create_task_groups_rec(
+    n: TaskId,
+    g: &FrameGraph,
+    current_task_group: &mut TaskGroup,
+    task_groups: &mut Vec<Option<TaskGroup>>) -> TaskGroup
+{
+    // create task group
+    let mut group = TaskGroup {
+        tasks: Vec::new(),
+        wait_semaphores: Vec::new(),
+        signal_semaphores: Vec::new()
+    };
+
+    g.edges_directed(root)
+}
+
 impl<'ctx> Frame<'ctx> {
     fn collect_resource_usages(&mut self) {
         for d in self.graph.edge_references() {
@@ -209,6 +238,7 @@ impl<'ctx> Frame<'ctx> {
 
     fn create_semaphores(&mut self) 
     {
+        let semaphores = Vec::new();
         // look for every cross-queue dependency
         self.graph.edge_references()
             .filter(|e| {
@@ -220,6 +250,13 @@ impl<'ctx> Frame<'ctx> {
             .for_each(|e| {
                 debug!("Cross-queue dependency: ID:{} -> ID:{}", e.source().index(), e.target().index());
             });
+    }
+
+    fn create_task_groups(&mut self) -> Vec<TaskGroup>
+    {
+        // start with a node, assign it to a group
+        // if one edge goes out of the queue, end group.
+        // if one edge joins another group in the same queue, merge current group into the queue.
     }
 
     pub fn schedule(&mut self) -> Vec<TaskId> {
