@@ -7,6 +7,7 @@ use gfx2::frame::*;
 use gfx2::texture::get_texture_mip_map_count;
 use gfx2::vk;
 use gfx2::window::*;
+use gfx2::import::import_graph;
 
 fn downsample(frame: &mut Frame, input: &ImageRef, aux: &ImageRef) -> ImageRef {
     let create_info = frame.get_image_create_info(&input).clone();
@@ -59,6 +60,8 @@ fn main() {
 
             if first {
                 let mut frame = ctx.new_frame();
+                // load from file
+                import_graph("Graph.toml", &mut frame);
                 // initial task
                 let t_init = frame.create_task("init");
                 let r_color_a = frame.create_image_2d((1024, 1024), vk::Format::R16g16b16a16Sfloat);

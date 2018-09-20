@@ -173,7 +173,7 @@ pub(crate) struct TaskGroup
 
 type TaskGroupId = u32;
 
-fn create_task_groups_rec(
+/*fn create_task_groups_rec(
     n: TaskId,
     g: &FrameGraph,
     current_task_group: &mut TaskGroup,
@@ -187,7 +187,14 @@ fn create_task_groups_rec(
     };
 
     g.edges_directed(root)
-}
+}*/
+
+/*
+/// Check if the subgraph extended by the given node is still a valid task group subgraph.
+fn extend_task_group_subgraph(g: &FrameGraph, task_group: &[TaskId], new_tasks: &[TaskId])
+{
+
+}*/
 
 impl<'ctx> Frame<'ctx> {
     fn collect_resource_usages(&mut self) {
@@ -238,7 +245,7 @@ impl<'ctx> Frame<'ctx> {
 
     fn create_semaphores(&mut self) 
     {
-        let semaphores = Vec::new();
+        //let semaphores = Vec::new();
         // look for every cross-queue dependency
         self.graph.edge_references()
             .filter(|e| {
@@ -254,6 +261,7 @@ impl<'ctx> Frame<'ctx> {
 
     fn create_task_groups(&mut self) -> Vec<TaskGroup>
     {
+        unimplemented!()
         // start with a node, assign it to a group
         // if one edge goes out of the queue, end group.
         // if one edge joins another group in the same queue, merge current group into the queue.

@@ -16,10 +16,9 @@ extern crate log;
 extern crate serde;
 extern crate slotmap;
 #[macro_use]
-extern crate serde_json;
+extern crate serde_derive;
 #[macro_use]
 extern crate downcast_rs;
-extern crate boow;
 extern crate time;
 
 pub mod alloc;
@@ -32,6 +31,7 @@ mod resource;
 mod sync;
 pub mod texture;
 pub mod window;
+pub mod import;
 
 // re-export vulkan as gfx2::vk
 pub use ash::vk;

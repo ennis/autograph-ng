@@ -4,7 +4,6 @@ use std::io::{stdout, Write};
 use std::ptr;
 
 use ash::vk;
-use boow::Bow;
 use downcast_rs::Downcast;
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Directed, Direction, Graph};
 

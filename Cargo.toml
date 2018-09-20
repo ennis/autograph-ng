@@ -20,9 +20,8 @@ pretty_env_logger = "*"
 log = "*"
 slotmap = "*"
 serde = "*"
-serde_json = "*"
+serde_derive = "*"
 downcast-rs = "*"
-boow = "*"
 time = "*"
 
 [target.'cfg(windows)'.dependencies]
