@@ -13,7 +13,7 @@ use super::*;
 
 use petgraph::algo::toposort;
 use petgraph::graph::EdgeReference;
-use petgraph::visit::{VisitMap, GraphBase, Visitable};
+use petgraph::visit::{GraphBase, VisitMap, Visitable};
 use time;
 
 pub fn measure_time<R, F: FnOnce() -> R>(f: F) -> (u64, R) {
@@ -187,29 +187,38 @@ type TaskGroupId = u32;
 }*/
 
 /// Outgoing edges of a subgraph.
-fn directed_edges_between<'a>(g: &'a FrameGraph, sub_a: &'a [TaskId], sub_b: &'a [TaskId]) -> impl Iterator<Item=EdgeReference<'a, Dependency>> + 'a
-{
-    sub_a.iter().flat_map(move |&n| { g.edges_directed(n, Direction::Outgoing).filter(move |e| sub_b.contains(&e.target())) })
-}
-
-/// Incoming or outgoing nodes of a subgraph.
-fn subgraph_neighbors<'a>(g: &'a FrameGraph, sub: &'a [TaskId], direction: Direction) -> impl Iterator<Item=TaskId> + 'a
-{
-    //let mut visited = RefCell::new(g.visit_map());
-    let mut a = RefCell::new(0);
-    sub.iter().flat_map(move |&n| {
-        *a.borrow_mut() += 1;
-        //let visited = &mut visited;     // visited moved into inner closure
-        g.neighbors_directed(n, direction).filter(|&nn| *a.borrow() > 0)
+fn directed_edges_between<'a>(
+    g: &'a FrameGraph,
+    sub_a: &'a [TaskId],
+    sub_b: &'a [TaskId],
+) -> impl Iterator<Item = EdgeReference<'a, Dependency>> + 'a {
+    sub_a.iter().flat_map(move |&n| {
+        g.edges_directed(n, Direction::Outgoing)
+            .filter(move |e| sub_b.contains(&e.target()))
     })
 }
 
-fn check_single_entry_graph(g: &FrameGraph, sub_a: &[TaskId], sub_b: &[TaskId]) -> bool
-{
+/// Incoming or outgoing nodes of a subgraph.
+fn subgraph_neighbors<'a>(
+    g: &'a FrameGraph,
+    sub: &'a [TaskId],
+    direction: Direction,
+) -> impl Iterator<Item = TaskId> + 'a {
+    let mut visited = RefCell::new(g.visit_map());
+    //let mut a = RefCell::new(0);
+    sub.iter().flat_map(move |&n| {
+        let visited = &mut visited; // visited moved into inner closure
+        g.neighbors_directed(n, direction)
+            .filter(|&nn| visited.borrow_mut().visit(nn))
+    })
+}
+
+fn check_single_entry_graph(g: &FrameGraph, sub_a: &[TaskId], sub_b: &[TaskId]) -> bool {
     let ta = g.node_weight(*sub_a.first().unwrap()).unwrap();
     let tb = g.node_weight(*sub_b.first().unwrap()).unwrap();
-    if ta.queue.is_some() != tb.queue.is_some() {   // FIXME waiting on ash upstream
-        return false;   // not the same queue, cannot merge
+    if ta.queue.is_some() != tb.queue.is_some() {
+        // FIXME waiting on ash upstream
+        return false; // not the same queue, cannot merge
     }
 
     // the two subsets must be ordered.
@@ -217,10 +226,10 @@ fn check_single_entry_graph(g: &FrameGraph, sub_a: &[TaskId], sub_b: &[TaskId]) 
     let edges_b_to_a = directed_edges_between(g, sub_b, sub_a).count();
 
     let (sub_src, sub_dst) = match (edges_a_to_b, edges_b_to_a) {
-        (0, 0) => return false, // subsets not connected
-        (0, n) => { (sub_b, sub_a) },    // b > a
-        (n, 0) => { (sub_a, sub_b) },    // a < b
-        _ => panic!("subsets are connected but not ordered")       // logic error: subsets must be either not connected or ordered
+        (0, 0) => return false,                               // subsets not connected
+        (0, n) => (sub_b, sub_a),                             // b > a
+        (n, 0) => (sub_a, sub_b),                             // a < b
+        _ => panic!("subsets are connected but not ordered"), // logic error: subsets must be either not connected or ordered
     };
 
     // check the single-entry property of the graph
@@ -230,8 +239,7 @@ fn check_single_entry_graph(g: &FrameGraph, sub_a: &[TaskId], sub_b: &[TaskId]) 
     ok
 }
 
-fn create_task_groups(g: &FrameGraph)
-{
+fn create_task_groups(g: &FrameGraph) {
     //let partition = vec![Vec::new(); g.node_count()];
 
 }
