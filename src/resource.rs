@@ -7,8 +7,8 @@
 
 use std::mem;
 
-use ash::vk;
 use ash::version::DeviceV1_0;
+use ash::vk;
 use downcast_rs::Downcast;
 use slotmap::Key;
 
@@ -70,14 +70,14 @@ impl Buffer {
         frame_sync: &mut FrameSync,
         vkd: &VkDevice1,
     ) {
-            self.exit_semaphores
-                .enqueue(semaphores, frame_sync, |semaphores| {
-                    for sem in semaphores {
-                        unsafe {
-                            vkd.destroy_semaphore(sem, None);
-                        }
+        self.exit_semaphores
+            .enqueue(semaphores, frame_sync, |semaphores| {
+                for sem in semaphores {
+                    unsafe {
+                        vkd.destroy_semaphore(sem, None);
                     }
-                });
+                }
+            });
     }
 
     pub fn create_info(&self) -> &vk::BufferCreateInfo {

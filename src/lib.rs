@@ -27,11 +27,11 @@ mod buffer_data;
 pub mod context;
 pub mod format;
 pub mod frame;
+pub mod import;
 mod resource;
 mod sync;
 pub mod texture;
 pub mod window;
-pub mod import;
 
 // re-export vulkan as gfx2::vk
 pub use ash::vk;

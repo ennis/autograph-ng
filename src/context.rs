@@ -684,7 +684,7 @@ impl Context {
                                     image: Some(img),
                                     swapchain_index: Some(i as u32),
                                     last_used: FRAME_NONE,
-                                    exit_semaphores: SyncGroup::new()
+                                    exit_semaphores: SyncGroup::new(),
                                 }
                             }).collect::<Vec<_>>();
 

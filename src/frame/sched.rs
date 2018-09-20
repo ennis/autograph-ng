@@ -12,7 +12,8 @@ use std::collections::HashMap;
 use super::*;
 
 use petgraph::algo::toposort;
-use petgraph::visit::{VisitMap, Visitable};
+use petgraph::graph::EdgeReference;
+use petgraph::visit::{VisitMap, GraphBase, Visitable};
 use time;
 
 pub fn measure_time<R, F: FnOnce() -> R>(f: F) -> (u64, R) {
@@ -161,8 +162,7 @@ fn minimal_linear_ordering(g: &FrameGraph) -> Vec<TaskId> {
 }
 
 /// A sequence of tasks belonging to the same queue that can be submitted in the same command buffer.
-pub(crate) struct TaskGroup
-{
+pub(crate) struct TaskGroup {
     /// DOC subgraph.
     tasks: Vec<TaskId>,
     /// DOC Semaphores to wait.
@@ -172,6 +172,69 @@ pub(crate) struct TaskGroup
 }
 
 type TaskGroupId = u32;
+
+/*fn subgraph_externals(g: &FrameGraph, sub: &[TaskId], direction: Direction) -> impl Iterator<Item=TaskId>
+{
+    sub.iter().filter(|n| {
+        g.edges_directed(n, direction).all( |e| {
+            let nn = match direction {
+                Direction::Incoming => { e.source() },
+                Direction::Outgoing => { e.target() }
+            };
+            !sub.contains(&nn)
+        })
+    })
+}*/
+
+/// Outgoing edges of a subgraph.
+fn directed_edges_between<'a>(g: &'a FrameGraph, sub_a: &'a [TaskId], sub_b: &'a [TaskId]) -> impl Iterator<Item=EdgeReference<'a, Dependency>> + 'a
+{
+    sub_a.iter().flat_map(move |&n| { g.edges_directed(n, Direction::Outgoing).filter(move |e| sub_b.contains(&e.target())) })
+}
+
+/// Incoming or outgoing nodes of a subgraph.
+fn subgraph_neighbors<'a>(g: &'a FrameGraph, sub: &'a [TaskId], direction: Direction) -> impl Iterator<Item=TaskId> + 'a
+{
+    //let mut visited = RefCell::new(g.visit_map());
+    let mut a = RefCell::new(0);
+    sub.iter().flat_map(move |&n| {
+        *a.borrow_mut() += 1;
+        //let visited = &mut visited;     // visited moved into inner closure
+        g.neighbors_directed(n, direction).filter(|&nn| *a.borrow() > 0)
+    })
+}
+
+fn check_single_entry_graph(g: &FrameGraph, sub_a: &[TaskId], sub_b: &[TaskId]) -> bool
+{
+    let ta = g.node_weight(*sub_a.first().unwrap()).unwrap();
+    let tb = g.node_weight(*sub_b.first().unwrap()).unwrap();
+    if ta.queue.is_some() != tb.queue.is_some() {   // FIXME waiting on ash upstream
+        return false;   // not the same queue, cannot merge
+    }
+
+    // the two subsets must be ordered.
+    let edges_a_to_b = directed_edges_between(g, sub_a, sub_b).count();
+    let edges_b_to_a = directed_edges_between(g, sub_b, sub_a).count();
+
+    let (sub_src, sub_dst) = match (edges_a_to_b, edges_b_to_a) {
+        (0, 0) => return false, // subsets not connected
+        (0, n) => { (sub_b, sub_a) },    // b > a
+        (n, 0) => { (sub_a, sub_b) },    // a < b
+        _ => panic!("subsets are connected but not ordered")       // logic error: subsets must be either not connected or ordered
+    };
+
+    // check the single-entry property of the graph
+    // the externals of sub_dst must be included in sub_src
+    let src_incoming = subgraph_neighbors(g, sub_src, Direction::Incoming).collect::<Vec<_>>();
+    let ok = subgraph_neighbors(g, sub_dst, Direction::Incoming).all(|n| src_incoming.contains(&n));
+    ok
+}
+
+fn create_task_groups(g: &FrameGraph)
+{
+    //let partition = vec![Vec::new(); g.node_count()];
+
+}
 
 /*fn create_task_groups_rec(
     n: TaskId,
@@ -243,24 +306,26 @@ impl<'ctx> Frame<'ctx> {
         // also, should add the VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT to the allocation.
     }
 
-    fn create_semaphores(&mut self) 
-    {
+    fn create_semaphores(&mut self) {
         //let semaphores = Vec::new();
         // look for every cross-queue dependency
-        self.graph.edge_references()
+        self.graph
+            .edge_references()
             .filter(|e| {
                 let d = e.weight();
                 let t_src = self.graph.node_weight(e.source()).unwrap();
                 let t_dst = self.graph.node_weight(e.target()).unwrap();
-                t_src.queue.is_some() != t_dst.queue.is_some()      // FIXME ash upstream
-            })
-            .for_each(|e| {
-                debug!("Cross-queue dependency: ID:{} -> ID:{}", e.source().index(), e.target().index());
+                t_src.queue.is_some() != t_dst.queue.is_some() // FIXME ash upstream
+            }).for_each(|e| {
+                debug!(
+                    "Cross-queue dependency: ID:{} -> ID:{}",
+                    e.source().index(),
+                    e.target().index()
+                );
             });
     }
 
-    fn create_task_groups(&mut self) -> Vec<TaskGroup>
-    {
+    fn create_task_groups(&mut self) -> Vec<TaskGroup> {
         unimplemented!()
         // start with a node, assign it to a group
         // if one edge goes out of the queue, end group.

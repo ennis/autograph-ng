@@ -18,7 +18,10 @@ pub(crate) struct FrameBoundObject<T> {
     obj: T,
 }
 
-impl<T> fmt::Debug for FrameBoundObject<T> where T: fmt::Debug {
+impl<T> fmt::Debug for FrameBoundObject<T>
+where
+    T: fmt::Debug,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         unimplemented!()
     }
@@ -70,12 +73,7 @@ impl<T> SyncGroup<T> {
 
     /// Enqueues an object into a wait list that is bound to the frame currently
     /// being submitted. Does not wait.
-    pub(crate) fn enqueue(
-        &mut self,
-        obj: T,
-        frame_sync: &mut FrameSync,
-        deleter: impl FnMut(T),
-    ) {
+    pub(crate) fn enqueue(&mut self, obj: T, frame_sync: &mut FrameSync, deleter: impl FnMut(T)) {
         /*if let Some(frame) = wait_list.get_last_submitted() {
             assert!(frame < self.current_frame, "already submitted ");
         }*/

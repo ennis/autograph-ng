@@ -1,33 +1,30 @@
 //! Import a graph from a TOML file
-use std::path::Path;
+use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
-use std::collections::HashMap;
+use std::path::Path;
 
 use frame::Frame;
 
-use toml;
-use serde::Deserialize;
 use ash::vk;
+use serde::Deserialize;
+use toml;
 
 #[derive(Debug, Deserialize)]
-struct Image
-{
+struct Image {
     width: toml::Value,
     height: toml::Value,
-    format: String
+    format: String,
 }
 
 #[derive(Debug, Deserialize)]
-struct ColorAttachment
-{
+struct ColorAttachment {
     index: u32,
     id: String,
 }
 
 #[derive(Debug, Deserialize)]
-struct Task
-{
+struct Task {
     #[serde(default)]
     color_attachments: Vec<ColorAttachment>,
     #[serde(default)]
@@ -37,14 +34,12 @@ struct Task
 }
 
 #[derive(Debug, Deserialize)]
-struct PresentTask
-{
+struct PresentTask {
     id: String,
 }
 
 #[derive(Debug, Deserialize)]
-struct Graph
-{
+struct Graph {
     #[serde(default)]
     vars: HashMap<String, toml::Value>,
     #[serde(default)]
@@ -52,11 +47,13 @@ struct Graph
     #[serde(default)]
     tasks: HashMap<String, Task>,
     #[serde(default)]
-    present: Vec<PresentTask>
+    present: Vec<PresentTask>,
 }
 
-fn parse_var<'de, T: Deserialize<'de>>(var: &'de toml::Value, vars: &HashMap<String, toml::Value>) -> T
-{
+fn parse_var<'de, T: Deserialize<'de>>(
+    var: &'de toml::Value,
+    vars: &HashMap<String, toml::Value>,
+) -> T {
     match var {
         toml::Value::String(s) => {
             if let Some('$') = s.chars().next() {
@@ -65,13 +62,12 @@ fn parse_var<'de, T: Deserialize<'de>>(var: &'de toml::Value, vars: &HashMap<Str
             } else {
                 <T as Deserialize>::deserialize(var.clone()).unwrap()
             }
-        },
-        _ => <T as Deserialize>::deserialize(var.clone()).unwrap()
+        }
+        _ => <T as Deserialize>::deserialize(var.clone()).unwrap(),
     }
 }
 
-pub fn import_graph(path: impl AsRef<Path>, frame: &mut Frame)
-{
+pub fn import_graph(path: impl AsRef<Path>, frame: &mut Frame) {
     // open toml file
     let cfg_str = fs::read_to_string(path).unwrap();
     let g = toml::from_str::<Graph>(&cfg_str).unwrap();
@@ -80,7 +76,7 @@ pub fn import_graph(path: impl AsRef<Path>, frame: &mut Frame)
     let mut images = HashMap::new();
 
     // images
-    for (k,v) in g.images.iter() {
+    for (k, v) in g.images.iter() {
         let width = parse_var::<u32>(&v.width, &g.vars);
         let height = parse_var::<u32>(&v.width, &g.vars);
         let img = frame.create_image_2d((width, height), vk::Format::R16g16b16a16Sfloat);
@@ -89,12 +85,14 @@ pub fn import_graph(path: impl AsRef<Path>, frame: &mut Frame)
     }
 
     // tasks
-    for (k,v) in g.tasks.iter() {
+    for (k, v) in g.tasks.iter() {
         let t = frame.create_task(k.clone());
         // color attachments
         for color_attachment in v.color_attachments.iter() {
             let out = {
-                let a = images.get(&color_attachment.id).expect(&format!("dependency not found: {}", color_attachment.id));
+                let a = images
+                    .get(&color_attachment.id)
+                    .expect(&format!("dependency not found: {}", color_attachment.id));
                 frame.color_attachment_dependency(t, color_attachment.index, a)
                 // drop borrow of images
             };
@@ -108,8 +106,6 @@ pub fn import_graph(path: impl AsRef<Path>, frame: &mut Frame)
                 frame.image_sample_dependency(t, a)
                 // drop borrow of images
             };
-            //let res_name = color_attachment.id.split('@').next().unwrap();
-            //images.insert(format!("{}@{}", res_name, k), out);
         }
     }
 
@@ -118,5 +114,4 @@ pub fn import_graph(path: impl AsRef<Path>, frame: &mut Frame)
         let a = images.get(&present.id).expect("dependency not found");
         frame.present(a);
     }
-
 }

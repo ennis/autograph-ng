@@ -4,10 +4,10 @@ extern crate gfx2;
 use std::env;
 
 use gfx2::frame::*;
+use gfx2::import::import_graph;
 use gfx2::texture::get_texture_mip_map_count;
 use gfx2::vk;
 use gfx2::window::*;
-use gfx2::import::import_graph;
 
 fn downsample(frame: &mut Frame, input: &ImageRef, aux: &ImageRef) -> ImageRef {
     let create_info = frame.get_image_create_info(&input).clone();
@@ -20,7 +20,7 @@ fn downsample(frame: &mut Frame, input: &ImageRef, aux: &ImageRef) -> ImageRef {
     for i in 0..count {
         let t = frame.create_task("downsample");
         frame.image_sample_dependency(t, r_last.as_ref().unwrap_or(input));
-        frame.image_sample_dependency(t, aux);
+        //frame.image_sample_dependency(t, aux);
         let r_target = frame.create_image_2d((cur_w, cur_h), vk::Format::R16g16b16a16Sfloat);
         r_last = Some(frame.color_attachment_dependency(t, 0, &r_target));
 
@@ -61,7 +61,7 @@ fn main() {
             if first {
                 let mut frame = ctx.new_frame();
                 // load from file
-                import_graph("Graph.toml", &mut frame);
+                //import_graph("Graph.toml", &mut frame);
                 // initial task
                 let t_init = frame.create_task("init");
                 let r_color_a = frame.create_image_2d((1024, 1024), vk::Format::R16g16b16a16Sfloat);
