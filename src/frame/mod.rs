@@ -28,7 +28,7 @@ pub(crate) struct Task {
     pub(crate) name: String,
     /// On which queue this task is going to execute.
     /// If `None`, the task does not care.
-    pub(crate) queue: Option<vk::Queue>,
+    pub(crate) queue: u32,
     /*/// List of semaphores to wait for before executing the task.
     pub(crate) wait_semaphores: Vec<vk::Semaphore>,
     /// List of semaphores to signal after executing the task.
@@ -36,7 +36,7 @@ pub(crate) struct Task {
 }
 
 impl Task {
-    fn new<S: Into<String>>(name: S, queue: Option<vk::Queue>) -> Task {
+    fn new<S: Into<String>>(name: S, queue: u32) -> Task {
         Task {
             name: name.into(),
             queue,
@@ -272,7 +272,7 @@ impl<'ctx> Frame<'ctx> {
             }
         };*/
         let queue = self.context.present_queue;
-        let task = self.create_task_on_queue("present", queue);
+        let task = self.create_task_on_queue("present", 1);
         // add a dependency on the image
         self.image_present_dependency(task, img);
         task
@@ -282,7 +282,7 @@ impl<'ctx> Frame<'ctx> {
     /// Returns the ID to the newly created task.
     pub fn create_task<S: Into<String>>(&mut self, name: S) -> TaskId {
         /// Don't care about the queue.
-        self.graph.add_node(Task::new(name, None))
+        self.graph.add_node(Task::new(name, 0))
     }
 
     /// Creates a new task that will execute on the specified queue.
@@ -290,10 +290,10 @@ impl<'ctx> Frame<'ctx> {
     pub(crate) fn create_task_on_queue<S: Into<String>>(
         &mut self,
         name: S,
-        queue: vk::Queue,
+        queue: u32,
     ) -> TaskId {
         /// Don't care about the queue.
-        self.graph.add_node(Task::new(name, Some(queue)))
+        self.graph.add_node(Task::new(name, queue))
     }
 
     /// Updates the data contained in a texture. This creates a task in the graph.

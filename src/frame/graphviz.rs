@@ -172,7 +172,7 @@ impl<'ctx> Frame<'ctx> {
         self.graph
             .node_indices()
             .map(|n| (n.index(), self.graph.node_weight(n).unwrap()))
-            .filter(|(_, t)| t.queue.is_some())
+            .filter(|(_, t)| t.queue == 1)
             .for_each(|(i, t)| {
                 writeln!(w, "T_{} [label=\"{} (ID:{})\"];", i, t.name, i);
             });
@@ -190,7 +190,7 @@ impl<'ctx> Frame<'ctx> {
         self.graph
             .node_indices()
             .map(|n| (n.index(), self.graph.node_weight(n).unwrap()))
-            .filter(|(_, t)| t.queue.is_none())
+            .filter(|(_, t)| t.queue == 0)
             .for_each(|(i, t)| {
                 writeln!(w, "T_{} [label=\"{} (ID:{})\"];", i, t.name, i);
             });

@@ -11,8 +11,8 @@ use std::collections::HashMap;
 
 use super::*;
 
-use petgraph::algo::toposort;
-use petgraph::graph::EdgeReference;
+use petgraph::algo::{toposort, has_path_connecting};
+use petgraph::graph::{EdgeReference, EdgeIndex};
 use petgraph::visit::{GraphBase, VisitMap, Visitable};
 use time;
 
@@ -186,7 +186,7 @@ type TaskGroupId = u32;
     })
 }*/
 
-/// Outgoing edges of a subgraph.
+/*/// Outgoing edges of a subgraph.
 fn directed_edges_between<'a>(
     g: &'a FrameGraph,
     sub_a: &'a [TaskId],
@@ -216,7 +216,7 @@ fn subgraph_neighbors<'a>(
 fn check_single_entry_graph(g: &FrameGraph, sub_a: &[TaskId], sub_b: &[TaskId]) -> bool {
     let ta = g.node_weight(*sub_a.first().unwrap()).unwrap();
     let tb = g.node_weight(*sub_b.first().unwrap()).unwrap();
-    if ta.queue.is_some() != tb.queue.is_some() {
+    if ta.queue != tb.queue {
         // FIXME waiting on ash upstream
         return false; // not the same queue, cannot merge
     }
@@ -237,7 +237,71 @@ fn check_single_entry_graph(g: &FrameGraph, sub_a: &[TaskId], sub_b: &[TaskId]) 
     let src_incoming = subgraph_neighbors(g, sub_src, Direction::Incoming).collect::<Vec<_>>();
     let ok = subgraph_neighbors(g, sub_dst, Direction::Incoming).all(|n| src_incoming.contains(&n));
     ok
+}*/
+
+/// Finds cross-queue synchronization edges and filter the redundant ones.
+fn find_cross_queue_sync_edges(g: &FrameGraph, ordering: &[TaskId]) -> Vec<EdgeIndex<u32>>
+{
+    let mut syncs = g.edge_references().filter_map(|e| {
+        let src = g.node_weight(e.source()).unwrap();
+        let dst = g.node_weight(e.target()).unwrap();
+        if src.queue != dst.queue {
+            Some(e.id())
+        } else {
+            None
+        }
+    }).collect::<Vec<_>>();
+
+    // remove redundant sync edges.
+    debug!("sync edges before simplification:");
+    for &s in syncs.iter() {
+        let (a, b) = g.edge_endpoints(s).unwrap();
+        debug!("{} -> {}", a.index(), b.index());
+    }
+
+    for i in 0..syncs.len() {
+        let remove = {
+            let e_b = syncs[i];
+            syncs.iter().enumerate().filter(|(j, _)| *j != i).any(|(j, &e_a)| {
+                let (a_src, a_dst) = g.edge_endpoints(e_a).unwrap();
+                let (b_src, b_dst) = g.edge_endpoints(e_b).unwrap();
+                has_path_connecting(g, b_src, a_src, None) && has_path_connecting(g, a_dst, b_dst, None)
+            })
+        };
+
+        if remove {
+            syncs.remove(i);
+        }
+    }
+
+    debug!("sync edges after simplification:");
+    for &s in syncs.iter() {
+        let (a, b) = g.edge_endpoints(s).unwrap();
+        debug!("{} -> {}", a.index(), b.index());
+    }
+
+
+    // per-queue task groups
+    let mut queue_task_groups = vec![Vec::new(); 3];    // FIXME more than 3 queues.
+    let mut queue_entry_exit = vec![true; 3];
+
+    for &t in ordering.iter() {
+        let queue_index = g.node_weight(t).unwrap().queue;
+        let mut queue_entry = false;
+        let mut queue_exit = false;
+        for &s in syncs.iter() {
+            let (a, b) = g.edge_endpoints(s).unwrap();
+            if a == t { queue_exit = true; }
+            if b == t { queue_entry = true; }
+        }
+
+        match 
+
+    }
+
+    syncs
 }
+
 
 fn create_task_groups(g: &FrameGraph) {
     //let partition = vec![Vec::new(); g.node_count()];
@@ -314,7 +378,7 @@ impl<'ctx> Frame<'ctx> {
         // also, should add the VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT to the allocation.
     }
 
-    fn create_semaphores(&mut self) {
+    /*fn create_semaphores(&mut self) {
         //let semaphores = Vec::new();
         // look for every cross-queue dependency
         self.graph
@@ -331,7 +395,7 @@ impl<'ctx> Frame<'ctx> {
                     e.target().index()
                 );
             });
-    }
+    }*/
 
     fn create_task_groups(&mut self) -> Vec<TaskGroup> {
         unimplemented!()
@@ -356,7 +420,7 @@ impl<'ctx> Frame<'ctx> {
         });
 
         let (t_cross_queue_sync, ()) = measure_time(|| {
-            self.create_semaphores();
+            find_cross_queue_sync_edges(&self.graph);
         });
 
         debug!("scheduling report:");
