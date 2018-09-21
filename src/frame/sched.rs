@@ -295,7 +295,9 @@ fn find_cross_queue_sync_edges(g: &FrameGraph, ordering: &[TaskId]) -> Vec<EdgeI
             if b == t { queue_entry = true; }
         }
 
-        match 
+        match (queue_entry_exit[queue_index], queue_entry, queue_exit) {
+
+        }
 
     }
 
