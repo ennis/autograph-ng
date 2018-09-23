@@ -1,9 +1,8 @@
 //! Context creation
 //! A `Context` wraps a vulkan instance, device, and swapchain.
-use std::cell::Cell;
 use std::ffi::{CStr, CString};
 use std::mem;
-use std::os::raw::{c_char, c_void};
+use std::os::raw::c_char;
 use std::ptr;
 use std::rc::Rc;
 use std::u32;
@@ -17,7 +16,6 @@ use slotmap::{Key, SlotMap};
 use winit::Window;
 
 use alloc::Allocator;
-use buffer::{BufferDesc, BufferSlice, BufferStorage};
 use frame::TaskId;
 use resource::*;
 use sync::{FrameSync, SyncGroup};

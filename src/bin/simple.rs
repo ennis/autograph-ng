@@ -5,25 +5,29 @@ use std::env;
 
 use gfx2::frame::*;
 use gfx2::import::import_graph;
+use gfx2::resource::*;
 use gfx2::texture::get_texture_mip_map_count;
 use gfx2::vk;
 use gfx2::window::*;
 
+//--------------------------------------------------------------------------------------------------
 fn downsample(frame: &mut Frame, input: &ImageRef, aux: &ImageRef) -> ImageRef {
-    let create_info = frame.get_image_create_info(&input).clone();
-    let (w, h) = (create_info.extent.width, create_info.extent.height);
+    let (w, h, d) = frame.get_image_dimensions(input);
     let count = get_texture_mip_map_count(w, h);
 
     let mut r_last = None;
     let mut cur_w = w;
     let mut cur_h = h;
     for i in 0..count {
-        let t = frame.create_task("downsample");
-        frame.image_sample_dependency(t, r_last.as_ref().unwrap_or(input));
-        //frame.image_sample_dependency(t, aux);
-        let r_target = frame.create_image_2d((cur_w, cur_h), vk::Format::R16g16b16a16Sfloat);
-        r_last = Some(frame.color_attachment_dependency(t, 0, &r_target));
-
+        let (t, r_target) = frame.create_graphics_task("downsample", |t| {
+            t.sample_image(r_last.as_ref().unwrap_or(input));
+            t.create_attachment(
+                AttachmentIndex::Color(0),
+                (cur_w, cur_h),
+                vk::Format::R16g16b16a16Sfloat,
+            )
+        });
+        r_last = Some(r_target);
         cur_w /= 2;
         cur_h /= 2;
     }
@@ -31,6 +35,106 @@ fn downsample(frame: &mut Frame, input: &ImageRef, aux: &ImageRef) -> ImageRef {
     r_last.unwrap()
 }
 
+//--------------------------------------------------------------------------------------------------
+fn test_frame_0<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx mut Image) {
+    let (t01, r01) = frame.create_task_on_queue("T01", TaskType::Graphics, 0, |t| {
+        t.create_attachment(
+            AttachmentIndex::Color(0),
+            (1024, 1024),
+            vk::Format::R16g16b16a16Sfloat,
+        )
+    });
+
+    let (t02, r02) = frame.create_task_on_queue("T02", TaskType::Graphics, 0, |t| {
+        t.sample_image(&r01);
+        t.create_attachment(
+            AttachmentIndex::Color(0),
+            (1024, 1024),
+            vk::Format::R16g16b16a16Sfloat,
+        )
+    });
+
+    let (t11, r11) = frame.create_task_on_queue("T11", TaskType::Graphics, 1, |t| {
+        t.sample_image(&r02);
+        t.create_attachment(
+            AttachmentIndex::Color(0),
+            (1024, 1024),
+            vk::Format::R16g16b16a16Sfloat,
+        )
+    });
+
+    let (t12, r12) = frame.create_task_on_queue("T12", TaskType::Compute, 1, |t| {
+        t.sample_image(&r11);
+        t.create_attachment(
+            AttachmentIndex::Color(0),
+            (1024, 1024),
+            vk::Format::R16g16b16a16Sfloat,
+        )
+    });
+
+    let (t13, mut r13) = frame.create_task_on_queue("T13", TaskType::Compute, 1, |t| {
+        t.sample_image(&r02);
+        t.sample_image(&r11);
+        t.sample_image(&r12);
+        t.create_attachment(
+            AttachmentIndex::Color(0),
+            (1024, 1024),
+            vk::Format::R16g16b16a16Sfloat,
+        )
+    });
+
+    let (t03, mut r03) = frame.create_task_on_queue("T03", TaskType::Graphics, 0, |t| {
+        t.sample_image(&r13);
+        t.create_attachment(
+            AttachmentIndex::Color(0),
+            (1024, 1024),
+            vk::Format::R16g16b16a16Sfloat,
+        )
+    });
+
+    let (t04, mut r04) = frame.create_task_on_queue("T04", TaskType::Graphics, 0, |t| {
+        t.sample_image(&r03);
+        t.sample_image(&r12);
+        t.create_attachment(
+            AttachmentIndex::Color(0),
+            (1024, 1024),
+            vk::Format::R16g16b16a16Sfloat,
+        )
+    });
+
+    let t05 = frame.create_task_on_queue("T05", TaskType::Graphics, 0, |t| {
+        t.sample_image(&r04);
+    });
+
+    let (t21, mut r21) = frame.create_task_on_queue("T21", TaskType::Present, 2, |t| {
+        t.sample_image(&r12);
+        t.create_attachment(
+            AttachmentIndex::Color(0),
+            (1024, 1024),
+            vk::Format::R16g16b16a16Sfloat,
+        )
+    });
+
+    let (t14, mut r14) = frame.create_task_on_queue("T14", TaskType::Compute, 1, |t| {
+        t.sample_image(&r12);
+        t.sample_image(&r04);
+        t.sample_image(&r21);
+        t.create_attachment(
+            AttachmentIndex::Color(0),
+            (1024, 1024),
+            vk::Format::R16g16b16a16Sfloat,
+        )
+    });
+
+    let mut r_output = frame.import_image(persistent);
+    let t22 = frame.create_task_on_queue("T22", TaskType::Present, 2, |t| {
+        t.sample_image(&r12);
+        t.sample_image(&r14);
+        t.attachment(AttachmentIndex::Color(0), &mut r_output);
+    });
+}
+
+//--------------------------------------------------------------------------------------------------
 fn main() {
     env::set_current_dir(env!("CARGO_MANIFEST_DIR"));
 
@@ -60,32 +164,7 @@ fn main() {
 
             if first {
                 let mut frame = ctx.new_frame();
-                // load from file
-                //import_graph("Graph.toml", &mut frame);
-                // initial task
-                let t_init = frame.create_task("init");
-                let r_color_a = frame.create_image_2d((1024, 1024), vk::Format::R16g16b16a16Sfloat);
-                let r_color_b = frame.create_image_2d((1024, 1024), vk::Format::R16g16b16a16Sfloat);
-                let r_aux = frame.create_image_2d((1024, 1024), vk::Format::R16g16b16a16Sfloat);
-                // render to target
-                let t_render = frame.create_task("render");
-                let r_color_a = frame.color_attachment_dependency(t_render, 0, &r_color_a);
-                let r_color_b = frame.color_attachment_dependency(t_render, 1, &r_color_b);
-                let r_aux = frame.color_attachment_dependency(t_render, 2, &r_aux);
-                // downsample one
-                let r_color_c = downsample(&mut frame, &r_color_b, &r_aux);
-                // post-process
-                let t_postproc = frame.create_task("postproc");
-                frame.image_sample_dependency(t_postproc, &r_color_a);
-                frame.image_sample_dependency(t_postproc, &r_color_b);
-                frame.image_sample_dependency(t_postproc, &r_color_c);
-                let r_output = frame.import_image(&persistent_img);
-                // join on all the reads of r_aux, because we are going to write to it.
-                //let r_aux = frame.sync_image(&r_aux);
-                let r_output = frame.color_attachment_dependency(t_postproc, 0, &r_output);
-                //let r_aux = frame.color_attachment_dependency(t_postproc, 1, &r_aux);
-                // present
-                frame.present(&r_output);
+                test_frame_0(&mut frame, &mut persistent_img);
                 frame.submit();
                 first = false;
             }

@@ -84,6 +84,10 @@ impl Buffer {
         &self.create_info
     }
 
+    pub fn size(&self) -> vk::DeviceSize {
+        self.create_info.size
+    }
+
     pub(crate) fn is_allocated(&self) -> bool {
         self.buffer.is_some()
     }
@@ -164,6 +168,20 @@ impl Image {
                     }
                 }
             });
+    }
+
+    /// Returns the dimensions of the image.
+    pub fn dimensions(&self) -> (u32, u32, u32) {
+        (
+            self.create_info.extent.width,
+            self.create_info.extent.height,
+            self.create_info.extent.depth,
+        )
+    }
+
+    /// Returns the format of the image.
+    pub fn format(&self) -> vk::Format {
+        self.create_info.format
     }
 
     pub fn create_info(&self) -> &vk::ImageCreateInfo {

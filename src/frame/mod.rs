@@ -1,12 +1,14 @@
 use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::fs::File;
 use std::io::{stdout, Write};
+use std::mem;
 use std::ptr;
 
 use ash::vk;
 use downcast_rs::Downcast;
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Directed, Direction, Graph};
 
+pub use self::sched::ScheduleOptimizationProfile;
 use context::Context;
 use resource::*;
 
@@ -21,32 +23,62 @@ pub struct ImageId(pub(crate) u32);
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct BufferId(pub(crate) u32);
 
+/// Type of task.
+#[derive(Copy, Clone, Debug)]
+pub enum TaskType {
+    /// A graphics task: must execute in a render pass, and has attachments.
+    Graphics,
+    /// A compute operation.
+    Compute,
+    /// A transfer operation (memory copy).
+    Transfer,
+    /// A present operation to a surface.
+    Present,
+    /// A ray-tracing task.
+    RayTracing,
+    /// Misc
+    Other,
+}
+
 /// Represents an operation in the frame graph.
 #[derive(Debug)]
 pub(crate) struct Task {
     /// Task name.
     pub(crate) name: String,
+    /// Type of workload
+    pub(crate) task_type: TaskType,
     /// On which queue this task is going to execute.
     /// If `None`, the task does not care.
     pub(crate) queue: u32,
-    /*/// List of semaphores to wait for before executing the task.
-    pub(crate) wait_semaphores: Vec<vk::Semaphore>,
-    /// List of semaphores to signal after executing the task.
-    pub(crate) signal_semaphores: Vec<vk::Semaphore>*/
+    /// List of "self-dependencies" on resources created for this task.
+    pub(crate) self_dependencies: Vec<Dependency>,
 }
 
 impl Task {
-    fn new<S: Into<String>>(name: S, queue: u32) -> Task {
+    fn new(name: impl Into<String>, task_type: TaskType, queue: u32) -> Task {
         Task {
             name: name.into(),
             queue,
-            /*wait_semaphores: Vec::new(),
-            signal_semaphores: Vec::new()*/
+            self_dependencies: Vec::new(),
+            task_type,
         }
+    }
+
+    /* fn new_compute(name: impl Into<String>, queue: u32) -> Task {
+        Task {
+            name: name.into(),
+            queue,
+            self_dependencies: Vec::new()
+        }
+    }*/
+
+    fn add_self_dependency(&mut self, dep: Dependency) {
+        self.self_dependencies.push(dep);
     }
 }
 
 /// Represents a dependency between tasks in the frame graph.
+#[derive(Debug)]
 pub(crate) struct Dependency {
     /// How this resource is accessed by the dependent task.
     /// See vulkan docs for all possible flags.
@@ -59,6 +91,9 @@ pub(crate) struct Dependency {
     pub(crate) dst_stage_mask: vk::PipelineStageFlags,
     /// Details of the dependency specific to the usage and the type of resource.
     pub(crate) details: DependencyDetails,
+    /// Estimated latency of the dependency (time for the resource to be usable by target once source is submitted).
+    /// 0 for dummy nodes.
+    pub(crate) latency: u32,
 }
 
 impl Dependency {
@@ -77,16 +112,31 @@ impl Dependency {
     }
 }
 
+/// DOCUMENT
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum AttachmentIndex {
+    Color(u32),
+    DepthStencil,
+}
+
+/// DOCUMENT
+#[derive(Debug)]
 pub(crate) struct AttachmentDependencyDetails {
     /// Index of the attachment.
-    index: u32,
-    /// Attachment description. note that some of the properties inside are filled
-    /// During the scheduling passes.
-    description: vk::AttachmentDescription,
+    index: AttachmentIndex,
+    /// DOCUMENT
+    load_op: vk::AttachmentLoadOp,
+    /// DOCUMENT
+    store_op: vk::AttachmentStoreOp,
+    /// DOCUMENT
+    stencil_load_op: vk::AttachmentLoadOp,
+    /// DOCUMENT
+    stencil_store_op: vk::AttachmentStoreOp,
 }
 
 /// Details of a dependency that is specific to the usage of the resource, and its
 /// type.
+#[derive(Debug)]
 pub(crate) enum DependencyDetails {
     /// Image dependency: either a sampled image or a storage image.
     /// This produces the image barrier.
@@ -118,7 +168,8 @@ type FrameGraph = Graph<Task, Dependency, Directed, u32>;
 
 //--------------------------------------------------------------------------------------------------
 
-/// Represents one output of a task. This is used as part of the API to build dependencies between nodes.
+/// Represents one output of a task.
+/// This is used as part of the API to build dependencies between nodes.
 pub struct TaskOutputRef<T> {
     /// ID of the resource in the frame resource table.
     id: T,
@@ -132,6 +183,8 @@ pub struct TaskOutputRef<T> {
     /// Whether this resource has already been set as a write dependency.
     /// Prevents all subsequent reads and writes.
     written: Cell<bool>,
+    /// Estimated time for the resource to be ready (can vary between different usages).
+    latency: u32,
 }
 
 impl<T> TaskOutputRef<T> {
@@ -157,11 +210,28 @@ pub type BufferRef = TaskOutputRef<BufferId>;
 //--------------------------------------------------------------------------------------------------
 
 pub(crate) struct ImageDesc {
-    pub(crate) create_info: vk::ImageCreateInfo,
+    pub(crate) flags: vk::ImageCreateFlags,
+    pub(crate) image_type: vk::ImageType,
+    pub(crate) format: vk::Format,
+    pub(crate) extent: vk::Extent3D,
+    pub(crate) mip_levels: u32,
+    pub(crate) array_layers: u32,
+    pub(crate) samples: vk::SampleCountFlags,
+    pub(crate) tiling: vk::ImageTiling,
+    pub(crate) usage: vk::ImageUsageFlags, // inferred
+                                           //pub(crate) sharing_mode: SharingMode,
+                                           //pub(crate) queue_family_index_count: uint32_t,    // inferred
+                                           //pub(crate) p_queue_family_indices: *const uint32_t,
+                                           //pub(crate) initial_layout: ImageLayout,   // inferred
 }
 
 pub(crate) struct BufferDesc {
-    pub(crate) create_info: vk::BufferCreateInfo,
+    pub(crate) flags: vk::BufferCreateFlags,
+    pub(crate) size: vk::DeviceSize,
+    pub(crate) usage: vk::BufferUsageFlags,
+    //pub(crate) sharing_mode: vk::SharingMode,
+    //pub(crate) queue_family_index_count: uint32_t,
+    //pub(crate) p_queue_family_indices: *const uint32_t,
 }
 
 /// A resource (image or buffer) used in a frame.
@@ -208,23 +278,36 @@ type ImageFrameResource<'imp> = FrameResource<'imp, Image, ImageDesc>;
 type BufferFrameResource<'imp> = FrameResource<'imp, Buffer, BufferDesc>;
 
 impl<'imp> ImageFrameResource<'imp> {
-    pub fn get_create_info(&self) -> &vk::ImageCreateInfo {
+    pub fn dimensions(&self) -> (u32, u32, u32) {
         match self {
-            FrameResource::Imported { resource } => resource.create_info(),
+            FrameResource::Imported { resource } => resource.dimensions(),
             FrameResource::Transient {
                 ref description, ..
-            } => &description.create_info,
+            } => (
+                description.extent.width,
+                description.extent.height,
+                description.extent.depth,
+            ),
+        }
+    }
+
+    pub fn format(&self) -> vk::Format {
+        match self {
+            FrameResource::Imported { resource } => resource.format(),
+            FrameResource::Transient {
+                ref description, ..
+            } => description.format,
         }
     }
 }
 
 impl<'imp> BufferFrameResource<'imp> {
-    pub fn get_create_info(&self) -> &vk::BufferCreateInfo {
+    pub fn size(&self) -> vk::DeviceSize {
         match self {
-            FrameResource::Imported { resource } => resource.create_info(),
+            FrameResource::Imported { resource } => resource.size(),
             FrameResource::Transient {
                 ref description, ..
-            } => &description.create_info,
+            } => description.size,
         }
     }
 }
@@ -240,6 +323,160 @@ pub struct Frame<'ctx> {
     pub(crate) images: Vec<ImageFrameResource<'ctx>>,
     /// Table of buffers used in this frame.
     pub(crate) buffers: Vec<BufferFrameResource<'ctx>>,
+}
+
+/// Task builder.
+pub struct TaskBuilder<'frame, 'ctx: 'frame> {
+    frame: &'frame mut Frame<'ctx>,
+    task: TaskId,
+}
+
+impl<'frame, 'ctx: 'frame> TaskBuilder<'frame, 'ctx> {
+    fn get_task_mut(&mut self) -> &mut Task {
+        self.frame.graph.node_weight_mut(self.task).unwrap()
+    }
+
+    /// Adds the specified as an image sample dependency on the task.
+    pub fn sample_image(&mut self, img: &ImageRef) {
+        // increase read count
+        img.set_read();
+        // insert dependency into the graph
+        self.frame.graph.add_edge(
+            img.task,
+            self.task,
+            Dependency {
+                access_bits: vk::ACCESS_SHADER_READ_BIT,
+                src_stage_mask: img.src_stage_mask,
+                dst_stage_mask: vk::PIPELINE_STAGE_VERTEX_SHADER_BIT,
+                details: DependencyDetails::Image {
+                    id: img.id,
+                    // transfer to layout suited to shader access
+                    new_layout: vk::ImageLayout::ShaderReadOnlyOptimal,
+                    usage: vk::IMAGE_USAGE_SAMPLED_BIT,
+                    attachment: None,
+                },
+                latency: img.latency,
+            },
+        );
+    }
+
+    /// Adds the specified as a color attachment dependency on the task.
+    pub fn attachment(&mut self, index: AttachmentIndex, img: &mut ImageRef) {
+        // ensure exclusive access to resource
+        img.set_write();
+        // insert dependency into the graph
+        self.frame.graph.add_edge(
+            img.task,
+            self.task,
+            Dependency {
+                access_bits: vk::ACCESS_COLOR_ATTACHMENT_READ_BIT
+                    | vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                src_stage_mask: img.src_stage_mask,
+                dst_stage_mask: vk::PIPELINE_STAGE_ALL_GRAPHICS_BIT, // FIXME not really sure what to put here
+                details: DependencyDetails::Image {
+                    id: img.id,
+                    usage: vk::IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                    new_layout: vk::ImageLayout::ColorAttachmentOptimal,
+                    attachment: Some(AttachmentDependencyDetails {
+                        index,
+                        load_op: vk::AttachmentLoadOp::Load, // FIXME eeeeh same as needing read access?
+                        store_op: vk::AttachmentStoreOp::Store, // FIXME pretty sure we need to store things anyway although might not be necessary if we don't plan to read the data in another pass?
+                        stencil_load_op: vk::AttachmentLoadOp::DontCare,
+                        stencil_store_op: vk::AttachmentStoreOp::DontCare,
+                    }),
+                },
+                latency: img.latency,
+            },
+        );
+
+        // create the new resource descriptor: new version of this resource, originating
+        // from this task
+        *img = ImageRef {
+            id: img.id,
+            src_stage_mask: vk::PIPELINE_STAGE_ALL_GRAPHICS_BIT, // FIXME not sure, maybe PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT is sufficient?
+            task: self.task,
+            read: Cell::new(false),
+            written: Cell::new(false),
+            latency: 1, // FIXME better estimate
+        };
+    }
+
+    /// Adds a generic read dependency on the specified image.
+    pub fn generic_read(&mut self, img: &ImageRef) {
+        img.set_read();
+        self.frame.graph.add_edge(
+            img.task,
+            self.task,
+            Dependency {
+                access_bits: vk::AccessFlags::empty(), // ignored by present command
+                src_stage_mask: vk::PIPELINE_STAGE_TOP_OF_PIPE_BIT, // ignored by present command
+                dst_stage_mask: vk::PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                details: DependencyDetails::Image {
+                    id: img.id,
+                    new_layout: vk::ImageLayout::PresentSrcKhr, // transition to presentation source layout
+                    usage: vk::ImageUsageFlags::empty(),        // ignored
+                    attachment: None,
+                },
+                latency: 1, // FIXME ???
+            },
+        );
+    }
+
+    /// Adds a sequencing constraint between two nodes.
+    /// A sequencing constraint does not involve any resource.
+    pub fn sequence(&mut self, source: TaskId) {
+        self.frame.graph.add_edge(
+            source,
+            self.task,
+            Dependency {
+                access_bits: vk::AccessFlags::empty(),              // ignored
+                src_stage_mask: vk::PIPELINE_STAGE_TOP_OF_PIPE_BIT, // ignored
+                dst_stage_mask: vk::PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                details: DependencyDetails::Sequence,
+                latency: 0, // not sure...
+            },
+        );
+    }
+
+    /// Creates a new image that will be used as a color attachment by the task.
+    pub fn create_attachment(
+        &mut self,
+        index: AttachmentIndex,
+        (width, height): (u32, u32),
+        format: vk::Format,
+    ) -> ImageRef {
+        let img = self.frame.create_image_2d((width, height), format);
+
+        // insert self-dependency
+        self.get_task_mut().add_self_dependency(Dependency {
+            access_bits: vk::ACCESS_COLOR_ATTACHMENT_READ_BIT
+                | vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            src_stage_mask: vk::PIPELINE_STAGE_TOP_OF_PIPE_BIT, // FIXME ignored
+            dst_stage_mask: vk::PIPELINE_STAGE_ALL_GRAPHICS_BIT, // FIXME not really sure what to put here
+            details: DependencyDetails::Image {
+                id: img,
+                usage: vk::IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                new_layout: vk::ImageLayout::ColorAttachmentOptimal,
+                attachment: Some(AttachmentDependencyDetails {
+                    index,
+                    load_op: vk::AttachmentLoadOp::Load, // FIXME eeeeh same as needing read access?
+                    store_op: vk::AttachmentStoreOp::Store, // FIXME pretty sure we need to store things anyway although might not be necessary if we don't plan to read the data in another pass?
+                    stencil_load_op: vk::AttachmentLoadOp::DontCare,
+                    stencil_store_op: vk::AttachmentStoreOp::DontCare,
+                }),
+            },
+            latency: 0,
+        });
+
+        ImageRef {
+            task: self.task,
+            id: img,
+            read: Cell::new(false),
+            written: Cell::new(false),
+            src_stage_mask: vk::PIPELINE_STAGE_TOP_OF_PIPE_BIT, // no need to sync, just created it
+            latency: 0,
+        }
+    }
 }
 
 impl<'ctx> Frame<'ctx> {
@@ -258,42 +495,39 @@ impl<'ctx> Frame<'ctx> {
     /// Creates a present task.
     /// The input must be an image of the swapchain.
     pub fn present(&mut self, img: &ImageRef) -> TaskId {
-        /*let swapchain_index = {
-            let img_entry = &self.images[img.id.0 as usize];
-            match img_entry {
-                FrameResource::Imported { resource } => {
-                    if let Some(swapchain_index) = resource.swapchain_index {
-                        swapchain_index
-                    } else {
-                        panic!("present target must be a swapchain image")
-                    }
-                }
-                _ => panic!("present target must be an imported swapchain image"),
-            }
-        };*/
         let queue = self.context.present_queue;
-        let task = self.create_task_on_queue("present", 1);
-        // add a dependency on the image
-        self.image_present_dependency(task, img);
-        task
+        self.create_task_on_queue("present", TaskType::Present, 1, |t| {
+            t.generic_read(img);
+        }).0
     }
 
     /// Creates a new task.
     /// Returns the ID to the newly created task.
-    pub fn create_task<S: Into<String>>(&mut self, name: S) -> TaskId {
-        /// Don't care about the queue.
-        self.graph.add_node(Task::new(name, 0))
+    pub fn create_graphics_task<S, R, F>(&mut self, name: S, setup: F) -> (TaskId, R)
+    where
+        S: Into<String>,
+        F: FnOnce(&mut TaskBuilder) -> R,
+    {
+        self.create_task_on_queue(name, TaskType::Graphics, 0, setup)
     }
 
     /// Creates a new task that will execute on the specified queue.
     /// Returns the ID to the newly created task.
-    pub(crate) fn create_task_on_queue<S: Into<String>>(
+    pub fn create_task_on_queue<S, R, F>(
         &mut self,
         name: S,
+        task_type: TaskType,
         queue: u32,
-    ) -> TaskId {
-        /// Don't care about the queue.
-        self.graph.add_node(Task::new(name, queue))
+        setup: F,
+    ) -> (TaskId, R)
+    where
+        S: Into<String>,
+        F: FnOnce(&mut TaskBuilder) -> R,
+    {
+        // Don't care about the queue.
+        let task = self.graph.add_node(Task::new(name, task_type, queue));
+        let mut task_builder = TaskBuilder { frame: self, task };
+        (task, setup(&mut task_builder))
     }
 
     /// Updates the data contained in a texture. This creates a task in the graph.
@@ -303,46 +537,31 @@ impl<'ctx> Frame<'ctx> {
         unimplemented!()
     }
 
-    /// Returns information about a texture (Transient or Persistent)
-    pub fn get_image_create_info(&self, img: &ImageRef) -> &vk::ImageCreateInfo {
-        &self.images[img.id.0 as usize].get_create_info()
+    /// Gets the dimensions of the image (width, height, depth).
+    pub fn get_image_dimensions(&self, img: &ImageRef) -> (u32, u32, u32) {
+        self.images[img.id.0 as usize].dimensions()
     }
 
-    /// Returns information about a buffer (Transient or Persistent)
-    pub fn get_buffer_create_info(&self, buf: &BufferRef) -> &vk::BufferCreateInfo {
-        &self.buffers[buf.id.0 as usize].get_create_info()
-    }
-
-    /// Adds a sequencing constraint between two nodes.
-    /// A sequencing constraint does not involve any resource.
-    pub fn sequence_dependency(&mut self, src: TaskId, dst: TaskId) {
-        self.graph.add_edge(
-            src,
-            dst,
-            Dependency {
-                access_bits: vk::AccessFlags::empty(),              // ignored
-                src_stage_mask: vk::PIPELINE_STAGE_TOP_OF_PIPE_BIT, // ignored
-                dst_stage_mask: vk::PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                details: DependencyDetails::Sequence,
-            },
-        );
+    /// Gets the dimensions of the image.
+    pub fn get_image_format(&self, img: &ImageRef) -> vk::Format {
+        self.images[img.id.0 as usize].format()
     }
 
     /// Creates a task that has a dependency on all the specified tasks.
     fn make_sequence_task(&mut self, name: impl Into<String>, tasks: &[TaskId]) -> TaskId {
         // create the sync task
-        let seq_task = self.create_task(name);
-        // add a sequence dep to all of those
-        for t in tasks.iter() {
-            self.sequence_dependency(*t, seq_task);
-        }
-        seq_task
+        self.create_task_on_queue(name, TaskType::Other, 0, |t| {
+            // add a sequence dep to all of those
+            for task in tasks.iter() {
+                t.sequence(*task);
+            }
+        }).0
     }
 
-    /// Waits for all reads to the specified resource to finish,
+    /* /// Waits for all reads to the specified resource to finish,
     /// and returns a virgin handle (no pending reads or writes)
     /// for reading and writing to this resource.
-    pub fn sequence_image(&mut self, img: &ImageRef) -> ImageRef {
+    fn sequence_image(&mut self, img: &ImageRef) -> ImageRef {
         // search for all tasks that read from img
         let tasks = self.collect_last_uses_of_image(img.id);
         let seq_task = self.make_sequence_task("sync", &tasks);
@@ -353,178 +572,38 @@ impl<'ctx> Frame<'ctx> {
             task: seq_task,
             written: Cell::new(false),
             read: Cell::new(false),
+            latency: 0,
         }
-    }
-
-    /// Adds a generic read dependency between two tasks.
-    pub fn image_present_dependency(&mut self, task: TaskId, img: &ImageRef) {
-        img.set_read();
-        self.graph.add_edge(
-            img.task,
-            task,
-            Dependency {
-                access_bits: vk::AccessFlags::empty(), // ignored by present command
-                src_stage_mask: vk::PIPELINE_STAGE_TOP_OF_PIPE_BIT, // ignored by present command
-                dst_stage_mask: vk::PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                details: DependencyDetails::Image {
-                    id: img.id,
-                    new_layout: vk::ImageLayout::PresentSrcKhr, // transition to presentation source layout
-                    usage: vk::ImageUsageFlags::empty(),        // ignored
-                    attachment: None,
-                },
-            },
-        );
-    }
-
-    pub fn image_sample_dependency(&mut self, task: TaskId, img: &ImageRef) {
-        /*// FIXME limitation to avoid toposort
-        assert!(
-            img.task < task,
-            "Task cannot depend on the output a later task"
-        );*/
-        // increase read count
-        img.set_read();
-        // fetch info about the resource
-        let image_info = self.get_image_create_info(img).clone();
-        // don't know the layout yet
-        // let old_layout = source.layout.expect("layout should be set for image resource reference");
-        // Sampling is a shader read operation
-        let access = vk::ACCESS_SHADER_READ_BIT;
-        let src_stage_mask = img.src_stage_mask;
-        // TODO: optimal dst_stage_mask knowing the pipeline associated to the task.
-        // technically, the earliest point in the pipeline where we can sample a texture is the vertex
-        // shader stage. But it could be accessed later, potentially allowing for better pipelining.
-        let dst_stage_mask = vk::PIPELINE_STAGE_VERTEX_SHADER_BIT;
-        // insert dependency into the graph
-        self.graph.add_edge(
-            img.task,
-            task,
-            Dependency {
-                access_bits: access,
-                src_stage_mask,
-                dst_stage_mask,
-                details: DependencyDetails::Image {
-                    id: img.id,
-                    // transfer to layout suited to shader access
-                    new_layout: vk::ImageLayout::ShaderReadOnlyOptimal,
-                    usage: vk::IMAGE_USAGE_SAMPLED_BIT,
-                    attachment: None,
-                },
-            },
-        );
-    }
-
-    /// Color attachment.
-    /// TODO: maybe additional parameters, such as clear color?
-    pub fn color_attachment_dependency(
-        &mut self,
-        task: TaskId,
-        attachment_index: u32,
-        img: &ImageRef,
-    ) -> ImageRef {
-        /*// FIXME limitation to avoid toposort
-        assert!(
-            img.task < task,
-            "Task cannot depend on the output a later task"
-        );*/
-        // ensure exclusive access to resource.
-        img.set_write();
-        let image_info = self.get_image_create_info(img).clone();
-        // don't know the layout
-        // let old_layout = source.layout.expect("layout should be set for image resource reference");
-        // TODO read access might not be necessary if not blending
-        // TODO infer from shader pipeline?
-        let access = vk::ACCESS_COLOR_ATTACHMENT_READ_BIT | vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        let src_stage_mask = img.src_stage_mask;
-        // FIXME not really sure what to put here
-        let dst_stage_mask = vk::PIPELINE_STAGE_ALL_GRAPHICS_BIT;
-        // build the attachment description for the input
-        // will be used during the renderpass scheduling stage
-        let attachment_desc = vk::AttachmentDescription {
-            flags: vk::AttachmentDescriptionFlags::default(), // FIXME is aliasing possible?
-            initial_layout: vk::ImageLayout::Undefined,       // determined later
-            final_layout: vk::ImageLayout::ColorAttachmentOptimal, // FIXME final layout after the pass, not sure what to put here.
-            format: image_info.format,
-            load_op: vk::AttachmentLoadOp::Load, // FIXME eeeeh same as needing read access?
-            store_op: vk::AttachmentStoreOp::Store, // FIXME pretty sure we need to store things anyway although might not be necessary if we don't plan to read the data in another pass?
-            stencil_load_op: vk::AttachmentLoadOp::DontCare,
-            stencil_store_op: vk::AttachmentStoreOp::DontCare,
-            samples: image_info.samples,
-        };
-        // insert dependency into the graph
-        self.graph.add_edge(
-            img.task,
-            task,
-            Dependency {
-                access_bits: access,
-                src_stage_mask,
-                dst_stage_mask,
-                details: DependencyDetails::Image {
-                    id: img.id,
-                    usage: vk::IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-                    new_layout: vk::ImageLayout::ColorAttachmentOptimal,
-                    attachment: Some(AttachmentDependencyDetails {
-                        index: attachment_index,
-                        description: attachment_desc,
-                    }),
-                },
-            },
-        );
-        // create the new resource descriptor: new version of this resource, originating
-        // from this task
-        ImageRef {
-            id: img.id,
-            // FIXME not sure, maybe PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT is sufficient?
-            src_stage_mask: vk::PIPELINE_STAGE_ALL_GRAPHICS_BIT,
-            task,
-            read: Cell::new(false),
-            written: Cell::new(false),
-        }
-    }
+    }*/
 
     /// Creates a transient 2D image associated with the specified task.
     /// The initial layout of the image is inferred from its usage in depending tasks.
-    pub fn create_image_2d(&mut self, (width, height): (u32, u32), format: vk::Format) -> ImageRef {
-        // create a task associated with this creation op
-        let task = self.create_task("dummy");
+    fn create_image_2d(&mut self, (width, height): (u32, u32), format: vk::Format) -> ImageId {
         let desc = ImageDesc {
-            create_info: vk::ImageCreateInfo {
-                s_type: vk::StructureType::ImageCreateInfo,
-                p_next: ptr::null(),
-                flags: vk::ImageCreateFlags::default(),
-                image_type: vk::ImageType::Type2d,
-                format,
-                extent: vk::Extent3D {
-                    width,
-                    height,
-                    depth: 1,
-                },
-                mip_levels: 1,                    // FIXME
-                array_layers: 1,                  // FIXME
-                samples: vk::SAMPLE_COUNT_1_BIT,  // FIXME
-                tiling: vk::ImageTiling::Optimal, // FIXME
-                // inferred from the graph
-                usage: vk::ImageUsageFlags::default(),
-                sharing_mode: vk::SharingMode::Exclusive, // FIXME
-                queue_family_index_count: 0,              // FIXME
-                p_queue_family_indices: ptr::null(),
-                initial_layout: vk::ImageLayout::Undefined, // inferred
+            flags: vk::ImageCreateFlags::default(),
+            image_type: vk::ImageType::Type2d,
+            format,
+            extent: vk::Extent3D {
+                width,
+                height,
+                depth: 1,
             },
+            mip_levels: 1,                    // FIXME
+            array_layers: 1,                  // FIXME
+            samples: vk::SAMPLE_COUNT_1_BIT,  // FIXME
+            tiling: vk::ImageTiling::Optimal, // FIXME
+            usage: vk::ImageUsageFlags::default(), // inferred from the graph
+                                              //sharing_mode: vk::SharingMode::Exclusive, // FIXME
+                                              //queue_family_index_count: 0,              // FIXME
+                                              //p_queue_family_indices: ptr::null(),
+                                              //initial_layout: vk::ImageLayout::Undefined, // inferred
         };
 
         // get an index to generate a name for this resource.
         // It's not crucial that we get a unique one,
         // as the name of resources are here for informative purposes only.
         let naming_index = self.images.len();
-        let new_id = self.add_image_resource(format!("IMG_{:04}", naming_index), desc);
-
-        ImageRef {
-            task,
-            id: new_id,
-            read: Cell::new(false),
-            written: Cell::new(false),
-            src_stage_mask: vk::PIPELINE_STAGE_TOP_OF_PIPE_BIT, // no need to sync, just created it
-        }
+        self.add_image_resource(format!("IMG_{:04}", naming_index), desc)
     }
 
     /// Adds a transient buffer resource.
@@ -543,7 +622,7 @@ impl<'ctx> Frame<'ctx> {
 
     /// Imports a persistent image for use in the frame graph.
     pub fn import_image(&mut self, img: &'ctx Image) -> ImageRef {
-        let task = self.create_task("import");
+        let (task, ()) = self.create_task_on_queue("import", TaskType::Transfer, 0, |_| {}); // FIXME
         self.images.push(ImageFrameResource::new_imported(img));
         let id = ImageId((self.images.len() - 1) as u32);
         ImageRef {
@@ -552,6 +631,7 @@ impl<'ctx> Frame<'ctx> {
             written: Cell::new(false),
             task,
             src_stage_mask: vk::PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, // FIXME too conservative?
+            latency: 0,
         }
     }
 
@@ -626,22 +706,23 @@ impl<'ctx> Frame<'ctx> {
         writeln!(w, "--- RESOURCES ---");
         for (i, r) in self.images.iter().enumerate() {
             let name = r.name();
-            let create_info = r.get_create_info();
+            let (width, height, depth) = r.dimensions();
+            let format = r.format();
             writeln!(w, "Image {}(#{})", name, i);
-            writeln!(w, "  imageType ........ {:?}", create_info.image_type);
-            writeln!(w, "  width ............ {}", create_info.extent.width);
-            writeln!(w, "  height ........... {}", create_info.extent.height);
-            writeln!(w, "  depth ............ {}", create_info.extent.depth);
-            writeln!(w, "  format ........... {:?}", create_info.format);
-            writeln!(w, "  usage ............ {:?}", create_info.usage);
+            //writeln!(w, "  imageType ........ {:?}", create_info.image_type);
+            writeln!(w, "  width ............ {}", width);
+            writeln!(w, "  height ........... {}", height);
+            writeln!(w, "  depth ............ {}", depth);
+            writeln!(w, "  format ........... {:?}", format);
+            //writeln!(w, "  usage ............ {:?}", create_info.usage);
             writeln!(w);
         }
         for (i, r) in self.buffers.iter().enumerate() {
             let name = r.name();
-            let create_info = r.get_create_info();
+            let size = r.size();
             writeln!(w, "Buffer {}(#{})", name, i);
-            writeln!(w, "  size ............. {}", create_info.size);
-            writeln!(w, "  usage ............ {:?}", create_info.usage);
+            writeln!(w, "  size ............. {}", size);
+            //writeln!(w, "  usage ............ {:?}", create_info.usage);
             writeln!(w);
         }
 
@@ -695,32 +776,9 @@ impl<'ctx> Frame<'ctx> {
                     writeln!(w, "  dstStageMask ..... {:?}", d.dst_stage_mask);
                     writeln!(w, "  newLayout ........ {:?}", new_layout);
                     if let Some(ref attachment) = attachment {
-                        writeln!(w, "  index ............ {}", attachment.index);
-                        writeln!(
-                            w,
-                            "  format ........... {:?}",
-                            attachment.description.format
-                        );
-                        writeln!(
-                            w,
-                            "  loadOp ........... {:?}",
-                            attachment.description.load_op
-                        );
-                        writeln!(
-                            w,
-                            "  storeOp .......... {:?}",
-                            attachment.description.store_op
-                        );
-                        writeln!(
-                            w,
-                            "  initialLayout .... {:?}",
-                            attachment.description.initial_layout
-                        );
-                        writeln!(
-                            w,
-                            "  finalLayout ...... {:?}",
-                            attachment.description.final_layout
-                        );
+                        writeln!(w, "  index ............ {:?}", attachment.index);
+                        writeln!(w, "  loadOp ........... {:?}", attachment.load_op);
+                        writeln!(w, "  storeOp .......... {:?}", attachment.store_op);
                     }
                 }
                 &DependencyDetails::Buffer { id, .. } => {
@@ -756,8 +814,8 @@ impl<'ctx> Frame<'ctx> {
         // TODO
         self.insert_exit_tasks();
         self.dump(&mut stdout());
+        let ordering = self.schedule(ScheduleOptimizationProfile::MaximizeAliasing);
         let mut dot = File::create("graph.dot").unwrap();
-        let ordering = self.schedule();
         self.dump_graphviz(&mut dot, Some(&ordering), false);
     }
 }

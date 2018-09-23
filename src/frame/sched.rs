@@ -10,9 +10,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use super::*;
+use context::VkDevice1;
 
-use petgraph::algo::{toposort, has_path_connecting};
-use petgraph::graph::{EdgeReference, EdgeIndex};
+use ash::version::DeviceV1_0;
+use petgraph::algo::{has_path_connecting, toposort, DfsSpace};
+use petgraph::graph::{EdgeIndex, EdgeReference};
 use petgraph::visit::{GraphBase, VisitMap, Visitable};
 use time;
 
@@ -124,22 +126,22 @@ fn minimal_linear_ordering(g: &FrameGraph) -> Vec<TaskId> {
                     let ncut = cut - i + o;
                     let ncost = cost + ncut;
                     // don't bother if it's already over max rank
-                    if ncut <= max_rank {
-                        let mut nsub = sub.clone();
-                        nsub.push(n);
-                        nsub.sort();
-                        let nord = PartialOrdering {
-                            cost: cost + ncut,
-                            cut: ncut,
-                            right: n,
-                        };
-                        t.entry(nsub)
-                            .and_modify(|e| {
-                                if e.cost > nord.cost {
-                                    *e = nord;
-                                }
-                            }).or_insert(nord);
-                    }
+                    //if ncut <= max_rank {
+                    let mut nsub = sub.clone();
+                    nsub.push(n);
+                    nsub.sort();
+                    let nord = PartialOrdering {
+                        cost: cost + ncut,
+                        cut: ncut,
+                        right: n,
+                    };
+                    t.entry(nsub)
+                        .and_modify(|e| {
+                            if e.cost > nord.cost {
+                                *e = nord;
+                            }
+                        }).or_insert(nord);
+                    //}
                 });
         }
     }
@@ -165,6 +167,8 @@ fn minimal_linear_ordering(g: &FrameGraph) -> Vec<TaskId> {
 pub(crate) struct TaskGroup {
     /// DOC subgraph.
     tasks: Vec<TaskId>,
+    /// On which queue to submit.
+    queue: u32,
     /// DOC Semaphores to wait.
     wait_semaphores: Vec<vk::Semaphore>,
     /// DOC Semaphores to signal.
@@ -239,18 +243,19 @@ fn check_single_entry_graph(g: &FrameGraph, sub_a: &[TaskId], sub_b: &[TaskId]) 
     ok
 }*/
 
-/// Finds cross-queue synchronization edges and filter the redundant ones.
-fn find_cross_queue_sync_edges(g: &FrameGraph, ordering: &[TaskId]) -> Vec<EdgeIndex<u32>>
-{
-    let mut syncs = g.edge_references().filter_map(|e| {
-        let src = g.node_weight(e.source()).unwrap();
-        let dst = g.node_weight(e.target()).unwrap();
-        if src.queue != dst.queue {
-            Some(e.id())
-        } else {
-            None
-        }
-    }).collect::<Vec<_>>();
+/// Finds cross-queue synchronization edges and filter the redundant ones, and creates semaphores for all of them.
+fn find_cross_queue_sync_edges(g: &FrameGraph, ordering: &[TaskId]) -> Vec<EdgeIndex<u32>> {
+    let mut syncs = g
+        .edge_references()
+        .filter_map(|e| {
+            let src = g.node_weight(e.source()).unwrap();
+            let dst = g.node_weight(e.target()).unwrap();
+            if src.queue != dst.queue {
+                Some(e.id())
+            } else {
+                None
+            }
+        }).collect::<Vec<_>>();
 
     // remove redundant sync edges.
     debug!("sync edges before simplification:");
@@ -259,19 +264,29 @@ fn find_cross_queue_sync_edges(g: &FrameGraph, ordering: &[TaskId]) -> Vec<EdgeI
         debug!("{} -> {}", a.index(), b.index());
     }
 
-    for i in 0..syncs.len() {
+    let mut i = 0;
+    let mut len = syncs.len();
+    while i < len {
         let remove = {
             let e_b = syncs[i];
-            syncs.iter().enumerate().filter(|(j, _)| *j != i).any(|(j, &e_a)| {
-                let (a_src, a_dst) = g.edge_endpoints(e_a).unwrap();
-                let (b_src, b_dst) = g.edge_endpoints(e_b).unwrap();
-                has_path_connecting(g, b_src, a_src, None) && has_path_connecting(g, a_dst, b_dst, None)
-            })
+            syncs
+                .iter()
+                .enumerate()
+                .filter(|(j, _)| *j != i)
+                .any(|(j, &e_a)| {
+                    let (a_src, a_dst) = g.edge_endpoints(e_a).unwrap();
+                    let (b_src, b_dst) = g.edge_endpoints(e_b).unwrap();
+                    has_path_connecting(g, b_src, a_src, None)
+                        && has_path_connecting(g, a_dst, b_dst, None)
+                })
         };
 
         if remove {
             syncs.remove(i);
+        } else {
+            i += 1;
         }
+        len = syncs.len();
     }
 
     debug!("sync edges after simplification:");
@@ -280,58 +295,132 @@ fn find_cross_queue_sync_edges(g: &FrameGraph, ordering: &[TaskId]) -> Vec<EdgeI
         debug!("{} -> {}", a.index(), b.index());
     }
 
-
-    // per-queue task groups
-    let mut queue_task_groups = vec![Vec::new(); 3];    // FIXME more than 3 queues.
-    let mut queue_entry_exit = vec![true; 3];
-
-    for &t in ordering.iter() {
-        let queue_index = g.node_weight(t).unwrap().queue;
-        let mut queue_entry = false;
-        let mut queue_exit = false;
-        for &s in syncs.iter() {
-            let (a, b) = g.edge_endpoints(s).unwrap();
-            if a == t { queue_exit = true; }
-            if b == t { queue_entry = true; }
-        }
-
-        match (queue_entry_exit[queue_index], queue_entry, queue_exit) {
-
-        }
-
-    }
-
     syncs
 }
 
-
-fn create_task_groups(g: &FrameGraph) {
-    //let partition = vec![Vec::new(); g.node_count()];
-
-}
-
-/*fn create_task_groups_rec(
-    n: TaskId,
+/// Creates task groups and semaphores between task groups.
+fn create_task_groups(
     g: &FrameGraph,
-    current_task_group: &mut TaskGroup,
-    task_groups: &mut Vec<Option<TaskGroup>>) -> TaskGroup
-{
-    // create task group
-    let mut group = TaskGroup {
-        tasks: Vec::new(),
-        wait_semaphores: Vec::new(),
-        signal_semaphores: Vec::new()
+    ordering: &[TaskId],
+    syncs: &[EdgeIndex<u32>],
+    vkd: &VkDevice1,
+) -> (Vec<TaskGroup>, Vec<vk::Semaphore>) {
+    // create semaphores (one per cross-queue edge)
+    let mut semaphores = syncs
+        .iter()
+        .map(|s| {
+            let create_info = vk::SemaphoreCreateInfo {
+                s_type: vk::StructureType::SemaphoreCreateInfo,
+                p_next: ptr::null(),
+                flags: vk::SemaphoreCreateFlags::empty(),
+            };
+            unsafe { vkd.create_semaphore(&create_info, None).unwrap() }
+        }).collect::<Vec<_>>();
+
+    let mut pending_task_groups = Vec::new();
+    for i in 0..3 {
+        pending_task_groups.push(TaskGroup {
+            tasks: Vec::new(),
+            wait_semaphores: Vec::new(),
+            signal_semaphores: Vec::new(),
+            queue: i as u32,
+        });
+    }
+    let mut task_groups = Vec::new();
+    let mut visited = g.visit_map();
+
+    //
+    let flush_task_group = |pending: &mut TaskGroup, all_task_groups: &mut Vec<TaskGroup>| {
+        if !pending.tasks.is_empty() {
+            let queue = pending.queue;
+            let t = mem::replace(
+                pending,
+                TaskGroup {
+                    tasks: Vec::new(),
+                    wait_semaphores: Vec::new(),
+                    signal_semaphores: Vec::new(),
+                    queue,
+                },
+            );
+            all_task_groups.push(t);
+        }
     };
 
-    g.edges_directed(root)
-}*/
+    for &t in ordering.iter() {
+        let queue_index = g.node_weight(t).unwrap().queue as usize;
+        let mut wait_semaphores = Vec::new();
+        let mut signal_semaphores = Vec::new();
+        for (i, &s) in syncs.iter().enumerate() {
+            let (a, b) = g.edge_endpoints(s).unwrap();
+            if b == t {
+                wait_semaphores.push(semaphores[i]);
+            }
+            if a == t {
+                signal_semaphores.push(semaphores[i]);
+            }
+        }
 
-/*
-/// Check if the subgraph extended by the given node is still a valid task group subgraph.
-fn extend_task_group_subgraph(g: &FrameGraph, task_group: &[TaskId], new_tasks: &[TaskId])
-{
+        if !wait_semaphores.is_empty() {
+            // terminate command buffer immediately, and start another one.
+            flush_task_group(&mut pending_task_groups[queue_index], &mut task_groups);
+            pending_task_groups[queue_index].wait_semaphores = wait_semaphores;
+        }
 
-}*/
+        // add this task, and any synchronization requirements
+        pending_task_groups[queue_index].tasks.push(t);
+
+        if !signal_semaphores.is_empty() {
+            // terminate command buffer
+            pending_task_groups[queue_index].signal_semaphores = signal_semaphores;
+            flush_task_group(&mut pending_task_groups[queue_index], &mut task_groups);
+        }
+    }
+
+    // terminate all remaining task groups.
+    for tg in pending_task_groups.iter_mut() {
+        flush_task_group(tg, &mut task_groups);
+    }
+
+    // debug
+    for tg in task_groups.iter() {
+        print!("Task group: ");
+        for &t in tg.tasks.iter() {
+            let name = &g.node_weight(t).unwrap().name;
+            print!("{} ", name);
+        }
+        print!(" | W:");
+        for &s in tg.wait_semaphores.iter() {
+            print!("{:?} ", s);
+        }
+        print!(" | S:");
+        for &s in tg.signal_semaphores.iter() {
+            print!("{:?} ", s);
+        }
+        println!();
+    }
+
+    (task_groups, semaphores)
+}
+
+/// Groups compatible tasks into renderpasses.
+fn create_renderpasses(g: &FrameGraph, ordering: &[TaskId], task_groups: &[TaskGroup]) {
+    unimplemented!()
+}
+
+/// Optimization profiles for scheduling.
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
+pub enum ScheduleOptimizationProfile {
+    /// No reordering is performed, keep the submission order.
+    NoOptimization,
+    /// Nodes are reordered to maximize resource memory aliasing.
+    MaximizeAliasing,
+}
+
+impl Default for ScheduleOptimizationProfile {
+    fn default() -> Self {
+        ScheduleOptimizationProfile::NoOptimization
+    }
+}
 
 impl<'ctx> Frame<'ctx> {
     fn collect_resource_usages(&mut self) {
@@ -350,7 +439,7 @@ impl<'ctx> Frame<'ctx> {
                             ..
                         } => {
                             // update usage flags
-                            description.create_info.usage |= usage;
+                            description.usage |= usage;
                         }
                         FrameResource::Imported { resource } => {
                             // TODO check usage flags
@@ -364,7 +453,7 @@ impl<'ctx> Frame<'ctx> {
                             ..
                         } => {
                             // update usage flags
-                            description.create_info.usage |= usage;
+                            description.usage |= usage;
                         }
                         FrameResource::Imported { resource } => {
                             // TODO check usage flags
@@ -380,33 +469,7 @@ impl<'ctx> Frame<'ctx> {
         // also, should add the VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT to the allocation.
     }
 
-    /*fn create_semaphores(&mut self) {
-        //let semaphores = Vec::new();
-        // look for every cross-queue dependency
-        self.graph
-            .edge_references()
-            .filter(|e| {
-                let d = e.weight();
-                let t_src = self.graph.node_weight(e.source()).unwrap();
-                let t_dst = self.graph.node_weight(e.target()).unwrap();
-                t_src.queue.is_some() != t_dst.queue.is_some() // FIXME ash upstream
-            }).for_each(|e| {
-                debug!(
-                    "Cross-queue dependency: ID:{} -> ID:{}",
-                    e.source().index(),
-                    e.target().index()
-                );
-            });
-    }*/
-
-    fn create_task_groups(&mut self) -> Vec<TaskGroup> {
-        unimplemented!()
-        // start with a node, assign it to a group
-        // if one edge goes out of the queue, end group.
-        // if one edge joins another group in the same queue, merge current group into the queue.
-    }
-
-    pub fn schedule(&mut self) -> Vec<TaskId> {
+    pub fn schedule(&mut self, opt: ScheduleOptimizationProfile) -> Vec<TaskId> {
         // avoid toposort here, because the algo in petgraph
         // produces an ordering that is not optimal for aliasing.
         // Instead, compute the "directed minimum linear arrangement" (directed minLA)
@@ -414,25 +477,39 @@ impl<'ctx> Frame<'ctx> {
         // This gives (I think) a task order that leads to better memory aliasing.
         // Note: the directed minLA problem is NP-hard, but seems to be manageable
         // in most cases?
+
+        //  "Optimizing the dependency graph for maximum overlap also greatly
+        //   reduces the opportunities for aliasing, so if we want to take memory
+        //   into consideration, this algorithm could easily get far more involved..."
+        //      - http://themaister.net/blog/2017/08/15/render-graphs-and-vulkan-a-deep-dive/
         debug!("begin scheduling");
-        let (t_ordering, result) = measure_time(|| minimal_linear_ordering(&self.graph));
+
+        let (t_ordering, ordering) = if opt == ScheduleOptimizationProfile::MaximizeAliasing {
+            measure_time(|| minimal_linear_ordering(&self.graph))
+        } else {
+            (0, self.graph.node_indices().collect::<Vec<_>>())
+        };
 
         let (t_resource_usages, ()) = measure_time(|| {
             self.collect_resource_usages();
         });
 
-        let (t_cross_queue_sync, ()) = measure_time(|| {
-            find_cross_queue_sync_edges(&self.graph);
+        let (t_cross_queue_sync, sync_edges) =
+            measure_time(|| find_cross_queue_sync_edges(&self.graph, &ordering));
+
+        let (t_task_groups, (task_groups, semaphores)) = measure_time(|| {
+            create_task_groups(&self.graph, &ordering, &sync_edges, &self.context.vkd)
         });
 
         debug!("scheduling report:");
-        debug!("linear arrangement ........... {}µs", t_ordering);
+        debug!("ordering ..................... {}µs", t_ordering);
         debug!("resource usage collection .... {}µs", t_resource_usages);
         debug!("cross-queue sync ............. {}µs", t_cross_queue_sync);
+        debug!("task group partition ......... {}µs", t_task_groups);
 
         debug!("end scheduling");
 
-        result
+        ordering
     }
 }
 
@@ -558,4 +635,9 @@ impl<'ctx> Frame<'ctx> {
 // Transfer queue:
 // - upload data immediately to upload buffer
 // - on schedule: to transfer queue: copy to resource
+//
+// Do away with dummy nodes for resource creation:
+// - clutters the graph with useless nodes, confuses scheduling.
+// - initialize to the correct state on first use.
+//
 //

@@ -28,7 +28,7 @@ pub mod context;
 pub mod format;
 pub mod frame;
 pub mod import;
-mod resource;
+pub mod resource;
 mod sync;
 pub mod texture;
 pub mod window;

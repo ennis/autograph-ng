@@ -161,7 +161,7 @@ impl<'ctx> Frame<'ctx> {
         // filter tasks by assigned queues
 
         // present queue subgraph
-        writeln!(w, "subgraph cluster_present {{");
+        writeln!(w, "subgraph present {{");
         writeln!(w, "fontname=monospace;");
         writeln!(w, "label=\"Present queue\";");
         writeln!(w, "labeljust=\"r\";");
@@ -172,14 +172,14 @@ impl<'ctx> Frame<'ctx> {
         self.graph
             .node_indices()
             .map(|n| (n.index(), self.graph.node_weight(n).unwrap()))
-            .filter(|(_, t)| t.queue == 1)
+            .filter(|(_, t)| t.queue == 2)
             .for_each(|(i, t)| {
                 writeln!(w, "T_{} [label=\"{} (ID:{})\"];", i, t.name, i);
             });
         writeln!(w, "}}");
 
         // graphics queue subgraph
-        writeln!(w, "subgraph cluster_default {{");
+        writeln!(w, "subgraph default {{");
         writeln!(w, "fontname=monospace;");
         writeln!(w, "label=\"Default queue\";");
         writeln!(w, "labeljust=\"r\";");
@@ -191,6 +191,24 @@ impl<'ctx> Frame<'ctx> {
             .node_indices()
             .map(|n| (n.index(), self.graph.node_weight(n).unwrap()))
             .filter(|(_, t)| t.queue == 0)
+            .for_each(|(i, t)| {
+                writeln!(w, "T_{} [label=\"{} (ID:{})\"];", i, t.name, i);
+            });
+        writeln!(w, "}}");
+
+        // async compute subgraph
+        writeln!(w, "subgraph compute {{");
+        writeln!(w, "fontname=monospace;");
+        writeln!(w, "label=\"Async compute\";");
+        writeln!(w, "labeljust=\"r\";");
+        writeln!(
+            w,
+            "node [shape=diamond, fontcolor=black, style=filled, fillcolor=\"palegreen\"];"
+        );
+        self.graph
+            .node_indices()
+            .map(|n| (n.index(), self.graph.node_weight(n).unwrap()))
+            .filter(|(_, t)| t.queue == 1)
             .for_each(|(i, t)| {
                 writeln!(w, "T_{} [label=\"{} (ID:{})\"];", i, t.name, i);
             });
@@ -263,6 +281,14 @@ impl<'ctx> Frame<'ctx> {
                     writeln!(w, "T_{} -> D_{} [constrain=false];", src.index(), e.index());
                     writeln!(w, "D_{} -> T_{};", e.index(), dest.index());
                     write!(
+                        w,
+                        "D_{} [shape=none,width=0,height=0,margin=0,label=<<FONT> \
+                <TABLE BORDER=\"0\" CELLBORDER=\"1\" BGCOLOR=\"{}\" CELLSPACING=\"0\" ALIGN=\"LEFT\" ><TR><TD>I</TD></TR>",
+                        e.index(),
+                        color_code
+                    );
+
+                    /*write!(
                         w,
                         "D_{} [shape=none,width=0,height=0,margin=0,label=<<FONT> \
                 <TABLE BORDER=\"0\" CELLBORDER=\"1\" BGCOLOR=\"{}\" CELLSPACING=\"0\" ALIGN=\"LEFT\" >",
@@ -346,7 +372,7 @@ impl<'ctx> Frame<'ctx> {
                             );
                         }
                         _ => unreachable!(),
-                    }
+                    }*/
                     writeln!(w, "</TABLE></FONT>>];");
                 }
             }
