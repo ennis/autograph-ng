@@ -159,7 +159,6 @@ fn minimal_linear_ordering(g: &FrameGraph) -> Vec<TaskId> {
     }
 
     minimal_ordering.reverse();
-
     minimal_ordering
 }
 
@@ -636,8 +635,11 @@ impl<'ctx> Frame<'ctx> {
 // - upload data immediately to upload buffer
 // - on schedule: to transfer queue: copy to resource
 //
-// Do away with dummy nodes for resource creation:
+// DONE Do away with dummy nodes for resource creation:
 // - clutters the graph with useless nodes, confuses scheduling.
 // - initialize to the correct state on first use.
 //
-//
+// Decouple dependency edges and usage of the resource within the task.
+// - A resource can have multiple usages within the same task.
+//      - e.g. color attachment and input attachment
+// - Dependency = only pipeline barrier info

@@ -184,6 +184,11 @@ impl Image {
         self.create_info.format
     }
 
+    /// Returns the usage flags of the image.
+    pub fn usage(&self) -> vk::ImageUsageFlags {
+        self.create_info.usage
+    }
+
     pub fn create_info(&self) -> &vk::ImageCreateInfo {
         &self.create_info
     }

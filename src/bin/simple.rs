@@ -36,6 +36,58 @@ fn downsample(frame: &mut Frame, input: &ImageRef, aux: &ImageRef) -> ImageRef {
 }
 
 //--------------------------------------------------------------------------------------------------
+// somewhat closer to real-life
+fn test_frame_deferred_shading<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx mut Image)
+{
+    let width = 1280;
+    let height = 720;
+    let dimensions = (width, height);
+
+    let shadowmap_width = 1024;
+    let shadowmap_height = 1024;
+    let shadowmap_dimensions = (shadowmap_width, shadowmap_height);
+
+    // init G-buffers and render
+    struct Gbuffers {
+        normals: ImageRef,
+        diffuse_specular: ImageRef,
+        emission: ImageRef,
+        position: ImageRef,
+        tangents: ImageRef,
+        velocity: ImageRef,
+        depth: ImageRef,
+    }
+
+    let (t_draw, gbuffers) = frame.create_graphics_task("gbuffers", |t| {
+        let normals = t.create_attachment(AttachmentIndex::Color(0), dimensions, vk::Format::R16g16Sfloat);
+        let diffuse_specular = t.create_attachment(AttachmentIndex::Color(1), dimensions, vk::Format::R8g8b8a8Srgb);
+        let position = t.create_attachment(AttachmentIndex::Color(3), dimensions, vk::Format::R16g16b16a16Sfloat);
+        let emission = t.create_attachment(AttachmentIndex::Color(2), dimensions, vk::Format::R16g16b16a16Sfloat);
+        let tangents = t.create_attachment(AttachmentIndex::Color(4), dimensions, vk::Format::R16g16Sfloat);
+        let velocity = t.create_attachment(AttachmentIndex::Color(5), dimensions, vk::Format::R16g16Sfloat);
+        let depth = t.create_attachment(AttachmentIndex::DepthStencil, dimensions, vk::Format::D32Sfloat);
+        Gbuffers {
+            normals,
+            depth,
+            diffuse_specular,
+            emission,
+            position,
+            tangents,
+            velocity,
+        }
+    });
+
+    let (t_shadow, shadow_map) = frame.create_graphics_task("shadowmap", |t| {
+        t.create_attachment(AttachmentIndex::Color(0), dimensions, vk::Format::R32Sfloat)
+    });
+
+    // lighting pass
+    frame.create_graphics_task("lighting", |t| {
+        
+    });
+}
+
+//--------------------------------------------------------------------------------------------------
 fn test_frame_0<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx mut Image) {
     let (t01, r01) = frame.create_task_on_queue("T01", TaskType::Graphics, 0, |t| {
         t.create_attachment(
