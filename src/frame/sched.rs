@@ -422,53 +422,7 @@ impl Default for ScheduleOptimizationProfile {
 }
 
 impl<'ctx> Frame<'ctx> {
-    fn collect_resource_usages(&mut self) {
-        for d in self.graph.edge_references() {
-            let d = d.weight();
-            match d.details {
-                DependencyDetails::Image {
-                    id,
-                    new_layout,
-                    usage,
-                    ref attachment,
-                } => {
-                    match &mut self.images[id.0 as usize] {
-                        FrameResource::Transient {
-                            ref mut description,
-                            ..
-                        } => {
-                            // update usage flags
-                            description.usage |= usage;
-                        }
-                        FrameResource::Imported { resource } => {
-                            // TODO check usage flags
-                        }
-                    }
-                }
-                DependencyDetails::Buffer { id, usage } => {
-                    match &mut self.buffers[id.0 as usize] {
-                        FrameResource::Transient {
-                            ref mut description,
-                            ..
-                        } => {
-                            // update usage flags
-                            description.usage |= usage;
-                        }
-                        FrameResource::Imported { resource } => {
-                            // TODO check usage flags
-                        }
-                    }
-                }
-                DependencyDetails::Sequence => {}
-            }
-        }
-
-        // FIXME add the VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT if the image is never accessed as
-        // an image, sampled, or accessed by the host.
-        // also, should add the VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT to the allocation.
-    }
-
-    pub fn schedule(&mut self, opt: ScheduleOptimizationProfile) -> Vec<TaskId> {
+       pub fn schedule(&mut self, opt: ScheduleOptimizationProfile) -> Vec<TaskId> {
         // avoid toposort here, because the algo in petgraph
         // produces an ordering that is not optimal for aliasing.
         // Instead, compute the "directed minimum linear arrangement" (directed minLA)
@@ -489,10 +443,6 @@ impl<'ctx> Frame<'ctx> {
             (0, self.graph.node_indices().collect::<Vec<_>>())
         };
 
-        let (t_resource_usages, ()) = measure_time(|| {
-            self.collect_resource_usages();
-        });
-
         let (t_cross_queue_sync, sync_edges) =
             measure_time(|| find_cross_queue_sync_edges(&self.graph, &ordering));
 
@@ -502,7 +452,6 @@ impl<'ctx> Frame<'ctx> {
 
         debug!("scheduling report:");
         debug!("ordering ..................... {}µs", t_ordering);
-        debug!("resource usage collection .... {}µs", t_resource_usages);
         debug!("cross-queue sync ............. {}µs", t_cross_queue_sync);
         debug!("task group partition ......... {}µs", t_task_groups);
 
