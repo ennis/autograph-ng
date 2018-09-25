@@ -25,16 +25,19 @@ pub mod alloc;
 mod buffer;
 mod buffer_data;
 pub mod context;
-pub mod format;
 pub mod frame;
 pub mod import;
 pub mod resource;
 mod sync;
-pub mod texture;
 pub mod window;
 
 // re-export vulkan as gfx2::vk
 pub use ash::vk;
+
+pub use self::frame::*;
+pub use self::window::*;
+pub use self::resource::*;
+pub use self::context::*;
 
 // TODO: design a low-level layer for resources and commands (in the eventuality of switching to Vulkan at some point)
 // Safe write access to persistent resources:

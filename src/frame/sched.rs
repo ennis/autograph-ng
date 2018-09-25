@@ -422,7 +422,78 @@ impl Default for ScheduleOptimizationProfile {
 }
 
 impl<'ctx> Frame<'ctx> {
-    pub fn schedule(&mut self, opt: ScheduleOptimizationProfile) -> Vec<TaskId> {
+    /// Collects all tasks using this resource but that do not produce another version of it.
+    fn collect_last_uses_of_image(&self, img: ImageId) -> Vec<TaskId> {
+        let uses = self
+            .graph
+            .node_indices()
+            .filter(|n| {
+                // is the resource used in an incoming dependency?
+                let incoming = self
+                    .graph
+                    .edges_directed(*n, Direction::Incoming)
+                    .any(|e| e.weight().get_image_id() == Some(img));
+                // does not appear in any outgoing dependency
+                let outgoing = self
+                    .graph
+                    .edges_directed(*n, Direction::Outgoing)
+                    .any(|e| e.weight().get_image_id() == Some(img));
+
+                incoming && !outgoing
+            }).collect::<Vec<_>>();
+
+        uses
+    }
+
+    /// Collects all tasks using this resource but that do not produce another version of it.
+    fn collect_last_uses_of_buffer(&self, buf: BufferId) -> Vec<TaskId> {
+        let uses = self
+            .graph
+            .node_indices()
+            .filter(|n| {
+                // is the resource used in an incoming dependency?
+                let incoming = self
+                    .graph
+                    .edges_directed(*n, Direction::Incoming)
+                    .any(|e| e.weight().get_buffer_id() == Some(buf));
+                // does not appear in any outgoing dependency
+                let outgoing = self
+                    .graph
+                    .edges_directed(*n, Direction::Outgoing)
+                    .any(|e| e.weight().get_buffer_id() == Some(buf));
+
+                incoming && !outgoing
+            }).collect::<Vec<_>>();
+
+        uses
+    }
+
+    /// Inserts 'exit tasks' for all external resources imported into the graph.
+    fn insert_exit_tasks(&mut self) {
+        // find last uses of each external resource
+        let tasks_to_create = self
+            .images
+            .iter()
+            .enumerate()
+            .filter(|(_, img)| img.is_imported())
+            .map(|(i, img)| {
+                let i = ImageId(i as u32);
+                (i, self.collect_last_uses_of_image(i))
+            }).collect::<Vec<_>>();
+
+        // add tasks
+        for t in tasks_to_create.iter() {
+            // on which queue?
+            self.make_sequence_task("exit", &t.1);
+        }
+    }
+
+    pub fn schedule(&mut self, opt: ScheduleOptimizationProfile) -> Vec<TaskId>
+    {
+        debug!("begin scheduling");
+
+        self.insert_exit_tasks();
+
         // avoid toposort here, because the algo in petgraph
         // produces an ordering that is not optimal for aliasing.
         // Instead, compute the "directed minimum linear arrangement" (directed minLA)
@@ -430,13 +501,10 @@ impl<'ctx> Frame<'ctx> {
         // This gives (I think) a task order that leads to better memory aliasing.
         // Note: the directed minLA problem is NP-hard, but seems to be manageable
         // in most cases?
-
         //  "Optimizing the dependency graph for maximum overlap also greatly
         //   reduces the opportunities for aliasing, so if we want to take memory
         //   into consideration, this algorithm could easily get far more involved..."
         //      - http://themaister.net/blog/2017/08/15/render-graphs-and-vulkan-a-deep-dive/
-        debug!("begin scheduling");
-
         let (t_ordering, ordering) = if opt == ScheduleOptimizationProfile::MaximizeAliasing {
             measure_time(|| minimal_linear_ordering(&self.graph))
         } else {

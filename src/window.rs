@@ -1,5 +1,4 @@
 //! Boilerplate code for creating a window and an OpenGL context with winit/glutin.
-
 use std::ffi::{CStr, CString};
 use std::mem;
 use std::os::raw::{c_char, c_void};
@@ -88,46 +87,3 @@ pub fn create_window_and_context(
 
     (window, context, presentation)
 }
-
-// create instance
-// create window
-// create surface
-// bundle window+surface together
-//
-// create context (optionally with window) -> instance + device
-// create presentation target (from context + window + surface)
-//
-// Alt:
-// create context (phase 1, without device) -> instance
-// create presentation target (context + window) -> device + surface + swapchain, bundle window, surface and swapchain
-// -> deferred physical device selection
-//
-// Device creation: must handle all potential surface types
-// -> must know surface types in advance (actually, create the surfaces before)
-//
-// create window + surface pair
-//
-// V3:
-// - create Context (entry+instance)
-// - create Window (by user)
-// - Context + Window -> PresentationWindow(Window + Surface)
-// - create Renderer: Context + PresentationWindow -> Renderer(Context,
-// - create swapchains: Renderer + PresentationWindow -> PresentationTarget
-
-// idea: presentation targets are dumb objects
-// they contain data that can be deleted, but useless since they have no operations of their own.
-
-/*fn main()
-{
-    // presentation target is lifetime-bound to context
-    //let (window, mut presentation_target) = create_window_and_presentation_target(&cfg);        // bundle window + vk surface
-
-    let target = PresentationTarget::main_screen();
-
-    // PresentationTarget: Cell<Option<Rc<PresentationTargetInner>>>
-
-    let context = Context::new(&mut [&mut target], &cfg); // create a compatible renderer for the presentation targets
-
-    // can create new presentation targets here
-    let other_target = PresentationTarget::window(&window);
-}*/

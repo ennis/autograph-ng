@@ -16,10 +16,8 @@ use slotmap::{Key, SlotMap};
 use winit::Window;
 
 use alloc::Allocator;
-use frame::TaskId;
 use resource::*;
 use sync::{FrameSync, SyncGroup};
-use texture::{TextureDesc, TextureObject};
 
 pub type VkEntry1 = ash::Entry<V1_0>;
 pub type VkInstance1 = ash::Instance<V1_0>;

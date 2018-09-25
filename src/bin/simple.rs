@@ -3,29 +3,27 @@ extern crate gfx2;
 
 use std::env;
 
-use gfx2::frame::*;
+use gfx2::*;
 use gfx2::import::import_graph;
-use gfx2::resource::*;
-use gfx2::texture::get_texture_mip_map_count;
 use gfx2::vk;
-use gfx2::window::*;
 
 //--------------------------------------------------------------------------------------------------
 fn downsample(frame: &mut Frame, input: &ImageRef, aux: &ImageRef) -> ImageRef {
-    let (w, h, d) = frame.get_image_dimensions(input);
-    let count = get_texture_mip_map_count(w, h);
+    let (w, h, d) = frame.get_image_dimensions(input.id);
+    //let count = get_texture_mip_map_count(w, h);
 
     let mut r_last = None;
     let mut cur_w = w;
     let mut cur_h = h;
-    for i in 0..count {
+    for i in 0..1 {
         let (t, r_target) = frame.create_graphics_task("downsample", |t| {
             t.sample_image(r_last.as_ref().unwrap_or(input));
-            t.create_attachment(
-                AttachmentIndex::Color(0),
+            let (r, att) = t.create_attachment(
                 (cur_w, cur_h),
                 vk::Format::R16g16b16a16Sfloat,
-            )
+                &AttachmentLoadStore::write_only());
+            t.set_color_attachments(&[att]);
+            r
         });
         r_last = Some(r_target);
         cur_w /= 2;
@@ -58,16 +56,19 @@ fn test_frame_deferred_shading<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx 
     }
 
     let (t_draw, gbuffers) = frame.create_graphics_task("gbuffers", |t| {
-        let (normals, normals_att) = t.create_attachment(dimensions, vk::Format::R16g16Sfloat);
+        let write_only = AttachmentLoadStore::write_only();
+        let depth_stencil_clear = AttachmentLoadStore::clear();
+
+        let (normals, normals_att) = t.create_attachment(dimensions, vk::Format::R16g16Sfloat, &write_only);
         let (diffuse_specular, diffuse_specular_att) =
-            t.create_attachment(dimensions, vk::Format::R8g8b8a8Srgb);
+            t.create_attachment(dimensions, vk::Format::R8g8b8a8Srgb, &write_only);
         let (position, position_att) =
-            t.create_attachment(dimensions, vk::Format::R16g16b16a16Sfloat);
+            t.create_attachment(dimensions, vk::Format::R16g16b16a16Sfloat, &write_only);
         let (emission, emission_att) =
-            t.create_attachment(dimensions, vk::Format::R16g16b16a16Sfloat);
-        let (tangents, tangents_att) = t.create_attachment(dimensions, vk::Format::R16g16Sfloat);
-        let (velocity, velocity_att) = t.create_attachment(dimensions, vk::Format::R16g16Sfloat);
-        let (depth, depth_att) = t.create_attachment(dimensions, vk::Format::D32Sfloat);
+            t.create_attachment(dimensions, vk::Format::R16g16b16a16Sfloat, &write_only);
+        let (tangents, tangents_att) = t.create_attachment(dimensions, vk::Format::R16g16Sfloat, &write_only);
+        let (velocity, velocity_att) = t.create_attachment(dimensions, vk::Format::R16g16Sfloat, &write_only);
+        let (depth, depth_att) = t.create_attachment(dimensions, vk::Format::D32Sfloat, &depth_stencil_clear);
 
         t.set_color_attachments(&[
             normals_att,
@@ -77,7 +78,7 @@ fn test_frame_deferred_shading<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx 
             tangents_att,
             velocity_att,
         ]);
-        t.set_depth_attachment(depth_att);
+        //t.set_depth_attachment(depth_att);
 
         Gbuffers {
             normals,
@@ -90,13 +91,13 @@ fn test_frame_deferred_shading<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx 
         }
     });
 
-    let (t_shadow, shadow_map) = frame.create_graphics_task("shadowmap", |t| {
+    /*let (t_shadow, shadow_map) = frame.create_graphics_task("shadowmap", |t| {
         t.create_attachment(AttachmentIndex::Color(0), dimensions, vk::Format::R32Sfloat)
-    });
+    });*/
 
     // lighting pass
     frame.create_graphics_task("lighting", |t| {
-        t.attachments(&[
+        /*t.attachments(&[
             normals,
             depth,
             diffuse_specular,
@@ -104,17 +105,17 @@ fn test_frame_deferred_shading<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx 
             position,
             tangents,
             velocity,
-        ]);
+        ]);*/
     });
 }
 
-//--------------------------------------------------------------------------------------------------
+/*//--------------------------------------------------------------------------------------------------
 fn test_frame_0<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx mut Image) {
     let (t01, r01) = frame.create_task_on_queue("T01", TaskType::Graphics, 0, |t| {
         t.create_attachment(
-            AttachmentIndex::Color(0),
             (1024, 1024),
             vk::Format::R16g16b16a16Sfloat,
+            AttachmentLoadStore::write_only()
         )
     });
 
@@ -205,7 +206,7 @@ fn test_frame_0<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx mut Image) {
         t.sample_image(&r14);
         t.attachment(AttachmentIndex::Color(0), &mut r_output);
     });
-}
+}*/
 
 //--------------------------------------------------------------------------------------------------
 fn main() {
@@ -237,7 +238,7 @@ fn main() {
 
             if first {
                 let mut frame = ctx.new_frame();
-                test_frame_0(&mut frame, &mut persistent_img);
+                test_frame_deferred_shading(&mut frame, &mut persistent_img);
                 frame.submit();
                 first = false;
             }
