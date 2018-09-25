@@ -30,11 +30,8 @@ impl<'frame, 'ctx: 'frame> ComputeTaskBuilder<'frame, 'ctx> {
     }
 
     pub(super) fn finish(mut self) -> TaskId {
-        self.frame
-            .graph
-            .node_weight_mut(self.task)
-            .unwrap()
-            .details = TaskDetails::Compute(self.compute_task);
+        self.frame.graph.node_weight_mut(self.task).unwrap().details =
+            TaskDetails::Compute(self.compute_task);
         self.task
     }
 }

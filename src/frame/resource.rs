@@ -71,10 +71,10 @@ pub(crate) struct ImageDesc {
     pub(crate) samples: vk::SampleCountFlags,
     pub(crate) tiling: vk::ImageTiling,
     pub(crate) usage: vk::ImageUsageFlags, // inferred
-    //pub(crate) sharing_mode: SharingMode,
-    //pub(crate) queue_family_index_count: uint32_t,    // inferred
-    //pub(crate) p_queue_family_indices: *const uint32_t,
-    //pub(crate) initial_layout: ImageLayout,   // inferred
+                                           //pub(crate) sharing_mode: SharingMode,
+                                           //pub(crate) queue_family_index_count: uint32_t,    // inferred
+                                           //pub(crate) p_queue_family_indices: *const uint32_t,
+                                           //pub(crate) initial_layout: ImageLayout,   // inferred
 }
 
 pub(crate) struct BufferDesc {

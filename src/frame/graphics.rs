@@ -10,7 +10,7 @@ pub enum AttachmentIndex {
 }
 
 /// DOCUMENT
-#[derive(Copy,Clone,Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct AttachmentLoadStore {
     /// DOCUMENT
     pub load_op: vk::AttachmentLoadOp,
@@ -124,6 +124,14 @@ impl GraphicsTask {
         self.attachments_desc.push(desc);
         Ok((self.attachments.len() - 1) as u32)
     }
+
+    fn get_attachment_image_id(&self, index: u32) -> ImageId {
+        self.attachments[index as usize]
+    }
+
+    fn get_attachment_desc(&self, index: u32) -> &vk::AttachmentDescription {
+        &self.attachments_desc[index as usize]
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -135,8 +143,7 @@ pub struct GraphicsTaskBuilder<'frame, 'ctx: 'frame> {
     graphics_task: GraphicsTask,
 }
 
-impl<'frame, 'ctx: 'frame> GraphicsTaskBuilder<'frame, 'ctx>
-{
+impl<'frame, 'ctx: 'frame> GraphicsTaskBuilder<'frame, 'ctx> {
     pub(super) fn new(
         frame: &'frame mut Frame<'ctx>,
         name: impl Into<String>,
@@ -153,11 +160,11 @@ impl<'frame, 'ctx: 'frame> GraphicsTaskBuilder<'frame, 'ctx>
     }
 
     /// Adds the specified as an image sample dependency on the task.
-    pub fn sample_image(&mut self, img: &ImageRef)
-    {
+    pub fn sample_image(&mut self, img: &ImageRef) {
         img.set_read().expect("R/W conflict");
 
-        self.frame.add_or_check_image_usage(img.id, vk::IMAGE_USAGE_SAMPLED_BIT);
+        self.frame
+            .add_or_check_image_usage(img.id, vk::IMAGE_USAGE_SAMPLED_BIT);
 
         self.frame.add_dependency(
             img.task,
@@ -174,9 +181,47 @@ impl<'frame, 'ctx: 'frame> GraphicsTaskBuilder<'frame, 'ctx>
         self.graphics_task.shader_images.push(img.id);
     }
 
+    /// Specifies a depth attachment.
+    pub fn set_depth_attachment(&mut self, depth_attachment: AttachmentReference) {
+        self.graphics_task.pass_depth_attachment = Some(depth_attachment.vk_ref.clone());
+        if let Some(dependency) = depth_attachment.dependency {
+            self.frame.add_dependency_access_flags(
+                dependency,
+                vk::ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT
+                    | vk::ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            );
+        }
+        let img = self
+            .graphics_task
+            .get_attachment_image_id(depth_attachment.vk_ref.attachment);
+        self.frame
+            .add_or_check_image_usage(img, vk::IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+    }
+
+    /// Specifies input attachments for the pass.
+    pub fn set_input_attachments(&mut self, input_attachments: &[AttachmentReference]) {
+        self.graphics_task.pass_input_attachments = input_attachments
+            .iter()
+            .map(|a| a.vk_ref.clone())
+            .collect::<Vec<_>>();
+
+        for i in input_attachments {
+            if let Some(d) = i.dependency {
+                self.frame
+                    .add_dependency_access_flags(d, vk::ACCESS_INPUT_ATTACHMENT_READ_BIT);
+            }
+
+            let img = self
+                .graphics_task
+                .get_attachment_image_id(i.vk_ref.attachment);
+            // update usage bits of the resource
+            self.frame
+                .add_or_check_image_usage(img, vk::IMAGE_USAGE_INPUT_ATTACHMENT_BIT);
+        }
+    }
+
     /// Specifies the color attachments for the pass.
-    pub fn set_color_attachments(&mut self, color_attachments: &[AttachmentReference])
-    {
+    pub fn set_color_attachments(&mut self, color_attachments: &[AttachmentReference]) {
         self.graphics_task.pass_color_attachments = color_attachments
             .iter()
             .map(|a| a.vk_ref.clone())
@@ -185,22 +230,24 @@ impl<'frame, 'ctx: 'frame> GraphicsTaskBuilder<'frame, 'ctx>
         // update access bits of the dependency
         for c in color_attachments {
             if let Some(dependency) = c.dependency {
-                let load_op = self.graphics_task.attachments_desc[c.vk_ref.attachment as usize].load_op;
+                let load_op = self
+                    .graphics_task
+                    .get_attachment_desc(c.vk_ref.attachment)
+                    .load_op;
+
                 let access = if load_op == vk::AttachmentLoadOp::Load {
-                    // "VK_ATTACHMENT_LOAD_OP_LOAD means the previous contents of the image
-                    // within the render area will be preserved.
-                    // For attachments with a depth/stencil format, this uses the access type VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT.
-                    // For attachments with a color format, this uses the access type VK_ACCESS_COLOR_ATTACHMENT_READ_BIT."
                     vk::ACCESS_COLOR_ATTACHMENT_READ_BIT | vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT
                 } else {
                     vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT
                 };
-                self.frame
-                    .graph
-                    .edge_weight_mut(dependency)
-                    .unwrap()
-                    .access_bits |= access;
+
+                self.frame.add_dependency_access_flags(dependency, access);
             }
+            let img = self
+                .graphics_task
+                .get_attachment_image_id(c.vk_ref.attachment);
+            self.frame
+                .add_or_check_image_usage(img, vk::IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
         }
     }
 
@@ -210,8 +257,7 @@ impl<'frame, 'ctx: 'frame> GraphicsTaskBuilder<'frame, 'ctx>
         &mut self,
         img: &ImageRef,
         load_store_ops: &AttachmentLoadStore,
-    ) -> (ImageRef, AttachmentReference)
-    {
+    ) -> (ImageRef, AttachmentReference) {
         img.set_write().expect("R/W conflict");
 
         self.frame
@@ -266,15 +312,13 @@ impl<'frame, 'ctx: 'frame> GraphicsTaskBuilder<'frame, 'ctx>
         (new_ref, att)
     }
 
-
     /// Creates a new image that will be used as a color attachment by the task.
     pub fn create_attachment(
         &mut self,
         (width, height): (u32, u32),
         format: vk::Format,
         load_store_ops: &AttachmentLoadStore,
-    ) -> (ImageRef, AttachmentReference)
-    {
+    ) -> (ImageRef, AttachmentReference) {
         let img = self.frame.create_image_2d((width, height), format);
 
         let attachment_index = self
@@ -315,11 +359,8 @@ impl<'frame, 'ctx: 'frame> GraphicsTaskBuilder<'frame, 'ctx>
     }
 
     pub(super) fn finish(mut self) -> TaskId {
-        self.frame
-            .graph
-            .node_weight_mut(self.task)
-            .unwrap()
-            .details = TaskDetails::Graphics(self.graphics_task);
+        self.frame.graph.node_weight_mut(self.task).unwrap().details =
+            TaskDetails::Graphics(self.graphics_task);
         self.task
     }
 }

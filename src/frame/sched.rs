@@ -488,8 +488,7 @@ impl<'ctx> Frame<'ctx> {
         }
     }
 
-    pub fn schedule(&mut self, opt: ScheduleOptimizationProfile) -> Vec<TaskId>
-    {
+    pub fn schedule(&mut self, opt: ScheduleOptimizationProfile) -> Vec<TaskId> {
         debug!("begin scheduling");
 
         self.insert_exit_tasks();

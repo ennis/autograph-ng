@@ -1,5 +1,5 @@
+use super::resource::{BufferId, ImageId};
 use super::*;
-use super::resource::{ImageId, BufferId};
 
 //--------------------------------------------------------------------------------------------------
 

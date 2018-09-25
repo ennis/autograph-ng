@@ -1,7 +1,6 @@
 use super::*;
 
-impl<'ctx> Frame<'ctx>
-{
+impl<'ctx> Frame<'ctx> {
     pub(super) fn dump<W: Write>(&self, w: &mut W) {
         // dump resources
         writeln!(w, "--- RESOURCES ---");
@@ -48,13 +47,13 @@ impl<'ctx> Frame<'ctx>
             match &d.resource {
                 &DependencyResource::Image(id) => {
                     writeln!(
-                            w,
-                            "IMAGE ACCESS {}(#{}) -> {}(#{})",
-                            src_task.name,
-                            src.index(),
-                            dst_task.name,
-                            dst.index()
-                        );
+                        w,
+                        "IMAGE ACCESS {}(#{}) -> {}(#{})",
+                        src_task.name,
+                        src.index(),
+                        dst_task.name,
+                        dst.index()
+                    );
 
                     writeln!(w, "  resource ......... {:08X}", id.0);
                     writeln!(w, "  access ........... {:?}", d.access_bits);
@@ -65,8 +64,7 @@ impl<'ctx> Frame<'ctx>
                         writeln!(w, "  index ............ {:?}", attachment.index);
                         writeln!(w, "  loadOp ........... {:?}", attachment.load_op);
                         writeln!(w, "  storeOp .......... {:?}", attachment.store_op);
-                    }*/
-                }
+                    }*/                }
                 &DependencyResource::Buffer(id) => {
                     writeln!(
                         w,

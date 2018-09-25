@@ -3,9 +3,9 @@ extern crate gfx2;
 
 use std::env;
 
-use gfx2::*;
 use gfx2::import::import_graph;
 use gfx2::vk;
+use gfx2::*;
 
 //--------------------------------------------------------------------------------------------------
 fn downsample(frame: &mut Frame, input: &ImageRef, aux: &ImageRef) -> ImageRef {
@@ -21,7 +21,8 @@ fn downsample(frame: &mut Frame, input: &ImageRef, aux: &ImageRef) -> ImageRef {
             let (r, att) = t.create_attachment(
                 (cur_w, cur_h),
                 vk::Format::R16g16b16a16Sfloat,
-                &AttachmentLoadStore::write_only());
+                &AttachmentLoadStore::write_only(),
+            );
             t.set_color_attachments(&[att]);
             r
         });
@@ -59,16 +60,20 @@ fn test_frame_deferred_shading<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx 
         let write_only = AttachmentLoadStore::write_only();
         let depth_stencil_clear = AttachmentLoadStore::clear();
 
-        let (normals, normals_att) = t.create_attachment(dimensions, vk::Format::R16g16Sfloat, &write_only);
+        let (normals, normals_att) =
+            t.create_attachment(dimensions, vk::Format::R16g16Sfloat, &write_only);
         let (diffuse_specular, diffuse_specular_att) =
             t.create_attachment(dimensions, vk::Format::R8g8b8a8Srgb, &write_only);
         let (position, position_att) =
             t.create_attachment(dimensions, vk::Format::R16g16b16a16Sfloat, &write_only);
         let (emission, emission_att) =
             t.create_attachment(dimensions, vk::Format::R16g16b16a16Sfloat, &write_only);
-        let (tangents, tangents_att) = t.create_attachment(dimensions, vk::Format::R16g16Sfloat, &write_only);
-        let (velocity, velocity_att) = t.create_attachment(dimensions, vk::Format::R16g16Sfloat, &write_only);
-        let (depth, depth_att) = t.create_attachment(dimensions, vk::Format::D32Sfloat, &depth_stencil_clear);
+        let (tangents, tangents_att) =
+            t.create_attachment(dimensions, vk::Format::R16g16Sfloat, &write_only);
+        let (velocity, velocity_att) =
+            t.create_attachment(dimensions, vk::Format::R16g16Sfloat, &write_only);
+        let (depth, depth_att) =
+            t.create_attachment(dimensions, vk::Format::D32Sfloat, &depth_stencil_clear);
 
         t.set_color_attachments(&[
             normals_att,
@@ -78,7 +83,7 @@ fn test_frame_deferred_shading<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx 
             tangents_att,
             velocity_att,
         ]);
-        //t.set_depth_attachment(depth_att);
+        t.set_depth_attachment(depth_att);
 
         Gbuffers {
             normals,
@@ -91,22 +96,27 @@ fn test_frame_deferred_shading<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx 
         }
     });
 
-    /*let (t_shadow, shadow_map) = frame.create_graphics_task("shadowmap", |t| {
-        t.create_attachment(AttachmentIndex::Color(0), dimensions, vk::Format::R32Sfloat)
-    });*/
+    let target = frame.import_image(persistent);
 
     // lighting pass
-    frame.create_graphics_task("lighting", |t| {
-        /*t.attachments(&[
-            normals,
-            depth,
-            diffuse_specular,
-            emission,
-            position,
-            tangents,
-            velocity,
-        ]);*/
+    let (_, target) = frame.create_graphics_task("lighting", |t| {
+        let (target, target_att) = t.attachment(&target, &AttachmentLoadStore::write_only());
+        let (normals, normals_att) = t.attachment(&gbuffers.normals, &AttachmentLoadStore::forget());
+        let (diffuse_specular, diffuse_specular_att) =
+            t.attachment(&gbuffers.diffuse_specular, &AttachmentLoadStore::forget());
+        let (emission, emission_att) = t.attachment(&gbuffers.emission, &AttachmentLoadStore::forget());
+        let (position, position_att) = t.attachment(&gbuffers.position, &AttachmentLoadStore::forget());
+        let (tangents, tangents_att) = t.attachment(&gbuffers.tangents, &AttachmentLoadStore::forget());
+        let (velocity, velocity_att) = t.attachment(&gbuffers.velocity, &AttachmentLoadStore::forget());
+        let (depth, depth_att) = t.attachment(&gbuffers.depth, &AttachmentLoadStore::forget());
+
+        t.set_color_attachments(&[target_att]);
+        t.set_depth_attachment(depth_att);
+        target
     });
+
+    // present to screen
+    frame.present(&target);
 }
 
 /*//--------------------------------------------------------------------------------------------------

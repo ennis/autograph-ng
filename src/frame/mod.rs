@@ -15,11 +15,11 @@ use petgraph::{
 use context::Context;
 use resource::*;
 
-mod graphviz;
-mod sched;
 mod dependency;
-mod resource;
 mod dump;
+mod graphviz;
+mod resource;
+mod sched;
 
 pub mod compute;
 pub mod graphics;
@@ -28,12 +28,15 @@ pub mod transfer;
 
 pub use self::sched::ScheduleOptimizationProfile;
 
-use self::graphics::{GraphicsTask,GraphicsTaskBuilder};
 use self::compute::{ComputeTask, ComputeTaskBuilder};
-use self::transfer::{TransferTask};
-use self::present::{PresentTask, PresentTaskBuilder};
 use self::dependency::{Dependency, DependencyResource};
-use self::resource::{ImageId, BufferId, ImageFrameResource, BufferFrameResource, FrameResource, ImageDesc, BufferDesc};
+use self::graphics::{GraphicsTask, GraphicsTaskBuilder};
+use self::present::{PresentTask, PresentTaskBuilder};
+use self::resource::{
+    BufferDesc, BufferFrameResource, BufferId, FrameResource, ImageDesc, ImageFrameResource,
+    ImageId,
+};
+use self::transfer::TransferTask;
 
 pub use self::graphics::{AttachmentLoadStore, AttachmentReference};
 
@@ -125,7 +128,6 @@ pub struct Frame<'ctx> {
     pub(crate) buffers: Vec<BufferFrameResource<'ctx>>,
 }
 
-
 //--------------------------------------------------------------------------------------------------
 // Frame implementation
 
@@ -179,6 +181,19 @@ impl<'ctx> Frame<'ctx> {
         (t, r)
     }
 
+    /// Creates a new task.
+    /// Returns the ID to the newly created task.
+    pub fn create_compute_task<S, R, F>(&mut self, name: S, setup: F) -> (TaskId, R)
+        where
+            S: Into<String>,
+            F: FnOnce(&mut ComputeTaskBuilder) -> R,
+    {
+        let mut builder = ComputeTaskBuilder::new(self, name);
+        let r = setup(&mut builder);
+        let t = builder.finish();
+        (t, r)
+    }
+
     /// Adds a resource dependency between two tasks in the graph.
     fn add_dependency(&mut self, src: TaskId, dst: TaskId, dependency: Dependency) -> DependencyId {
         // look for an already existing dependency
@@ -190,14 +205,13 @@ impl<'ctx> Frame<'ctx> {
                 dep.src_stage_mask |= dependency.src_stage_mask;
                 dep.dst_stage_mask |= dependency.dst_stage_mask;
                 dep.latency = dep.latency.max(dependency.latency);
-                return edge
+                return edge;
             }
         }
 
         // new dependency
         self.graph.add_edge(src, dst, dependency)
     }
-
 
     /// Adds a sequencing constraint between two nodes.
     /// A sequencing constraint does not involve any resource.
@@ -216,7 +230,12 @@ impl<'ctx> Frame<'ctx> {
     }
 
     /// Adds a generic read dependency on the specified image.
-    fn add_generic_read_dependency(&mut self, src: TaskId, dst: TaskId, img: ImageId) -> DependencyId {
+    fn add_generic_read_dependency(
+        &mut self,
+        src: TaskId,
+        dst: TaskId,
+        img: ImageId,
+    ) -> DependencyId {
         self.add_dependency(
             src,
             dst,
@@ -305,6 +324,11 @@ impl<'ctx> Frame<'ctx> {
         self.add_image_resource(format!("IMG_{:04}", naming_index), desc)
     }
 
+    /// Updates the `access_bits` field of a resource dependency.
+    fn add_dependency_access_flags(&mut self, dependency: DependencyId, flags: vk::AccessFlags) {
+        self.graph.edge_weight_mut(dependency).unwrap().access_bits |= flags;
+    }
+
     /// Adds a transient buffer resource.
     pub(crate) fn add_buffer_resource(&mut self, name: String, desc: BufferDesc) -> BufferId {
         self.buffers
@@ -343,11 +367,9 @@ impl<'ctx> Frame<'ctx> {
             } => {
                 description.usage |= usage;
             }
-            FrameResource::Imported { ref resource } => assert!(resource.usage().subset(usage)),
+            FrameResource::Imported { ref resource } => { } // TODO assert!(resource.usage().subset(usage)),
         }
     }
-
-
 
     pub fn submit(mut self) {
         // TODO
