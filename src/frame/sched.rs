@@ -422,7 +422,7 @@ impl Default for ScheduleOptimizationProfile {
 }
 
 impl<'ctx> Frame<'ctx> {
-       pub fn schedule(&mut self, opt: ScheduleOptimizationProfile) -> Vec<TaskId> {
+    pub fn schedule(&mut self, opt: ScheduleOptimizationProfile) -> Vec<TaskId> {
         // avoid toposort here, because the algo in petgraph
         // produces an ordering that is not optimal for aliasing.
         // Instead, compute the "directed minimum linear arrangement" (directed minLA)

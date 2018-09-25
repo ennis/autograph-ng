@@ -4,7 +4,7 @@ use std::io::Write;
 
 use ash::vk;
 
-use super::{DependencyDetails, Frame, TaskId};
+use super::{DependencyResource, Frame, TaskId};
 
 fn format_pipeline_stage_mask(mask: vk::PipelineStageFlags) -> String {
     let mut out = String::new();
@@ -227,8 +227,8 @@ impl<'ctx> Frame<'ctx> {
             let d = self.graph.edge_weight(e).unwrap();
             //let imported = self.
 
-            let color_code = match &d.details {
-                &DependencyDetails::Image { id, .. } => {
+            let color_code = match &d.resource {
+                &DependencyResource::Image(id) => {
                     let imported = self.images[id.0 as usize].is_imported();
                     if imported {
                         if d.access_bits.intersects(
@@ -254,7 +254,7 @@ impl<'ctx> Frame<'ctx> {
                         }
                     }
                 }
-                &DependencyDetails::Buffer { id, .. } => {
+                &DependencyResource::Buffer(id) => {
                     if d.access_bits.intersects(vk::ACCESS_SHADER_WRITE_BIT) {
                         // let imported = self.images[id.0 as usize].is_imported();
                         "violetred4"
@@ -266,8 +266,8 @@ impl<'ctx> Frame<'ctx> {
             };
 
             //------------------ Dependency edge ------------------
-            match &d.details {
-                &DependencyDetails::Sequence => {
+            match &d.resource {
+                &DependencyResource::Sequence => {
                     // no associated resource
                     writeln!(
                         w,
