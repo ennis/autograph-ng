@@ -403,7 +403,16 @@ fn create_task_groups(
 
 /// Groups compatible tasks into renderpasses.
 fn create_renderpasses(g: &FrameGraph, ordering: &[TaskId], task_groups: &[TaskGroup]) {
-    unimplemented!()
+    for tg in task_groups.iter() {
+        // look for consecutive tasks in a task group that:
+        // - are graphics tasks
+        // - share most of the same attachment inputs
+        // -
+       // let mut nodes = subgraph_externals(g, &tg.tasks, Direction::Incoming).collect::<Vec<_>>();
+
+
+
+    }
 }
 
 /// Optimization profiles for scheduling.
@@ -655,7 +664,14 @@ impl<'ctx> Frame<'ctx> {
 // - clutters the graph with useless nodes, confuses scheduling.
 // - initialize to the correct state on first use.
 //
-// Decouple dependency edges and usage of the resource within the task.
+// DONE Decouple dependency edges and usage of the resource within the task.
 // - A resource can have multiple usages within the same task.
 //      - e.g. color attachment and input attachment
 // - Dependency = only pipeline barrier info
+//
+// Implicit dependencies between tasks with ordering
+// - user submitted ordering is important
+// - write after read is not an error, but will insert a pipeline barrier automatically
+// - same for read after write
+// -> ordering is defined implicitly by the submission order.
+// -> benefits: less cluttered API

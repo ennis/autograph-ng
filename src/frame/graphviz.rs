@@ -4,7 +4,7 @@ use std::io::Write;
 
 use ash::vk;
 
-use super::{DependencyResource, Frame, TaskId};
+use super::*;
 
 fn format_pipeline_stage_mask(mask: vk::PipelineStageFlags) -> String {
     let mut out = String::new();
@@ -227,35 +227,35 @@ impl<'ctx> Frame<'ctx> {
             let d = self.graph.edge_weight(e).unwrap();
             //let imported = self.
 
-            let color_code = match &d.resource {
-                &DependencyResource::Image(id) => {
+            let color_code = match &d.barrier {
+                &BarrierDetail::Image(ImageBarrier{ id, dst_access_mask, .. }) => {
                     let imported = self.images[id.0 as usize].is_imported();
                     if imported {
-                        if d.access_bits.intersects(
+                        if dst_access_mask.intersects(
                             vk::ACCESS_COLOR_ATTACHMENT_READ_BIT
                                 | vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
                         ) {
                             "mediumpurple2"
-                        } else if d.access_bits.intersects(vk::ACCESS_SHADER_WRITE_BIT) {
+                        } else if dst_access_mask.intersects(vk::ACCESS_SHADER_WRITE_BIT) {
                             "mediumpurple1"
                         } else {
                             "plum"
                         }
                     } else {
-                        if d.access_bits.intersects(
+                        if dst_access_mask.intersects(
                             vk::ACCESS_COLOR_ATTACHMENT_READ_BIT
                                 | vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
                         ) {
                             "lightblue3"
-                        } else if d.access_bits.intersects(vk::ACCESS_SHADER_WRITE_BIT) {
+                        } else if dst_access_mask.intersects(vk::ACCESS_SHADER_WRITE_BIT) {
                             "mediumpurple1"
                         } else {
                             "lightcyan1"
                         }
                     }
                 }
-                &DependencyResource::Buffer(id) => {
-                    if d.access_bits.intersects(vk::ACCESS_SHADER_WRITE_BIT) {
+                &BarrierDetail::Buffer(BufferBarrier { id, dst_access_mask, .. }) => {
+                    if dst_access_mask.intersects(vk::ACCESS_SHADER_WRITE_BIT) {
                         // let imported = self.images[id.0 as usize].is_imported();
                         "violetred4"
                     } else {
@@ -266,8 +266,8 @@ impl<'ctx> Frame<'ctx> {
             };
 
             //------------------ Dependency edge ------------------
-            match &d.resource {
-                &DependencyResource::Sequence => {
+            match &d.barrier {
+                &BarrierDetail::Sequence => {
                     // no associated resource
                     writeln!(
                         w,

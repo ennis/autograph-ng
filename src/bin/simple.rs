@@ -34,6 +34,7 @@ fn downsample(frame: &mut Frame, input: &ImageRef, aux: &ImageRef) -> ImageRef {
     r_last.unwrap()
 }
 
+
 //--------------------------------------------------------------------------------------------------
 // somewhat closer to real-life
 fn test_frame_deferred_shading<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx mut Image) {
@@ -46,42 +47,36 @@ fn test_frame_deferred_shading<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx 
     let shadowmap_dimensions = (shadowmap_width, shadowmap_height);
 
     // init G-buffers and render
+    //#[derive(AttachmentGroup)]
     struct Gbuffers {
-        normals: ImageRef,
-        diffuse_specular: ImageRef,
-        emission: ImageRef,
-        position: ImageRef,
-        tangents: ImageRef,
-        velocity: ImageRef,
-        depth: ImageRef,
+        normals: AttachmentRef,
+        diffuse_specular: AttachmentRef,
+        emission: AttachmentRef,
+        position: AttachmentRef,
+        tangents: AttachmentRef,
+        velocity: AttachmentRef,
+        depth: AttachmentRef,
     }
 
-    let (t_draw, gbuffers) = frame.create_graphics_task("gbuffers", |t| {
-        let write_only = AttachmentLoadStore::write_only();
-        let depth_stencil_clear = AttachmentLoadStore::clear();
+    //
+    let renderpass = frame.new_renderpass();
 
-        let (normals, normals_att) =
-            t.create_attachment(dimensions, vk::Format::R16g16Sfloat, &write_only);
-        let (diffuse_specular, diffuse_specular_att) =
-            t.create_attachment(dimensions, vk::Format::R8g8b8a8Srgb, &write_only);
-        let (position, position_att) =
-            t.create_attachment(dimensions, vk::Format::R16g16b16a16Sfloat, &write_only);
-        let (emission, emission_att) =
-            t.create_attachment(dimensions, vk::Format::R16g16b16a16Sfloat, &write_only);
-        let (tangents, tangents_att) =
-            t.create_attachment(dimensions, vk::Format::R16g16Sfloat, &write_only);
-        let (velocity, velocity_att) =
-            t.create_attachment(dimensions, vk::Format::R16g16Sfloat, &write_only);
-        let (depth, depth_att) =
-            t.create_attachment(dimensions, vk::Format::D32Sfloat, &depth_stencil_clear);
+    let (_, gbuffers) = frame.create_graphics_subpass("gbuffers", renderpass, |t| {
+        let normals = t.create_attachment(dimensions, vk::Format::R16g16Sfloat, &write_only);
+        let diffuse_specular = t.create_attachment(dimensions, vk::Format::R8g8b8a8Srgb, &write_only);
+        let position = t.create_attachment(dimensions, vk::Format::R16g16b16a16Sfloat, &write_only);
+        let emission = t.create_attachment(dimensions, vk::Format::R16g16b16a16Sfloat, &write_only);
+        let tangents = t.create_attachment(dimensions, vk::Format::R16g16Sfloat, &write_only);
+        let velocity = t.create_attachment(dimensions, vk::Format::R16g16Sfloat, &write_only);
+        let depth = t.create_attachment(dimensions, vk::Format::D32Sfloat, &depth_stencil_clear);
 
         t.set_color_attachments(&[
-            normals_att,
-            diffuse_specular_att,
-            position_att,
-            emission_att,
-            tangents_att,
-            velocity_att,
+            normals,
+            diffuse_specular,
+            position,
+            emission,
+            tangents,
+            velocity,
         ]);
         t.set_depth_attachment(depth_att);
 
@@ -96,10 +91,11 @@ fn test_frame_deferred_shading<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx 
         }
     });
 
+
     let target = frame.import_image(persistent);
 
     // lighting pass
-    let (_, target) = frame.create_graphics_task("lighting", |t| {
+    let (_, target) = frame.create_graphics_subpass("lighting", renderpass, |t| {
         let (target, target_att) = t.attachment(&target, &AttachmentLoadStore::write_only());
         let (normals, normals_att) = t.attachment(&gbuffers.normals, &AttachmentLoadStore::forget());
         let (diffuse_specular, diffuse_specular_att) =

@@ -29,7 +29,7 @@ pub mod transfer;
 pub use self::sched::ScheduleOptimizationProfile;
 
 use self::compute::{ComputeTask, ComputeTaskBuilder};
-use self::dependency::{Dependency, DependencyResource};
+use self::dependency::*;
 use self::graphics::{GraphicsTask, GraphicsTaskBuilder};
 use self::present::{PresentTask, PresentTaskBuilder};
 use self::resource::{
@@ -91,6 +91,7 @@ pub struct TaskOutputRef<T> {
     latency: u32,
 }
 
+
 impl<T> TaskOutputRef<T> {
     pub(crate) fn set_write(&self) -> Result<(), ()> {
         if self.read.get() {
@@ -116,6 +117,22 @@ pub type ImageRef = TaskOutputRef<ImageId>;
 pub type BufferRef = TaskOutputRef<BufferId>;
 
 //--------------------------------------------------------------------------------------------------
+struct RenderPass {
+}
+
+impl RenderPass {
+    fn new() -> RenderPass {
+        RenderPass {
+            attachments: Vec::new(),
+            attachments_desc: Vec::new()
+        }
+    }
+}
+
+#[derive(Copy,Clone,Debug)]
+pub(crate) struct RenderPassId(pub(crate) u32);
+
+//--------------------------------------------------------------------------------------------------
 
 /// A frame: manages transient resources within a frame.
 pub struct Frame<'ctx> {
@@ -126,6 +143,8 @@ pub struct Frame<'ctx> {
     pub(crate) images: Vec<ImageFrameResource<'ctx>>,
     /// Table of buffers used in this frame.
     pub(crate) buffers: Vec<BufferFrameResource<'ctx>>,
+    /// Table of renderpasses.
+    pub(crate) renderpasses: Vec<RenderPass>
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -140,6 +159,7 @@ impl<'ctx> Frame<'ctx> {
             context,
             images: Vec::new(),
             buffers: Vec::new(),
+            renderpasses: Vec::new()
         };
         f
     }
@@ -194,23 +214,47 @@ impl<'ctx> Frame<'ctx> {
         (t, r)
     }
 
-    /// Adds a resource dependency between two tasks in the graph.
+    /// Adds or updates a dependency between two tasks in the graph.
     fn add_dependency(&mut self, src: TaskId, dst: TaskId, dependency: Dependency) -> DependencyId {
         // look for an already existing dependency
         if let Some(edge) = self.graph.find_edge(src, dst) {
             let dep = self.graph.edge_weight_mut(edge).unwrap();
-            if dep.resource == dependency.resource {
-                // update dependency with new access flags
-                dep.access_bits |= dependency.access_bits;
-                dep.src_stage_mask |= dependency.src_stage_mask;
-                dep.dst_stage_mask |= dependency.dst_stage_mask;
-                dep.latency = dep.latency.max(dependency.latency);
-                return edge;
+
+            match (&dep.barrier, &dependency.barrier) {
+                // buffer barrier
+                (&BarrierDetail::Buffer(ref mut barrier_a @ BufferBarrier { id: id_a, .. }),
+                 &BarrierDetail::Buffer(ref barrier_b @ BufferBarrier { id: id_b, .. })) if id_a == id_b => {
+                    dep.src_stage_mask |= dependency.src_stage_mask;
+                    dep.dst_stage_mask |= dependency.dst_stage_mask;
+                    barrier_a.src_access_mask |= barrier_b.src_access_mask;
+                    barrier_a.dst_access_mask |= barrier_b.dst_access_mask;
+                    dep.latency = dep.latency.max(dependency.latency);
+                    return edge;
+                },
+                // image barrier
+                (&BarrierDetail::Image(ref mut barrier_a @ ImageBarrier { id: id_a, .. }),
+                    &BarrierDetail::Image(ref barrier_b @ ImageBarrier { id: id_b, .. })) if id_a == id_b => {
+                    dep.src_stage_mask |= dependency.src_stage_mask;
+                    dep.dst_stage_mask |= dependency.dst_stage_mask;
+                    barrier_a.src_access_mask |= barrier_b.src_access_mask;
+                    barrier_a.dst_access_mask |= barrier_b.dst_access_mask;
+                    // must be a compatible layout
+                    dep.latency = dep.latency.max(dependency.latency);
+                    return edge;
+                },
+                _ => {}
             }
         }
 
         // new dependency
         self.graph.add_edge(src, dst, dependency)
+    }
+
+    /// Creates a renderpass.
+    fn create_renderpass(&mut self) -> RenderPassId
+    {
+        self.renderpasses.push(RenderPass::new());
+        RenderPassId((self.renderpasses.len() - 1) as u32)
     }
 
     /// Adds a sequencing constraint between two nodes.
@@ -220,16 +264,15 @@ impl<'ctx> Frame<'ctx> {
             src,
             dst,
             Dependency {
-                access_bits: vk::AccessFlags::empty(),              // ignored
                 src_stage_mask: vk::PIPELINE_STAGE_TOP_OF_PIPE_BIT, // ignored
                 dst_stage_mask: vk::PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                resource: DependencyResource::Sequence,
+                barrier: BarrierDetail::Sequence,
                 latency: 0, // FIXME not sure...
             },
         )
     }
 
-    /// Adds a generic read dependency on the specified image.
+    /*/// Adds a generic read dependency on the specified image.
     fn add_generic_read_dependency(
         &mut self,
         src: TaskId,
@@ -240,14 +283,13 @@ impl<'ctx> Frame<'ctx> {
             src,
             dst,
             Dependency {
-                access_bits: vk::AccessFlags::empty(), // ignored by present command
                 src_stage_mask: vk::PIPELINE_STAGE_TOP_OF_PIPE_BIT, // ignored by present command
                 dst_stage_mask: vk::PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                resource: img.into(),
+                barrier: img.into(),
                 latency: 1, // FIXME ???
             },
         )
-    }
+    }*/
 
     /// Updates the data contained in a texture. This creates a task in the graph.
     /// This does not synchronize: the data to be modified is first uploaded into a
@@ -294,7 +336,7 @@ impl<'ctx> Frame<'ctx> {
         }
     }*/
 
-    /// Creates a transient 2D image associated with the specified task.
+    /// Creates a transient 2D image.
     /// The initial layout of the image is inferred from its usage in depending tasks.
     fn create_image_2d(&mut self, (width, height): (u32, u32), format: vk::Format) -> ImageId {
         let desc = ImageDesc {
@@ -324,9 +366,10 @@ impl<'ctx> Frame<'ctx> {
         self.add_image_resource(format!("IMG_{:04}", naming_index), desc)
     }
 
-    /// Updates the `access_bits` field of a resource dependency.
-    fn add_dependency_access_flags(&mut self, dependency: DependencyId, flags: vk::AccessFlags) {
-        self.graph.edge_weight_mut(dependency).unwrap().access_bits |= flags;
+    /// Updates the "destination access mask" field of an image dependency.
+    /// Panics if `dependency` is not an image dependency.
+    fn add_image_barrier_access_flags(&mut self, dependency: DependencyId, flags: vk::AccessFlags) {
+        self.graph.edge_weight_mut(dependency).unwrap().as_image_barrier_mut().unwrap().dst_access_mask |= flags;
     }
 
     /// Adds a transient buffer resource.

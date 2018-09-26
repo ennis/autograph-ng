@@ -2,6 +2,11 @@ use super::*;
 
 //--------------------------------------------------------------------------------------------------
 
+// three things:
+// - RenderPassBuilder (attachment only)
+// - SubpassBuilder (descriptors only)
+// - GraphicsPassBuilder (all)
+
 /// DOCUMENT
 #[derive(Copy, Clone, Debug)]
 pub enum AttachmentIndex {
@@ -85,9 +90,9 @@ impl Default for AttachmentLoadStore {
 pub(crate) struct GraphicsTask {
     attachments: Vec<ImageId>,
     attachments_desc: Vec<vk::AttachmentDescription>,
-    pass_color_attachments: Vec<vk::AttachmentReference>,
-    pass_input_attachments: Vec<vk::AttachmentReference>,
-    pass_depth_attachment: Option<vk::AttachmentReference>,
+    color_attachments: Vec<vk::AttachmentReference>,
+    input_attachments: Vec<vk::AttachmentReference>,
+    depth_attachment: Option<vk::AttachmentReference>,
     shader_images: Vec<ImageId>,
 }
 
@@ -98,16 +103,6 @@ pub struct AttachmentReference {
 }
 
 impl GraphicsTask {
-    pub(crate) fn new() -> GraphicsTask {
-        GraphicsTask {
-            attachments: Vec::new(),
-            attachments_desc: Vec::new(),
-            shader_images: Vec::new(),
-            pass_color_attachments: Vec::new(),
-            pass_input_attachments: Vec::new(),
-            pass_depth_attachment: None,
-        }
-    }
 
     fn is_used_as_shader_image(&self, img: ImageId) -> Result<(), ()> {
         if self.shader_images.contains(&img) {
@@ -149,7 +144,7 @@ impl<'frame, 'ctx: 'frame> GraphicsTaskBuilder<'frame, 'ctx> {
         name: impl Into<String>,
     ) -> GraphicsTaskBuilder<'frame, 'ctx> {
         // create a dummy node in the graph that we will fill up later.
-        // this avoids looking into the graph everytime we modify something,
+        // this avoids looking into the graph every time we modify something,
         // and still allows us to create dependencies in the graph
         let task = frame.create_task_on_queue(name, 0, TaskDetails::Other);
         GraphicsTaskBuilder {

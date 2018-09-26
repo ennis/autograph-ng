@@ -9,6 +9,11 @@ pub struct ImageId(pub(crate) u32);
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct BufferId(pub(crate) u32);
 
+/// A special type of resource reference that identifies an image resource used as an attachment
+/// between subpasses.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct AttachmentId(pub(crate) ImageId);
+
 //--------------------------------------------------------------------------------------------------
 /// A resource (image or buffer) used in a frame.
 pub enum FrameResource<'imp, T: Resource, D> {

@@ -44,8 +44,8 @@ impl<'ctx> Frame<'ctx> {
             let dst_task = self.graph.node_weight(dst).unwrap();
             let d = self.graph.edge_weight(e).unwrap();
 
-            match &d.resource {
-                &DependencyResource::Image(id) => {
+            match &d.barrier {
+                &BarrierDetail::Image(ImageBarrier{ id, dst_access_mask, .. }) => {
                     writeln!(
                         w,
                         "IMAGE ACCESS {}(#{}) -> {}(#{})",
@@ -56,7 +56,7 @@ impl<'ctx> Frame<'ctx> {
                     );
 
                     writeln!(w, "  resource ......... {:08X}", id.0);
-                    writeln!(w, "  access ........... {:?}", d.access_bits);
+                    writeln!(w, "  dstAccessMask..... {:?}", dst_access_mask);
                     writeln!(w, "  srcStageMask ..... {:?}", d.src_stage_mask);
                     writeln!(w, "  dstStageMask ..... {:?}", d.dst_stage_mask);
                     //writeln!(w, "  newLayout ........ {:?}", new_layout);
@@ -65,7 +65,7 @@ impl<'ctx> Frame<'ctx> {
                         writeln!(w, "  loadOp ........... {:?}", attachment.load_op);
                         writeln!(w, "  storeOp .......... {:?}", attachment.store_op);
                     }*/                }
-                &DependencyResource::Buffer(id) => {
+                &BarrierDetail::Buffer(BufferBarrier{ id , dst_access_mask, .. }) => {
                     writeln!(
                         w,
                         "BUFFER ACCESS {}(#{}) -> {}(#{})",
@@ -75,11 +75,11 @@ impl<'ctx> Frame<'ctx> {
                         dst.index()
                     );
                     writeln!(w, "  resource ......... {:08X}", id.0);
-                    writeln!(w, "  access ........... {:?}", d.access_bits);
+                    writeln!(w, "  dstAccessMask .... {:?}", dst_access_mask);
                     writeln!(w, "  srcStageMask ..... {:?}", d.src_stage_mask);
                     writeln!(w, "  dstStageMask ..... {:?}", d.dst_stage_mask);
                 }
-                &DependencyResource::Sequence => {
+                &BarrierDetail::Sequence => {
                     writeln!(
                         w,
                         "SEQUENCE {}(#{}) -> {}(#{})",
