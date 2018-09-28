@@ -45,7 +45,11 @@ impl<'ctx> Frame<'ctx> {
             let d = self.graph.edge_weight(e).unwrap();
 
             match &d.barrier {
-                &BarrierDetail::Image(ImageBarrier{ id, dst_access_mask, .. }) => {
+                &BarrierDetail::Image(ImageBarrier {
+                    id,
+                    dst_access_mask,
+                    ..
+                }) => {
                     writeln!(
                         w,
                         "IMAGE ACCESS {}(#{}) -> {}(#{})",
@@ -65,7 +69,11 @@ impl<'ctx> Frame<'ctx> {
                         writeln!(w, "  loadOp ........... {:?}", attachment.load_op);
                         writeln!(w, "  storeOp .......... {:?}", attachment.store_op);
                     }*/                }
-                &BarrierDetail::Buffer(BufferBarrier{ id , dst_access_mask, .. }) => {
+                &BarrierDetail::Buffer(BufferBarrier {
+                    id,
+                    dst_access_mask,
+                    ..
+                }) => {
                     writeln!(
                         w,
                         "BUFFER ACCESS {}(#{}) -> {}(#{})",
@@ -79,16 +87,37 @@ impl<'ctx> Frame<'ctx> {
                     writeln!(w, "  srcStageMask ..... {:?}", d.src_stage_mask);
                     writeln!(w, "  dstStageMask ..... {:?}", d.dst_stage_mask);
                 }
+                &BarrierDetail::Subpass(SubpassBarrier {
+                                           id,
+                                           dst_access_mask,
+                                           ..
+                                       }) =>
+                    {
+                        writeln!(
+                            w,
+                            "SUBPASS {}(#{}) -> {}(#{})",
+                            src_task.name,
+                            src.index(),
+                            dst_task.name,
+                            dst.index()
+                        );
+
+                        writeln!(w, "  resource ......... {:08X}", id.0);
+                        writeln!(w, "  dstAccessMask .... {:?}", dst_access_mask);
+                        writeln!(w, "  srcStageMask ..... {:?}", d.src_stage_mask);
+                        writeln!(w, "  dstStageMask ..... {:?}", d.dst_stage_mask);
+
+                    }
                 &BarrierDetail::Sequence => {
-                    writeln!(
-                        w,
-                        "SEQUENCE {}(#{}) -> {}(#{})",
-                        src_task.name,
-                        src.index(),
-                        dst_task.name,
-                        dst.index()
-                    );
-                }
+                writeln!(
+                    w,
+                    "SEQUENCE {}(#{}) -> {}(#{})",
+                    src_task.name,
+                    src.index(),
+                    dst_task.name,
+                    dst.index()
+                );
+            },
             }
             writeln!(w);
         }

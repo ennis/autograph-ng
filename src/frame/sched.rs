@@ -408,9 +408,7 @@ fn create_renderpasses(g: &FrameGraph, ordering: &[TaskId], task_groups: &[TaskG
         // - are graphics tasks
         // - share most of the same attachment inputs
         // -
-       // let mut nodes = subgraph_externals(g, &tg.tasks, Direction::Incoming).collect::<Vec<_>>();
-
-
+        // let mut nodes = subgraph_externals(g, &tg.tasks, Direction::Incoming).collect::<Vec<_>>();
 
     }
 }

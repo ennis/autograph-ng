@@ -228,7 +228,11 @@ impl<'ctx> Frame<'ctx> {
             //let imported = self.
 
             let color_code = match &d.barrier {
-                &BarrierDetail::Image(ImageBarrier{ id, dst_access_mask, .. }) => {
+                &BarrierDetail::Image(ImageBarrier {
+                    id,
+                    dst_access_mask,
+                    ..
+                }) => {
                     let imported = self.images[id.0 as usize].is_imported();
                     if imported {
                         if dst_access_mask.intersects(
@@ -254,7 +258,11 @@ impl<'ctx> Frame<'ctx> {
                         }
                     }
                 }
-                &BarrierDetail::Buffer(BufferBarrier { id, dst_access_mask, .. }) => {
+                &BarrierDetail::Buffer(BufferBarrier {
+                    id,
+                    dst_access_mask,
+                    ..
+                }) => {
                     if dst_access_mask.intersects(vk::ACCESS_SHADER_WRITE_BIT) {
                         // let imported = self.images[id.0 as usize].is_imported();
                         "violetred4"

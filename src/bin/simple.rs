@@ -34,7 +34,6 @@ fn downsample(frame: &mut Frame, input: &ImageRef, aux: &ImageRef) -> ImageRef {
     r_last.unwrap()
 }
 
-
 //--------------------------------------------------------------------------------------------------
 // somewhat closer to real-life
 fn test_frame_deferred_shading<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx mut Image) {
@@ -63,7 +62,8 @@ fn test_frame_deferred_shading<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx 
 
     let (_, gbuffers) = frame.create_graphics_subpass("gbuffers", renderpass, |t| {
         let normals = t.create_attachment(dimensions, vk::Format::R16g16Sfloat, &write_only);
-        let diffuse_specular = t.create_attachment(dimensions, vk::Format::R8g8b8a8Srgb, &write_only);
+        let diffuse_specular =
+            t.create_attachment(dimensions, vk::Format::R8g8b8a8Srgb, &write_only);
         let position = t.create_attachment(dimensions, vk::Format::R16g16b16a16Sfloat, &write_only);
         let emission = t.create_attachment(dimensions, vk::Format::R16g16b16a16Sfloat, &write_only);
         let tangents = t.create_attachment(dimensions, vk::Format::R16g16Sfloat, &write_only);
@@ -91,19 +91,23 @@ fn test_frame_deferred_shading<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx 
         }
     });
 
-
     let target = frame.import_image(persistent);
 
     // lighting pass
     let (_, target) = frame.create_graphics_subpass("lighting", renderpass, |t| {
         let (target, target_att) = t.attachment(&target, &AttachmentLoadStore::write_only());
-        let (normals, normals_att) = t.attachment(&gbuffers.normals, &AttachmentLoadStore::forget());
+        let (normals, normals_att) =
+            t.attachment(&gbuffers.normals, &AttachmentLoadStore::forget());
         let (diffuse_specular, diffuse_specular_att) =
             t.attachment(&gbuffers.diffuse_specular, &AttachmentLoadStore::forget());
-        let (emission, emission_att) = t.attachment(&gbuffers.emission, &AttachmentLoadStore::forget());
-        let (position, position_att) = t.attachment(&gbuffers.position, &AttachmentLoadStore::forget());
-        let (tangents, tangents_att) = t.attachment(&gbuffers.tangents, &AttachmentLoadStore::forget());
-        let (velocity, velocity_att) = t.attachment(&gbuffers.velocity, &AttachmentLoadStore::forget());
+        let (emission, emission_att) =
+            t.attachment(&gbuffers.emission, &AttachmentLoadStore::forget());
+        let (position, position_att) =
+            t.attachment(&gbuffers.position, &AttachmentLoadStore::forget());
+        let (tangents, tangents_att) =
+            t.attachment(&gbuffers.tangents, &AttachmentLoadStore::forget());
+        let (velocity, velocity_att) =
+            t.attachment(&gbuffers.velocity, &AttachmentLoadStore::forget());
         let (depth, depth_att) = t.attachment(&gbuffers.depth, &AttachmentLoadStore::forget());
 
         t.set_color_attachments(&[target_att]);

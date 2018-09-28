@@ -3,22 +3,29 @@ use super::*;
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Clone, Debug)]
-pub(crate) struct ImageBarrier
-{
+pub(crate) struct ImageBarrier {
     pub(crate) id: ImageId,
     pub(crate) src_access_mask: vk::AccessFlags,
     pub(crate) dst_access_mask: vk::AccessFlags,
     pub(crate) old_layout: vk::ImageLayout,
     pub(crate) new_layout: vk::ImageLayout,
-    pub(crate) subpass_dependency: bool,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct BufferBarrier
-{
+pub(crate) struct BufferBarrier {
     pub(crate) id: BufferId,
     pub(crate) src_access_mask: vk::AccessFlags,
     pub(crate) dst_access_mask: vk::AccessFlags,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SubpassBarrier {
+    /// Must correspond to an attachment of the subpass.
+    pub(crate) id: ImageId,
+    pub(crate) src_access_mask: vk::AccessFlags,
+    pub(crate) dst_access_mask: vk::AccessFlags,
+    pub(crate) old_layout: vk::ImageLayout,
+    pub(crate) new_layout: vk::ImageLayout,
 }
 
 /// Details of a dependency that is specific to the usage of the resource, and its
@@ -29,6 +36,8 @@ pub(crate) enum BarrierDetail {
     Image(ImageBarrier),
     /// Buffer dependency. Analogous to  `VkBufferMemoryBarrier`.
     Buffer(BufferBarrier),
+    /// Dependency between subpasses.
+    Subpass(SubpassBarrier),
     /// Represents a sequencing constraint between tasks.
     /// Not associated to a particular resource.
     Sequence,
@@ -72,14 +81,14 @@ impl Dependency {
     pub(crate) fn as_image_barrier_mut(&mut self) -> Option<&mut ImageBarrier> {
         match self.barrier {
             BarrierDetail::Image(ref mut barrier) => Some(barrier),
-            _ => None
+            _ => None,
         }
     }
 
     pub(crate) fn as_buffer_barrier_mut(&mut self) -> Option<&mut BufferBarrier> {
         match self.barrier {
             BarrierDetail::Buffer(ref mut barrier) => Some(barrier),
-            _ => None
+            _ => None,
         }
     }
 }
