@@ -7,7 +7,7 @@ use gfx2::import::import_graph;
 use gfx2::vk;
 use gfx2::*;
 
-//--------------------------------------------------------------------------------------------------
+/*//--------------------------------------------------------------------------------------------------
 fn downsample(frame: &mut Frame, input: &ImageRef, aux: &ImageRef) -> ImageRef {
     let (w, h, d) = frame.get_image_dimensions(input.id);
     //let count = get_texture_mip_map_count(w, h);
@@ -32,7 +32,7 @@ fn downsample(frame: &mut Frame, input: &ImageRef, aux: &ImageRef) -> ImageRef {
     }
 
     r_last.unwrap()
-}
+}*/
 
 //--------------------------------------------------------------------------------------------------
 // somewhat closer to real-life
@@ -60,25 +60,66 @@ fn test_frame_deferred_shading<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx 
     //
     let renderpass = frame.new_renderpass();
 
-    let (_, gbuffers) = frame.create_graphics_subpass("gbuffers", renderpass, |t| {
-        let normals = t.create_attachment(dimensions, vk::Format::R16g16Sfloat, &write_only);
-        let diffuse_specular =
-            t.create_attachment(dimensions, vk::Format::R8g8b8a8Srgb, &write_only);
-        let position = t.create_attachment(dimensions, vk::Format::R16g16b16a16Sfloat, &write_only);
-        let emission = t.create_attachment(dimensions, vk::Format::R16g16b16a16Sfloat, &write_only);
-        let tangents = t.create_attachment(dimensions, vk::Format::R16g16Sfloat, &write_only);
-        let velocity = t.create_attachment(dimensions, vk::Format::R16g16Sfloat, &write_only);
-        let depth = t.create_attachment(dimensions, vk::Format::D32Sfloat, &depth_stencil_clear);
+    let (_, gbuffers) = frame.graphics_subpass("gbuffers", renderpass, |t| {
+        let normals = t.create_attachment(
+            "normals",
+            dimensions,
+            vk::Format::R16g16Sfloat,
+            vk::SAMPLE_COUNT_4_BIT,
+            vk::AttachmentLoadOp::DontCare,
+        );
+        let diffuse_specular = t.create_attachment(
+            "diffuse_specular",
+            dimensions,
+            vk::Format::R16g16Sfloat,
+            vk::SAMPLE_COUNT_4_BIT,
+            vk::AttachmentLoadOp::DontCare,
+        );
+        let position = t.create_attachment(
+            "position",
+            dimensions,
+            vk::Format::R16g16b16a16Sfloat,
+            vk::SAMPLE_COUNT_4_BIT,
+            vk::AttachmentLoadOp::DontCare,
+        );
+        let emission = t.create_attachment(
+            "emission",
+            dimensions,
+            vk::Format::R16g16b16a16Sfloat,
+            vk::SAMPLE_COUNT_4_BIT,
+            vk::AttachmentLoadOp::DontCare,
+        );
+        let tangents = t.create_attachment(
+            "tangents",
+            dimensions,
+            vk::Format::R16g16Sfloat,
+            vk::SAMPLE_COUNT_4_BIT,
+            vk::AttachmentLoadOp::DontCare,
+        );
+        let velocity = t.create_attachment(
+            "velocity",
+            dimensions,
+            vk::Format::R16g16Sfloat,
+            vk::SAMPLE_COUNT_4_BIT,
+            vk::AttachmentLoadOp::DontCare,
+        );
+        let depth = t.create_attachment(
+            "depth",
+            dimensions,
+            vk::Format::D32Sfloat,
+            vk::SAMPLE_COUNT_4_BIT,
+            vk::AttachmentLoadOp::DontCare,
+        );
 
         t.set_color_attachments(&[
-            normals,
-            diffuse_specular,
-            position,
-            emission,
-            tangents,
-            velocity,
+            &normals,
+            &diffuse_specular,
+            &position,
+            &emission,
+            &tangents,
+            &velocity,
         ]);
-        t.set_depth_attachment(depth_att);
+        t.set_depth_attachment(&depth);
 
         Gbuffers {
             normals,
@@ -94,25 +135,21 @@ fn test_frame_deferred_shading<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx 
     let target = frame.import_image(persistent);
 
     // lighting pass
-    let (_, target) = frame.create_graphics_subpass("lighting", renderpass, |t| {
-        let (target, target_att) = t.attachment(&target, &AttachmentLoadStore::write_only());
-        let (normals, normals_att) =
-            t.attachment(&gbuffers.normals, &AttachmentLoadStore::forget());
-        let (diffuse_specular, diffuse_specular_att) =
-            t.attachment(&gbuffers.diffuse_specular, &AttachmentLoadStore::forget());
-        let (emission, emission_att) =
-            t.attachment(&gbuffers.emission, &AttachmentLoadStore::forget());
-        let (position, position_att) =
-            t.attachment(&gbuffers.position, &AttachmentLoadStore::forget());
-        let (tangents, tangents_att) =
-            t.attachment(&gbuffers.tangents, &AttachmentLoadStore::forget());
-        let (velocity, velocity_att) =
-            t.attachment(&gbuffers.velocity, &AttachmentLoadStore::forget());
-        let (depth, depth_att) = t.attachment(&gbuffers.depth, &AttachmentLoadStore::forget());
+    let (_, target) = frame.graphics_subpass("lighting", renderpass, |t| {
+        let target = t.load_attachment(&target, vk::AttachmentLoadOp::DontCare);
 
-        t.set_color_attachments(&[target_att]);
-        t.set_depth_attachment(depth_att);
-        target
+        t.set_color_attachments(&[&target]);
+        t.set_input_attachments(&[
+            &gbuffers.normals,
+            &gbuffers.diffuse_specular,
+            &gbuffers.emission,
+            &gbuffers.position,
+            &gbuffers.tangents,
+            &gbuffers.velocity,
+        ]);
+        t.set_depth_attachment(&gbuffers.depth);
+
+        t.store_attachment(target, vk::AttachmentStoreOp::Store)
     });
 
     // present to screen

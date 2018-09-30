@@ -1,13 +1,18 @@
 use super::*;
+use sid_vec::{Id, IdVec};
 
 //--------------------------------------------------------------------------------------------------
-/// Identifies an image in the frame resource table.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct ImageId(pub(crate) u32);
 
+pub struct ImageTag;
+/// Identifies an image in the frame resource table.
+pub type ImageId = Id<ImageTag, u32>;
+
+pub struct BufferTag;
 /// Identifies a buffer in the frame resource table.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct BufferId(pub(crate) u32);
+pub type BufferId = Id<BufferTag, u32>;
+
+pub struct AttachmentTag;
+pub type AttachmentIndex = Id<AttachmentTag, u32>;
 
 /// A special type of resource reference that identifies an image resource used as an attachment
 /// between subpasses.
@@ -15,23 +20,23 @@ pub struct BufferId(pub(crate) u32);
 pub struct AttachmentId {
     pub(crate) img: ImageId,
     pub(crate) renderpass: RenderPassId,
-    pub(crate) index: u32,
+    pub(crate) index: AttachmentIndex,
 }
 
 //--------------------------------------------------------------------------------------------------
 /// A resource (image or buffer) used in a frame.
-pub enum FrameResource<'imp, T: Resource, D> {
+pub enum FrameResource<'imp, T: Resource + 'imp> {
     Imported {
         resource: &'imp T,
     },
     Transient {
         name: String,
-        description: D,
+        create_info: <T as Resource>::CreateInfo,
         resource: Option<T>,
     },
 }
 
-impl<'imp, T: Resource, D> FrameResource<'imp, T, D> {
+impl<'imp, T: Resource> FrameResource<'imp, T> {
     pub(crate) fn name(&self) -> &str {
         match self {
             FrameResource::Imported { resource } => resource.name(),
@@ -46,25 +51,49 @@ impl<'imp, T: Resource, D> FrameResource<'imp, T, D> {
         }
     }
 
-    pub fn new_transient(name: String, description: D) -> FrameResource<'imp, T, D> {
+    pub fn new_transient(
+        name: String,
+        create_info: <T as Resource>::CreateInfo,
+    ) -> FrameResource<'imp, T> {
         FrameResource::Transient {
             name,
-            description,
+            create_info,
             resource: None,
         }
     }
 
-    pub fn new_imported(resource: &'imp T) -> FrameResource<'imp, T, D> {
+    pub fn new_imported(resource: &'imp T) -> FrameResource<'imp, T> {
         FrameResource::Imported { resource }
     }
 
-    pub fn get_description_mut(&mut self) -> Option<&mut D> {
+    pub fn create_info(&self) -> &<T as Resource>::CreateInfo {
         match self {
             FrameResource::Transient {
-                ref mut description,
+                ref create_info, ..
+            } => create_info,
+            FrameResource::Imported { ref resource } => resource.create_info(),
+        }
+    }
+
+    pub fn create_info_mut(&mut self) -> Option<&mut <T as Resource>::CreateInfo> {
+        match self {
+            FrameResource::Transient {
+                ref mut create_info,
                 ..
-            } => Some(description),
+            } => Some(create_info),
             _ => None,
+        }
+    }
+}
+
+impl<'imp> ImageFrameResource<'imp> {
+    pub(crate) fn get_initial_layout(&self) -> vk::ImageLayout {
+        match self {
+            FrameResource::Transient {
+                ref create_info,
+                ..
+            } => create_info.initial_layout,
+            FrameResource::Imported { resource } => resource.last_layout(),
         }
     }
 }
@@ -96,88 +125,64 @@ pub(crate) struct BufferDesc {
 }*/
 
 //--------------------------------------------------------------------------------------------------
-pub(crate) type ImageFrameResource<'imp> = FrameResource<'imp, Image, vk::ImageCreateInfo>;
-pub(crate) type BufferFrameResource<'imp> = FrameResource<'imp, Buffer, vk::BufferCreateInfo>;
-
-impl<'imp> ImageFrameResource<'imp> {
-    pub fn dimensions(&self) -> (u32, u32, u32) {
-        match self {
-            FrameResource::Imported { resource } => resource.dimensions(),
-            FrameResource::Transient {
-                ref description, ..
-            } => (
-                description.extent.width,
-                description.extent.height,
-                description.extent.depth,
-            ),
-        }
-    }
-
-    pub fn format(&self) -> vk::Format {
-        match self {
-            FrameResource::Imported { resource } => resource.format(),
-            FrameResource::Transient {
-                ref description, ..
-            } => description.format,
-        }
-    }
-}
-
-impl<'imp> BufferFrameResource<'imp> {
-    pub fn size(&self) -> vk::DeviceSize {
-        match self {
-            FrameResource::Imported { resource } => resource.size(),
-            FrameResource::Transient {
-                ref description, ..
-            } => description.size,
-        }
-    }
-}
-
+pub(crate) type ImageFrameResource<'imp> = FrameResource<'imp, Image>;
+pub(crate) type BufferFrameResource<'imp> = FrameResource<'imp, Buffer>;
 
 //--------------------------------------------------------------------------------------------------
-struct Resources<'ctx> {
+pub(crate) struct Resources<'ctx> {
     /// Table of images used in this frame.
-    pub(crate) images: Vec<ImageFrameResource<'ctx>>,
+    pub(crate) images: IdVec<ImageId, ImageFrameResource<'ctx>>,
     /// Table of buffers used in this frame.
-    pub(crate) buffers: Vec<BufferFrameResource<'ctx>>,
+    pub(crate) buffers: IdVec<BufferId, BufferFrameResource<'ctx>>,
 }
 
 impl<'ctx> Resources<'ctx> {
-
-    /// Gets the dimensions of the image (width, height, depth).
-    pub fn get_image_dimensions(&self, img: ImageId) -> (u32, u32, u32) {
-        self.images[img.0 as usize].dimensions()
+    ///
+    pub(crate) fn new() -> Resources<'ctx> {
+        Resources {
+            images: IdVec::new(),
+            buffers: IdVec::new(),
+        }
     }
 
     /// Gets the dimensions of the image.
-    pub fn get_image_format(&self, img: ImageId) -> vk::Format {
-        self.images[img.0 as usize].format()
+    pub(crate) fn get_image_create_info(&self, img: ImageId) -> &vk::ImageCreateInfo {
+        self.images[img].create_info()
     }
 
-    fn create_image(&mut self, name: impl Into<String>, desc: ImageDesc) -> ImageId {
-        // get an index to generate a name for this resource.
-        // It's not crucial that we get a unique one,
-        // as the name of resources are here for informative purposes only.
-        let naming_index = self.images.len();
-        self.add_image_resource(name.into(), desc)
-    }
-
-    pub fn get_image_desc(&self, ) -> ImageDesc {
-
+    pub(crate) fn create_image(
+        &mut self,
+        name: impl Into<String>,
+        create_info: vk::ImageCreateInfo,
+    ) -> ImageId {
+        self.images
+            .push(ImageFrameResource::new_transient(name.into(), create_info))
     }
 
     /// Adds a transient buffer resource.
-    pub(crate) fn add_buffer_resource(&mut self, name: String, desc: BufferDesc) -> BufferId {
+    pub(crate) fn create_buffer(
+        &mut self,
+        name: impl Into<String>,
+        create_info: vk::BufferCreateInfo,
+    ) -> BufferId {
         self.buffers
-            .push(BufferFrameResource::new_transient(name, desc));
-        BufferId((self.buffers.len() - 1) as u32)
+            .push(BufferFrameResource::new_transient(name.into(), create_info))
     }
 
-    /// Adds a transient image resource.
-    pub(crate) fn add_image_resource(&mut self, name: String, desc: ImageDesc) -> ImageId {
-        self.images
-            .push(ImageFrameResource::new_transient(name, desc));
-        ImageId((self.images.len() - 1) as u32)
+    pub(crate) fn add_imported_image(&mut self, img: &'ctx Image) -> ImageId {
+        self.images.push(ImageFrameResource::new_imported(img))
+    }
+
+    /// Adds a usage bit to an image resource.
+    pub(crate) fn add_or_check_image_usage(&mut self, img: ImageId, usage: vk::ImageUsageFlags) {
+        match &mut self.images[img] {
+            FrameResource::Transient {
+                ref mut create_info,
+                ..
+            } => {
+                create_info.usage |= usage;
+            }
+            FrameResource::Imported { ref resource } => { } // TODO assert!(resource.usage().subset(usage)),
+        }
     }
 }

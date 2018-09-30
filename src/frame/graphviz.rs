@@ -170,8 +170,9 @@ impl<'ctx> Frame<'ctx> {
             "node [shape=diamond, fontcolor=black, style=filled, fillcolor=\"brown1\"];"
         );
         self.graph
+            .0
             .node_indices()
-            .map(|n| (n.index(), self.graph.node_weight(n).unwrap()))
+            .map(|n| (n.index(), self.graph.0.node_weight(n).unwrap()))
             .filter(|(_, t)| t.queue == 2)
             .for_each(|(i, t)| {
                 writeln!(w, "T_{} [label=\"{} (ID:{})\"];", i, t.name, i);
@@ -188,8 +189,9 @@ impl<'ctx> Frame<'ctx> {
             "node [shape=diamond, fontcolor=black, style=filled, fillcolor=\"goldenrod1\"];"
         );
         self.graph
+            .0
             .node_indices()
-            .map(|n| (n.index(), self.graph.node_weight(n).unwrap()))
+            .map(|n| (n.index(), self.graph.0.node_weight(n).unwrap()))
             .filter(|(_, t)| t.queue == 0)
             .for_each(|(i, t)| {
                 writeln!(w, "T_{} [label=\"{} (ID:{})\"];", i, t.name, i);
@@ -206,8 +208,9 @@ impl<'ctx> Frame<'ctx> {
             "node [shape=diamond, fontcolor=black, style=filled, fillcolor=\"palegreen\"];"
         );
         self.graph
+            .0
             .node_indices()
-            .map(|n| (n.index(), self.graph.node_weight(n).unwrap()))
+            .map(|n| (n.index(), self.graph.0.node_weight(n).unwrap()))
             .filter(|(_, t)| t.queue == 1)
             .for_each(|(i, t)| {
                 writeln!(w, "T_{} [label=\"{} (ID:{})\"];", i, t.name, i);
@@ -222,9 +225,9 @@ impl<'ctx> Frame<'ctx> {
         }
 
         //------------------ Dependencies ------------------
-        for e in self.graph.edge_indices() {
-            let (src, dest) = self.graph.edge_endpoints(e).unwrap();
-            let d = self.graph.edge_weight(e).unwrap();
+        for e in self.graph.0.edge_indices() {
+            let (src, dest) = self.graph.0.edge_endpoints(e).unwrap();
+            let d = self.graph.0.edge_weight(e).unwrap();
             //let imported = self.
 
             let color_code = match &d.barrier {
@@ -233,7 +236,7 @@ impl<'ctx> Frame<'ctx> {
                     dst_access_mask,
                     ..
                 }) => {
-                    let imported = self.images[id.0 as usize].is_imported();
+                    let imported = self.resources.images[id].is_imported();
                     if imported {
                         if dst_access_mask.intersects(
                             vk::ACCESS_COLOR_ATTACHMENT_READ_BIT

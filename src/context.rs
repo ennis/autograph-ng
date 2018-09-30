@@ -16,6 +16,7 @@ use slotmap::{Key, SlotMap};
 use winit::Window;
 
 use alloc::Allocator;
+use handle::OwningHandle;
 use resource::*;
 use sync::{FrameSync, SyncGroup};
 
@@ -291,7 +292,7 @@ pub(crate) fn create_swapchain(
     window_width: u32,
     window_height: u32,
     surface: vk::SurfaceKHR,
-) -> vk::SwapchainKHR {
+) -> (vk::SwapchainKHR, vk::SwapchainCreateInfoKHR) {
     let surface_formats = surface_loader
         .get_physical_device_surface_formats_khr(physical_device, surface)
         .unwrap();
@@ -361,7 +362,7 @@ pub(crate) fn create_swapchain(
         let swapchain = swapchain_loader
             .create_swapchain_khr(&swapchain_create_info, None)
             .unwrap();
-        swapchain
+        (swapchain, swapchain_create_info)
     }
 }
 
@@ -402,7 +403,9 @@ impl Presentation {
     ) -> PresentationTarget {
         // destroy image views
         for img in self.images.drain(..) {
-            vkd.destroy_image(img.image.unwrap(), None);
+            img.image.unwrap().destroy(|img| {
+                vkd.destroy_image(img, None);
+            });
         }
         // destroy swapchain
         swapchain_ext.destroy_swapchain_khr(self.swapchain, None);
@@ -423,7 +426,9 @@ impl Presentation {
     ) {
         // destroy image views
         for img in self.images.drain(..) {
-            vkd.destroy_image(img.image.unwrap(), None);
+            img.image.unwrap().destroy(|img| {
+                vkd.destroy_image(img, None);
+            });
         }
         // destroy swapchain
         swapchain_ext.destroy_swapchain_khr(self.swapchain, None);
@@ -447,7 +452,7 @@ impl Presentation {
                     window_width,
                     window_height,
                     self.surface,
-                );
+                ).0;
             }
         }
     }
@@ -656,7 +661,7 @@ impl Context {
                             .to_physical(hidpi_factor)
                             .into();
                         // FIXME: should put swapchain parameters in PresentationTarget
-                        let swapchain = create_swapchain(
+                        let (swapchain, swapchain_create_info) = create_swapchain(
                             &vke,
                             &vki,
                             &device_and_queues.vkd,
@@ -674,14 +679,12 @@ impl Context {
                             .drain(..)
                             .enumerate()
                             .map(|(i, img)| {
-                                Image {
-                                    name: "presentation image".to_owned(), // FIXME
-                                    create_info: mem::zeroed(),            // FIXME HARDER
-                                    image: Some(img),
-                                    swapchain_index: Some(i as u32),
-                                    last_used: FRAME_NONE,
-                                    exit_semaphores: SyncGroup::new(),
-                                }
+                                Image::new_swapchain_image(
+                                    "presentation image",
+                                    &swapchain_create_info,
+                                    OwningHandle::new(img),
+                                    i as u32,
+                                )
                             }).collect::<Vec<_>>();
 
                         presentations.push(Presentation {
@@ -795,7 +798,7 @@ impl Context {
             p_queue_family_indices: ptr::null(),
             initial_layout: vk::ImageLayout::Undefined, // inferred
         };
-        Image::new("unnamed", &image_create_info)
+        Image::new("unnamed", image_create_info)
     }
 
     /*/// Initializes OR re-initializes a presentation target.

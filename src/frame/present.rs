@@ -12,27 +12,30 @@ impl PresentTask {
 }
 
 //--------------------------------------------------------------------------------------------------
-pub struct PresentTaskBuilder<'frame, 'ctx: 'frame> {
-    frame: &'frame mut Frame<'ctx>,
+pub struct PresentTaskBuilder<'a, 'ctx: 'a> {
+    graph: &'a mut FrameGraph,
+    resources: &'a mut Resources<'ctx>,
     task: TaskId,
     present_task: PresentTask,
 }
 
-impl<'frame, 'ctx: 'frame> PresentTaskBuilder<'frame, 'ctx> {
+impl<'a, 'ctx: 'a> PresentTaskBuilder<'a, 'ctx> {
     pub(super) fn new(
-        frame: &'frame mut Frame<'ctx>,
         name: impl Into<String>,
-    ) -> PresentTaskBuilder<'frame, 'ctx> {
-        let task = frame.create_task_on_queue(name, 2, TaskDetails::Other);
+        graph: &'a mut FrameGraph,
+        resources: &'a mut Resources<'ctx>,
+    ) -> PresentTaskBuilder<'a, 'ctx> {
+        let task = graph.create_task_on_queue(name, 2, TaskDetails::Other);
         PresentTaskBuilder {
-            frame,
+            graph,
+            resources,
             task,
             present_task: PresentTask::new(),
         }
     }
 
     pub fn present(&mut self, img: &ImageRef) {
-        self.frame.add_dependency(
+        self.graph.add_dependency(
             img.task,
             self.task,
             Dependency {
@@ -52,7 +55,7 @@ impl<'frame, 'ctx: 'frame> PresentTaskBuilder<'frame, 'ctx> {
     }
 
     pub(super) fn finish(mut self) -> TaskId {
-        self.frame.graph.node_weight_mut(self.task).unwrap().details =
+        self.graph.0.node_weight_mut(self.task).unwrap().details =
             TaskDetails::Present(self.present_task);
         self.task
     }
