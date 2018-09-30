@@ -1,0 +1,38 @@
+//! Owning handles to wulkan objects.
+use std::fmt::Debug;
+use std::mem;
+use std::ops::Deref;
+
+#[derive(Debug)]
+pub struct OwningHandle<T: Debug>(T);
+
+impl<T: Debug> Deref for OwningHandle<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
+impl<T: Debug> OwningHandle<T> {
+    pub fn new(t: T) -> OwningHandle<T> {
+        OwningHandle(t)
+    }
+
+    pub fn get(&self) -> &T {
+        &self.0
+    }
+
+    pub fn destroy(mut self, deleter: impl FnOnce(T)) {
+        let inner = unsafe { mem::replace(&mut self.0, mem::uninitialized()) };
+        deleter(inner);
+        mem::forget(self)
+    }
+}
+
+// Drop bomb
+impl<T: Debug> Drop for OwningHandle<T> {
+    fn drop(&mut self) {
+        panic!("leaked handle")
+    }
+}
