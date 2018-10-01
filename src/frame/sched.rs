@@ -284,7 +284,10 @@ fn check_single_entry_graph(g: &FrameGraph, sub_a: &[TaskId], sub_b: &[TaskId]) 
 }*/
 
 /// Finds cross-queue synchronization edges and filter the redundant ones, and creates semaphores for all of them.
-fn find_cross_queue_sync_edges(g: &FrameGraphInner, vkd: &VkDevice1) -> (Vec<EdgeIndex<u32>>, Vec<vk::Semaphore>) {
+fn find_cross_queue_sync_edges(
+    g: &FrameGraphInner,
+    vkd: &VkDevice1,
+) -> (Vec<EdgeIndex<u32>>, Vec<vk::Semaphore>) {
     let mut syncs = g
         .edge_references()
         .filter_map(|e| {
@@ -379,7 +382,8 @@ impl<'a, 'ctx: 'a> CommandBufferBuilder<'a, 'ctx> {
         let layouts = resources
             .images
             .iter()
-            .map(ImageFrameResource::get_initial_layout).collect::<Vec<_>>();
+            .map(ImageFrameResource::get_initial_layout)
+            .collect::<Vec<_>>();
         let cmd_buffers = Vec::new();
         CommandBufferBuilder {
             g,
@@ -658,8 +662,8 @@ fn schedule<'ctx>(
     renderpasses: &RenderPasses,
     syncs: &[DependencyId],
     semaphores: &[vk::Semaphore],
-    resources: &Resources<'ctx>
-) {
+    resources: &Resources<'ctx>,
+) -> Schedule {
     let mut to_schedule = g.externals(Direction::Incoming).collect::<VecDeque<_>>();
     let mut scheduled = RefCell::new(g.visit_map());
     let mut remaining = g.node_count();
@@ -691,7 +695,9 @@ fn schedule<'ctx>(
                 }
 
                 cmd_builder.enqueue_tasks(queue, &renderpass.tasks);
-                renderpass.tasks.iter().for_each(|&t| { scheduled.borrow_mut().visit(t); });
+                renderpass.tasks.iter().for_each(|&t| {
+                    scheduled.borrow_mut().visit(t);
+                });
                 //remaining -= renderpass.tasks;
             }
             _ => {
@@ -791,7 +797,13 @@ impl<'ctx> Frame<'ctx> {
             measure_time(|| find_cross_queue_sync_edges(&self.graph.0, &self.context.vkd));
 
         let (t_scheduling, ()) = measure_time(|| {
-            schedule(&self.graph.0, &self.renderpasses, &sync_edges, &semaphores, &self.resources);
+            schedule(
+                &self.graph.0,
+                &self.renderpasses,
+                &sync_edges,
+                &semaphores,
+                &self.resources,
+            );
         });
 
         /*let (t_renderpasses, ()) = measure_time(|| {
@@ -810,6 +822,10 @@ impl<'ctx> Frame<'ctx> {
         ordering
     }
 }
+
+// resource allocation:
+// - separate for each queue
+// - do not alias memory for now, but re-use
 
 // Graph:
 // Node = pass type (graphics or compute), callback function

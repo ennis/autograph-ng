@@ -2,12 +2,16 @@
 
 use std::error;
 use std::fmt;
+use std::ops::Range;
 use std::ptr;
 
 use ash::version::DeviceV1_0;
 use ash::version::InstanceV1_0;
 use ash::vk;
+use sid_vec::{Id, IdVec};
+
 use context::*;
+use handle::OwningHandle;
 
 #[derive(Debug, Clone)]
 pub enum AllocError {
@@ -32,13 +36,148 @@ impl error::Error for AllocError {
     }
 }
 
+pub(crate) struct Allocation {
+    /// Associated device memory object.
+    device_memory: vk::DeviceMemory,
+    /// Offset within the device memory.
+    range: Range<u64>,
+}
+
+fn align_offset(size: u64, align: u64, space: Range<u64>) -> Option<u64> {
+    assert!(align.is_power_of_two(), "alignment must be a power of two");
+    let mut off = space.start & (align - 1);
+    if off > 0 {
+        off = align - off;
+    }
+    if space.start + off + size > space.end {
+        None
+    } else {
+        Some(space.start + off)
+    }
+}
+
+/// A block of device memory in a pool.
+struct Block {
+    device_memory: OwningHandle<vk::DeviceMemory>,
+}
+
+/// Linear memory pools.
+/// Only appends to the end, allocate blocks when necessary.
+/// Free is a no-op.
+struct LinearMemoryPool {
+    memory_type_index: u32,
+    block_size: u64,
+    front_block: u32,
+    front_ptr: u64,
+    blocks: Vec<Block>,
+}
+
+impl LinearMemoryPool {
+    fn new(memory_type_index: u32, block_size: u64) -> LinearMemoryPool {
+        LinearMemoryPool {
+            memory_type_index,
+            block_size,
+            blocks: Vec::new(),
+            front_block: 0,
+            front_ptr: 0,
+        }
+    }
+
+    /// Should be mostly safe.
+    fn new_block(&mut self, vkd: &VkDevice1) {
+        let alloc_info = vk::MemoryAllocateInfo {
+            s_type: vk::StructureType::MemoryAllocateInfo,
+            p_next: ptr::null(),
+            allocation_size: self.block_size,
+            memory_type_index: self.memory_type_index,
+        };
+
+        let device_memory = unsafe {
+            vkd.allocate_memory(&alloc_info, None)
+                .expect("allocation failed")
+        };
+
+        self.blocks.push(Block { device_memory });
+
+        self.front_ptr = 0;
+    }
+
+    /// Should be mostly safe.
+    fn allocate(&mut self, size: u64, align: u64, vkd: &VkDevice1) -> Option<Allocation> {
+        assert!(align.is_power_of_two(), "alignment must be a power of two");
+
+        if size > self.block_size {
+            None
+        }
+
+        if self.blocks.is_empty() {
+            self.new_block(vkd);
+        }
+
+        if let Some(ptr) = align_offset(size, align, self.front_ptr..self.block_size) {
+            // suballocate
+            Some(Allocation {
+                device_memory: self.blocks.last().unwrap().device_memory.get(),
+                range: ptr..(ptr + size),
+            })
+        } else {
+            self.new_block(vkd);
+            let ptr = self.front_ptr;
+            self.front_ptr += size;
+            Some(Allocation {
+                device_memory: self.blocks.last().unwrap().device_memory.get(),
+                range: ptr..(ptr + size),
+            })
+        }
+    }
+
+    /// Unsafe because reasons.
+    unsafe fn deallocate_all(&mut self, vkd: &VkDevice1) {
+        for b in self.blocks.drain(..) {
+            b.device_memory.destroy(|device_memory| {
+                vkd.free_memory(device_memory, None);
+            });
+        }
+    }
+}
+
+pub fn find_compatible_memory_type_index(
+    memory_types: &[vk::MemoryType],
+    required_flags: vk::MemoryPropertyFlags,
+    preferred_flags: vk::MemoryPropertyFlags,
+    memory_type_bits: u32,
+) -> Option<u32> {
+    memory_types
+        .iter()
+        .enumerate()
+        .filter(|(_, mt)| mt.property_flags.subset(required_flags | preferred_flags))
+        .chain(
+            memory_types
+                .iter()
+                .enumerate()
+                .filter(|(_, mt)| mt.property_flags.subset(required_flags)),
+        ).filter(|&(mt_index, _)| (1 << (mt_index as u32)) & memory_type_bits != 0)
+        .next()
+        .map(|(mt_index, _)| mt_index as u32)
+}
+
+pub fn is_compatible_memory_type(
+    memory_types: &[vk::MemoryType],
+    memory_type_index: u32,
+    memory_type_bits: u32,
+    flags: vk::MemoryPropertyFlags,
+) -> bool {
+    ((memory_type_bits & (1 << (mt_index as u32))) != 0) && memory_types[memory_type_index as usize]
+        .property_flags
+        .subset(flags)
+}
+
 /// Memory allocator for vulkan device heaps.
-/// Bound to the lifetime of the device.
 pub struct Allocator {
     memory_types: Vec<vk::MemoryType>,
     memory_heaps: Vec<vk::MemoryHeap>,
-    /// Blocks to deallocate.
-    to_deallocate: Vec<FrameBoundAllocation>,
+    /// Default pools for all memory types.
+    default_pools: Vec<LinearMemoryPool>,
 }
 
 /// An allocated block of memory that is bound to a frame.
@@ -60,15 +199,6 @@ pub struct TransientMemoryPool {
     /// Memory blocks available.
     free: Vec<FrameBoundAllocation>,
 }
-
-// So, to be safe, a transient memory pool should be associated to a queue,
-// and all operations that modify the memory in the pool should be done
-// on this queue.
-//
-// If a transient memory block is used on another queue, then must add a barrier
-// to the queue.
-//
-// something like
 
 pub struct AllocationCreateInfo {
     size: usize,

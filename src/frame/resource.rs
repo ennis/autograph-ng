@@ -90,8 +90,7 @@ impl<'imp> ImageFrameResource<'imp> {
     pub(crate) fn get_initial_layout(&self) -> vk::ImageLayout {
         match self {
             FrameResource::Transient {
-                ref create_info,
-                ..
+                ref create_info, ..
             } => create_info.initial_layout,
             FrameResource::Imported { resource } => resource.last_layout(),
         }

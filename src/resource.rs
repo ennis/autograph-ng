@@ -12,10 +12,11 @@ use std::ptr;
 use ash::version::DeviceV1_0;
 use ash::vk;
 use downcast_rs::Downcast;
-use handle::OwningHandle;
 use slotmap::Key;
 
+use alloc::Allocation;
 use context::{FrameNumber, VkDevice1, FRAME_NONE};
+use handle::OwningHandle;
 use sync::{FrameSync, SyncGroup};
 
 //--------------------------------------------------------------------------------------------------
@@ -122,8 +123,10 @@ pub struct Image {
     /// Image creation info.
     // FIXME this is not what should be kept in the object.
     pub(crate) create_info: vk::ImageCreateInfo,
-    /// Image resource + associated memory allocation, `None` if not yet allocated.
+    /// Image resource +
     pub(crate) image: Option<OwningHandle<vk::Image>>,
+    /// associated memory allocation, `None` if not allocated by us.
+    pub(crate) allocation: Option<Allocation>,
     /// Last known layout.
     pub(crate) last_layout: Cell<vk::ImageLayout>,
     /// Last used frame. Can be `never`

@@ -16,6 +16,7 @@ use sid_vec::{Id, IdVec};
 use context::Context;
 use resource::*;
 
+mod alloc;
 mod dependency;
 mod dump;
 mod graphviz;
