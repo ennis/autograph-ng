@@ -6,7 +6,7 @@ use std::ops::Deref;
 #[derive(Debug)]
 pub struct OwningHandle<T: Debug + Clone>(T);
 
-impl<T: Debug> Deref for OwningHandle<T> {
+impl<T: Debug + Clone> Deref for OwningHandle<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -31,7 +31,7 @@ impl<T: Debug + Clone> OwningHandle<T> {
 }
 
 // Drop bomb
-impl<T: Debug> Drop for OwningHandle<T> {
+impl<T: Debug + Clone> Drop for OwningHandle<T> {
     fn drop(&mut self) {
         panic!("leaked handle")
     }

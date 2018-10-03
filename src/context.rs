@@ -18,6 +18,7 @@ use winit::Window;
 use alloc::Allocator;
 use handle::OwningHandle;
 use resource::*;
+use image::{Image, ImageDescription};
 use sync::{FrameSync, SyncGroup};
 
 pub type VkEntry1 = ash::Entry<V1_0>;
@@ -775,7 +776,8 @@ impl Context {
     }
 
     /// Creates a persistent image resource.
-    pub fn create_image_2d(&mut self, (width, height): (u32, u32), format: vk::Format) -> Image {
+    pub fn create_image(&mut self, desc: &ImageDescription) -> Image
+    {
         let image_create_info = vk::ImageCreateInfo {
             s_type: vk::StructureType::ImageCreateInfo,
             p_next: ptr::null(),
@@ -800,6 +802,8 @@ impl Context {
         };
         Image::new("unnamed", image_create_info)
     }
+
+
 
     /*/// Initializes OR re-initializes a presentation target.
     fn initialize_presentation_target(&self, target: &PresentationTarget)
@@ -832,3 +836,6 @@ impl Context {
         unimplemented!()
     }*/
 }
+
+// persistent image creation
+// - must know in advance which queue families will use them.

@@ -31,6 +31,8 @@ pub mod import;
 pub mod resource;
 mod sync;
 pub mod window;
+pub mod image;
+pub mod buffer;
 
 // re-export vulkan as gfx2::vk
 pub use ash::vk;

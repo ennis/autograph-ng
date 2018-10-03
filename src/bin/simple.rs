@@ -267,6 +267,9 @@ fn main() {
     // create a persistent image.
     let mut persistent_img = ctx.create_image_2d((1024, 1024), vk::Format::R8g8b8a8Srgb);
 
+    //let mut persistent_img =
+    //    Image::new(ctx, Dimensions::Dim2D { width: 1280, height: 720 }, ...);
+
     let mut first = true;
     loop {
         let mut should_close = false;

@@ -38,9 +38,9 @@ impl error::Error for AllocError {
 
 pub(crate) struct Allocation {
     /// Associated device memory object.
-    device_memory: vk::DeviceMemory,
+    pub(crate) device_memory: vk::DeviceMemory,
     /// Offset within the device memory.
-    range: Range<u64>,
+    pub(crate) range: Range<u64>,
 }
 
 fn align_offset(size: u64, align: u64, space: Range<u64>) -> Option<u64> {
@@ -161,50 +161,52 @@ pub fn find_compatible_memory_type_index(
         .map(|(mt_index, _)| mt_index as u32)
 }
 
+pub fn compatible_memory_types<'a>(
+    memory_types: &'a [vk::MemoryType],
+    required_flags: vk::MemoryPropertyFlags,
+    preferred_flags: vk::MemoryPropertyFlags,
+    memory_type_bits: u32,
+) -> impl Iterator<Item = (u32, &'a vk::MemoryType)> + 'a {
+    memory_types
+        .iter()
+        .enumerate()
+        .filter(|(_, mt)| mt.property_flags.subset(required_flags | preferred_flags))
+        .chain(
+            memory_types
+                .iter()
+                .enumerate()
+                .filter(|(_, mt)| mt.property_flags.subset(required_flags)),
+        ).filter(|&(mt_index, _)| (1 << (mt_index as u32)) & memory_type_bits != 0)
+        .map(|(mt_index, mt)| (mt_index as u32, mt))
+}
+
 pub fn is_compatible_memory_type(
     memory_types: &[vk::MemoryType],
     memory_type_index: u32,
     memory_type_bits: u32,
     flags: vk::MemoryPropertyFlags,
 ) -> bool {
-    ((memory_type_bits & (1 << (mt_index as u32))) != 0) && memory_types[memory_type_index as usize]
+    ((memory_type_bits & (1 << (memory_type_index as u32))) != 0) && memory_types
+        [memory_type_index as usize]
         .property_flags
         .subset(flags)
+}
+
+pub struct AllocationCreateInfo {
+    size: u64,
+    alignment: u64,
+    required_flags: vk::MemoryPropertyFlags,
+    preferred_flags: vk::MemoryPropertyFlags,
+    memory_type_bits: u32,
 }
 
 /// Memory allocator for vulkan device heaps.
 pub struct Allocator {
     memory_types: Vec<vk::MemoryType>,
     memory_heaps: Vec<vk::MemoryHeap>,
+    large_alloc_size: u64,
     /// Default pools for all memory types.
     default_pools: Vec<LinearMemoryPool>,
-}
-
-/// An allocated block of memory that is bound to a frame.
-/// I.e.
-/// TODO generalize this concept to other resources in a frame.
-pub struct FrameBoundAllocation {
-    /// A block of device memory.
-    memory: vk::DeviceMemory,
-    /// The last frame that used this alloc.
-    last_used_by: FrameNumber,
-}
-
-/// A transient memory pool, that contains allocations for a frame.
-pub struct TransientMemoryPool {
-    /// Memory blocks in use.
-    /// DeviceMemory + last frame that used this memory block
-    /// If the frame is completed, then can delete.
-    allocated: Vec<FrameBoundAllocation>,
-    /// Memory blocks available.
-    free: Vec<FrameBoundAllocation>,
-}
-
-pub struct AllocationCreateInfo {
-    size: usize,
-    required_flags: vk::MemoryPropertyFlags,
-    preferred_flags: vk::MemoryPropertyFlags,
-    memory_type_bits: u32,
 }
 
 impl Allocator {
@@ -212,6 +214,7 @@ impl Allocator {
         vki: &VkInstance1,
         vkd: &VkDevice1,
         physical_device: vk::PhysicalDevice,
+        block_size: u64,
     ) -> Allocator {
         // query all memory types
         let p = vki.get_physical_device_memory_properties(physical_device);
@@ -221,45 +224,43 @@ impl Allocator {
         Allocator {
             memory_types,
             memory_heaps,
-            to_deallocate: Vec::new(),
+            large_alloc_size: block_size,
+            default_pools: (0..p.memory_heap_count)
+                .map(|mt_index| LinearMemoryPool::new(mt_index, block_size))
+                .collect(),
         }
     }
 
-    pub fn create_transient_memory_pool(&self, vkd: &VkDevice1) -> TransientMemoryPool {
-        TransientMemoryPool {
-            allocated: Vec::new(),
-            free: Vec::new(),
+    pub fn allocate_memory(
+        &mut self,
+        info: &AllocationCreateInfo,
+        vkd: &VkDevice1,
+    ) -> Result<Allocation, AllocError> {
+        if info.size >= self.large_alloc_size {
+            self.allocate_dedicated(info, vkd);
         }
+
+        for (mt_index, mt) in compatible_memory_types(
+            &self.memory_types,
+            info.required_flags,
+            info.preferred_flags,
+            info.memory_type_bits,
+        ) {
+            if let Some(alloc) =
+                self.default_pools[mt_index as usize].allocate(info.size, info.align, vkd)
+            {
+                return Ok(alloc);
+            }
+        }
+
+        // resort to dedicated allocation
+        self.allocate_dedicated(info, vkd)
     }
 
-    pub fn allocate_transient_image(
+    pub fn allocate_dedicated(
         &self,
-        pool: &mut TransientMemoryPool,
         info: &AllocationCreateInfo,
-        current_frame: FrameNumber,
         vkd: &VkDevice1,
-        img: vk::Image,
-    ) {
-        // allocation algorithm
-        // - find a free memory block in the
-    }
-
-    pub fn free_transient(&self, pool: &mut TransientMemoryPool) {}
-
-    /// Note: deallocation is deferred.
-    pub fn free_transient_memory_pool(
-        &self,
-        pool: &mut TransientMemoryPool,
-        vkd: &VkDevice1,
-        current_frame: FrameNumber,
-    ) {
-
-    }
-
-    pub fn allocate(
-        &self,
-        vkd: &VkDevice1,
-        info: &AllocationCreateInfo,
     ) -> Result<vk::DeviceMemory, AllocError> {
         let mut found_suitable_memory_type = false;
         // find a suitable memory type
@@ -306,3 +307,6 @@ impl Allocator {
         }
     }
 }
+
+// free a pack of allocations all at once:
+// multiple pools per pack
