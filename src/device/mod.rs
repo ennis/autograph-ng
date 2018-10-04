@@ -57,9 +57,59 @@ impl Device {
         instance: &Arc<Instance>,
         config: &Config,
         target_surface: Option<&Surface>,
-    ) -> Arc<Device>
-    {
-        let physical_device_selection = physical_device::select_physical_device(instance, target_surface);
+    ) -> Arc<Device> {
+        let physical_device_selection =
+            physical_device::select_physical_device(instance, target_surface);
+
+        // select the queue families to create
+        // heuristic: select a queue for async-compute, a queue for std graphics, a queue for transfer, and a queue family supporting presentation
+
+        // create the device and queues
+        let selected_queue_family_index = selected_queue_family_index.unwrap();
+        // create the queue and the device
+        let priorities = [1.0];
+        let queue_info = vk::DeviceQueueCreateInfo {
+            s_type: vk::StructureType::DeviceQueueCreateInfo,
+            p_next: ptr::null(),
+            flags: Default::default(),
+            queue_family_index: selected_queue_family_index,
+            p_queue_priorities: priorities.as_ptr(),
+            queue_count: priorities.len() as u32,
+        };
+
+        let device_extension_names_raw = [extensions::Swapchain::name().as_ptr()];
+
+        let features = vk::PhysicalDeviceFeatures {
+            shader_clip_distance: 1,
+            ..Default::default()
+        };
+
+        let device_create_info = vk::DeviceCreateInfo {
+            s_type: vk::StructureType::DeviceCreateInfo,
+            p_next: ptr::null(),
+            flags: Default::default(),
+            queue_create_info_count: 1,
+            p_queue_create_infos: &queue_info,
+            enabled_layer_count: 0,
+            pp_enabled_layer_names: ptr::null(),
+            enabled_extension_count: device_extension_names_raw.len() as u32,
+            pp_enabled_extension_names: device_extension_names_raw.as_ptr(),
+            p_enabled_features: &features,
+        };
+
+        let vkd = vki
+            .create_device(selected_physical_device, &device_create_info, None)
+            .expect("Unable to create device");
+        let present_queue = vkd.get_device_queue(selected_queue_family_index as u32, 0);
+        // let's assume that the queue is also a graphics queue...
+        DeviceAndQueues {
+            graphics_queue: present_queue,
+            present_queue: present_queue,
+            graphics_queue_family_index: selected_queue_family_index,
+            present_queue_family_index: selected_queue_family_index,
+            vkd,
+            physical_device: selected_physical_device,
+        }
     }
 }
 
@@ -122,51 +172,7 @@ unsafe fn create_device_and_queues(
     }
 
     if let Some(selected_physical_device) = selected_physical_device {
-        let selected_queue_family_index = selected_queue_family_index.unwrap();
-        // create the queue and the device
-        let priorities = [1.0];
-        let queue_info = vk::DeviceQueueCreateInfo {
-            s_type: vk::StructureType::DeviceQueueCreateInfo,
-            p_next: ptr::null(),
-            flags: Default::default(),
-            queue_family_index: selected_queue_family_index,
-            p_queue_priorities: priorities.as_ptr(),
-            queue_count: priorities.len() as u32,
-        };
 
-        let device_extension_names_raw = [extensions::Swapchain::name().as_ptr()];
-
-        let features = vk::PhysicalDeviceFeatures {
-            shader_clip_distance: 1,
-            ..Default::default()
-        };
-
-        let device_create_info = vk::DeviceCreateInfo {
-            s_type: vk::StructureType::DeviceCreateInfo,
-            p_next: ptr::null(),
-            flags: Default::default(),
-            queue_create_info_count: 1,
-            p_queue_create_infos: &queue_info,
-            enabled_layer_count: 0,
-            pp_enabled_layer_names: ptr::null(),
-            enabled_extension_count: device_extension_names_raw.len() as u32,
-            pp_enabled_extension_names: device_extension_names_raw.as_ptr(),
-            p_enabled_features: &features,
-        };
-
-        let vkd = vki
-            .create_device(selected_physical_device, &device_create_info, None)
-            .expect("Unable to create device");
-        let present_queue = vkd.get_device_queue(selected_queue_family_index as u32, 0);
-        // let's assume that the queue is also a graphics queue...
-        DeviceAndQueues {
-            graphics_queue: present_queue,
-            present_queue: present_queue,
-            graphics_queue_family_index: selected_queue_family_index,
-            present_queue_family_index: selected_queue_family_index,
-            vkd,
-            physical_device: selected_physical_device,
-        }
     } else {
         panic!("Unable to find a suitable physical device and queue family");
     }
@@ -186,91 +192,6 @@ unsafe fn create_command_pool_for_queue(
 
     vkd.create_command_pool(&command_pool_create_info, None)
         .unwrap()
-}
-
-/// Helper function to create a swapchain.
-pub(crate) fn create_swapchain(
-    vke: &VkEntry1,
-    vki: &VkInstance1,
-    vkd: &VkDevice1,
-    surface_loader: &extensions::Surface,
-    swapchain_loader: &extensions::Swapchain,
-    physical_device: vk::PhysicalDevice,
-    window_width: u32,
-    window_height: u32,
-    surface: vk::SurfaceKHR,
-) -> (vk::SwapchainKHR, vk::SwapchainCreateInfoKHR) {
-    let surface_formats = surface_loader
-        .get_physical_device_surface_formats_khr(physical_device, surface)
-        .unwrap();
-    let surface_format = surface_formats
-        .iter()
-        .map(|sfmt| match sfmt.format {
-            vk::Format::Undefined => vk::SurfaceFormatKHR {
-                format: vk::Format::B8g8r8Unorm,
-                color_space: sfmt.color_space,
-            },
-            _ => sfmt.clone(),
-        }).nth(0)
-        .expect("Unable to find a suitable surface format");
-    let surface_capabilities = surface_loader
-        .get_physical_device_surface_capabilities_khr(physical_device, surface)
-        .unwrap();
-    let mut desired_image_count = surface_capabilities.min_image_count + 1;
-    if surface_capabilities.max_image_count > 0
-        && desired_image_count > surface_capabilities.max_image_count
-    {
-        desired_image_count = surface_capabilities.max_image_count;
-    }
-    let surface_resolution = match surface_capabilities.current_extent.width {
-        u32::MAX => vk::Extent2D {
-            width: window_width,
-            height: window_height,
-        },
-        _ => surface_capabilities.current_extent,
-    };
-    let pre_transform = if surface_capabilities
-        .supported_transforms
-        .subset(vk::SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
-    {
-        vk::SURFACE_TRANSFORM_IDENTITY_BIT_KHR
-    } else {
-        surface_capabilities.current_transform
-    };
-    let present_modes = surface_loader
-        .get_physical_device_surface_present_modes_khr(physical_device, surface)
-        .unwrap();
-    let present_mode = present_modes
-        .iter()
-        .cloned()
-        .find(|&mode| mode == vk::PresentModeKHR::Mailbox)
-        .unwrap_or(vk::PresentModeKHR::Fifo);
-    let swapchain_create_info = vk::SwapchainCreateInfoKHR {
-        s_type: vk::StructureType::SwapchainCreateInfoKhr,
-        p_next: ptr::null(),
-        flags: Default::default(),
-        surface,
-        min_image_count: desired_image_count,
-        image_color_space: surface_format.color_space,
-        image_format: surface_format.format,
-        image_extent: surface_resolution.clone(),
-        image_usage: vk::IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-        image_sharing_mode: vk::SharingMode::Exclusive,
-        pre_transform,
-        composite_alpha: vk::COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        present_mode,
-        clipped: 1,
-        old_swapchain: vk::SwapchainKHR::null(),
-        image_array_layers: 1,
-        p_queue_family_indices: ptr::null(),
-        queue_family_index_count: 0,
-    };
-    unsafe {
-        let swapchain = swapchain_loader
-            .create_swapchain_khr(&swapchain_create_info, None)
-            .unwrap();
-        (swapchain, swapchain_create_info)
-    }
 }
 
 pub(crate) unsafe fn create_semaphore(vkd: &VkDevice1) -> vk::Semaphore {
