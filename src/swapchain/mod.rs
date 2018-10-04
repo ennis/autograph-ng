@@ -1,3 +1,4 @@
+mod swapchain;
 
 #[derive(Clone)]
 pub enum PresentationTarget {

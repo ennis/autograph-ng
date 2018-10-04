@@ -1,19 +1,21 @@
 //! Abstraction over vulkan swapchains.
+use std::sync::Arc;
 
 use ash::vk;
 
-use image;
+use device::Device;
+use image::Image;
+use instance::Instance;
+use surface::Surface;
 
-pub struct Swapchain
-{
+pub struct Swapchain {
     device: Arc<Device>,
     surface: Arc<Surface>,
     swapchain: VkHandle<vk::SwapchainKHR>,
     images: Vec<Image>,
 }
 
-impl Swapchain
-{
+impl Swapchain {
     pub fn new(device: &Arc<Device>, surface: &Arc<Surface>, width: u32, height: u32) -> Swapchain {
         let vkd = device.pointers();
         let vk_khr_surface = device.instance().extension_pointers().vk_khr_surface;
@@ -29,7 +31,7 @@ impl Swapchain
                 },
                 _ => sfmt.clone(),
             }).nth(0)
-            .expect("Unable to find a suitable surface format");
+            .expect("unable to find a suitable surface format");
 
         let surface_capabilities = vk_khr_surface
             .get_physical_device_surface_capabilities_khr(physical_device, surface)
@@ -37,9 +39,9 @@ impl Swapchain
         let mut desired_image_count = surface_capabilities.min_image_count + 1;
         if surface_capabilities.max_image_count > 0
             && desired_image_count > surface_capabilities.max_image_count
-            {
-                desired_image_count = surface_capabilities.max_image_count;
-            }
+        {
+            desired_image_count = surface_capabilities.max_image_count;
+        }
         let surface_resolution = match surface_capabilities.current_extent.width {
             u32::MAX => vk::Extent2D {
                 width: window_width,
@@ -50,9 +52,9 @@ impl Swapchain
         let pre_transform = if surface_capabilities
             .supported_transforms
             .subset(vk::SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
-            {
-                vk::SURFACE_TRANSFORM_IDENTITY_BIT_KHR
-            } else {
+        {
+            vk::SURFACE_TRANSFORM_IDENTITY_BIT_KHR
+        } else {
             surface_capabilities.current_transform
         };
         let present_modes = surface_loader

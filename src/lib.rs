@@ -22,15 +22,18 @@ extern crate downcast_rs;
 extern crate sid_vec;
 extern crate time;
 
-pub mod alloc;
 pub mod buffer;
 mod buffer_data;
-pub mod context;
+pub mod device;
 pub mod frame;
 mod handle;
 pub mod image;
 pub mod import;
+pub mod instance;
+pub mod memory;
 pub mod resource;
+mod surface;
+mod swapchain;
 mod sync;
 pub mod window;
 

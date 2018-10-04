@@ -1,10 +1,10 @@
-//! Context creation
-//! A `Context` wraps a vulkan instance, device, and swapchain.
+//! Device creation
 use std::ffi::{CStr, CString};
 use std::mem;
 use std::os::raw::c_char;
 use std::ptr;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::u32;
 
 use ash;
@@ -12,69 +12,55 @@ use ash::extensions;
 use ash::version::{DeviceV1_0, EntryV1_0, InstanceV1_0, V1_0};
 use ash::vk;
 use config::Config;
-use slotmap::{Key, SlotMap};
+use sid_vec::{Id, IdVec};
 use winit::Window;
 
-use alloc::Allocator;
-use handle::OwnedHandle;
-use image::{Image, ImageDescription};
-use resource::*;
+use instance::{Instance, VkInstance1};
+use surface::Surface;
 use sync::{FrameSync, SyncGroup};
 
-pub type VkEntry1 = ash::Entry<V1_0>;
-pub type VkInstance1 = ash::Instance<V1_0>;
 pub type VkDevice1 = ash::Device<V1_0>;
+pub struct QueueTag;
+pub type QueueId = Id<QueueTag>;
 
-#[cfg(all(unix, not(target_os = "android"), not(target_os = "macos")))]
-fn extension_names() -> Vec<*const c_char> {
-    vec![
-        extensions::Surface::name().as_ptr(),
-        extensions::XlibSurface::name().as_ptr(),
-        extensions::DebugReport::name().as_ptr(),
-    ]
+mod physical_device;
+
+// queues: different queue families, each queue family has different properties
+// resources are shared between different queue families, not queues
+pub struct Queue {
+    family: u32,
+    queue: vk::Queue,
+    capabilities: vk::QueueFlags,
 }
 
-#[cfg(target_os = "macos")]
-fn extension_names() -> Vec<*const c_char> {
-    vec![
-        extensions::Surface::name().as_ptr(),
-        extensions::MacOSSurface::name().as_ptr(),
-        extensions::DebugReport::name().as_ptr(),
-    ]
+pub struct DeviceExtensionPointers {
+    vk_khr_swapchain: extensions::Swapchain,
 }
 
-#[cfg(all(windows))]
-fn extension_names() -> Vec<*const c_char> {
-    vec![
-        extensions::Surface::name().as_ptr(),
-        extensions::Win32Surface::name().as_ptr(),
-        extensions::DebugReport::name().as_ptr(),
-    ]
-}
-
-/// Debug callback for the vulkan debug report extension.
-unsafe extern "system" fn vulkan_debug_callback(
-    _: vk::DebugReportFlagsEXT,
-    _: vk::DebugReportObjectTypeEXT,
-    _: vk::uint64_t,
-    _: vk::size_t,
-    _: vk::int32_t,
-    _: *const vk::c_char,
-    p_message: *const vk::c_char,
-    _: *mut vk::c_void,
-) -> u32 {
-    debug!("{:?}", CStr::from_ptr(p_message));
-    vk::VK_FALSE
-}
-
-/// Return value of `create_device_and_queues`
-struct DeviceAndQueues {
+/// Vulkan device.
+pub struct Device {
+    instance: Arc<Instance>,
+    pointers: VkDevice1,
+    extension_pointers: DeviceExtensionPointers,
     physical_device: vk::PhysicalDevice,
-    vkd: VkDevice1,
-    graphics_queue_family_index: u32,
-    present_queue_family_index: u32,
-    graphics_queue: vk::Queue,
-    present_queue: vk::Queue,
+    queues: IdVec<QueueId, Queue>,
+    preferred_transfer_queue: QueueId,
+    present_queue: QueueId,
+    max_frames_in_flight: u32,
+    image_available: vk::Semaphore,
+    render_finished: vk::Semaphore,
+    frame_sync: FrameSync,
+}
+
+impl Device {
+    pub fn new(
+        instance: &Arc<Instance>,
+        config: &Config,
+        target_surface: Option<&Surface>,
+    ) -> Arc<Device>
+    {
+        let physical_device_selection = physical_device::select_physical_device(instance, target_surface);
+    }
 }
 
 /// Helper function to create a vulkan device and queues that are compatible with
@@ -202,86 +188,6 @@ unsafe fn create_command_pool_for_queue(
         .unwrap()
 }
 
-#[cfg(all(unix, not(target_os = "android"), not(target_os = "macos")))]
-pub(crate) unsafe fn create_surface(
-    entry: &VkEntry1,
-    instance: &VkInstance1,
-    window: &Window,
-) -> Result<vk::SurfaceKHR, vk::Result> {
-    use winit::os::unix::WindowExt;
-    let x11_display = window.get_xlib_display().unwrap();
-    let x11_window = window.get_xlib_window().unwrap();
-    let x11_create_info = vk::XlibSurfaceCreateInfoKHR {
-        s_type: vk::StructureType::XlibSurfaceCreateInfoKhr,
-        p_next: ptr::null(),
-        flags: Default::default(),
-        window: x11_window as vk::Window,
-        dpy: x11_display as *mut vk::Display,
-    };
-    let xlib_surface_loader =
-        extensions::XlibSurface::new(entry, instance).expect("Unable to load xlib surface");
-    xlib_surface_loader.create_xlib_surface_khr(&x11_create_info, None)
-}
-
-#[cfg(target_os = "macos")]
-pub(crate) unsafe fn create_surface(
-    entry: &VkEntry1,
-    instance: &VkInstance1,
-    window: &Window,
-) -> Result<vk::SurfaceKHR, vk::Result> {
-    use winit::os::macos::WindowExt;
-    let wnd: cocoa_id = mem::transmute(window.get_nswindow());
-    let layer = CoreAnimationLayer::new();
-
-    layer.set_edge_antialiasing_mask(0);
-    layer.set_presents_with_transaction(false);
-    layer.remove_all_animations();
-
-    let view = wnd.contentView();
-
-    layer.set_contents_scale(view.backingScaleFactor());
-    view.setLayer(mem::transmute(layer.as_ref()));
-    view.setWantsLayer(YES);
-
-    let create_info = vk::MacOSSurfaceCreateInfoMVK {
-        s_type: vk::StructureType::MacOSSurfaceCreateInfoMvk,
-        p_next: ptr::null(),
-        flags: Default::default(),
-        p_view: window.get_nsview() as *const vk::types::c_void,
-    };
-
-    let macos_surface_loader =
-        extensions::MacOSSurface::new(entry, instance).expect("Unable to load macOS surface");
-    macos_surface_loader.create_macos_surface_mvk(&create_info, None)
-}
-
-#[cfg(target_os = "windows")]
-pub(crate) unsafe fn create_surface(
-    entry: &VkEntry1,
-    instance: &VkInstance1,
-    window: &Window,
-) -> Result<vk::SurfaceKHR, vk::Result> {
-    use winapi::shared::minwindef::HINSTANCE;
-    use winapi::shared::windef::HWND;
-    use winapi::um::winuser::{GetWindowLongW, GWL_HINSTANCE};
-    use winit::os::windows::WindowExt;
-
-    let hwnd = window.get_hwnd() as HWND;
-    // dafuq?
-    //let hinstance = GetWindow(hwnd, 0) as *const vk::c_void;
-    let hinstance = GetWindowLongW(hwnd, GWL_HINSTANCE) as *const _;
-    let win32_create_info = vk::Win32SurfaceCreateInfoKHR {
-        s_type: vk::StructureType::Win32SurfaceCreateInfoKhr,
-        p_next: ptr::null(),
-        flags: Default::default(),
-        hinstance,
-        hwnd: hwnd as *const _,
-    };
-    let win32_surface_loader =
-        extensions::Win32Surface::new(entry, instance).expect("Unable to load win32 surface");
-    win32_surface_loader.create_win32_surface_khr(&win32_create_info, None)
-}
-
 /// Helper function to create a swapchain.
 pub(crate) fn create_swapchain(
     vke: &VkEntry1,
@@ -396,30 +302,6 @@ pub(crate) struct SyncGroup {}
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct FrameNumber(pub(crate) u64);
 
-impl FrameNumber {
-    /*pub(crate) const fn none() -> FrameNumber {
-        FrameNumber(0)
-    }*/
-
-    pub(crate) fn is_none(&self) -> bool {
-        self.0 == 0
-    }
-
-    pub(crate) fn new(i: u64) -> FrameNumber {
-        FrameNumber(i)
-    }
-
-    pub(crate) fn next(&self) -> FrameNumber {
-        FrameNumber(self.0 + 1)
-    }
-
-    pub(crate) fn next_n(&self, frames: u64) -> FrameNumber {
-        FrameNumber(self.0 + frames)
-    }
-}
-
-pub const FRAME_NONE: FrameNumber = FrameNumber(0);
-
 /// Main graphics context.
 /// Handles allocation of persistent resources.
 pub struct Context {
@@ -456,7 +338,9 @@ impl Context {
             .get::<Vec<String>>("gfx.vulkan.instance_extensions")
             .unwrap();
         let vk_layers = cfg.get::<Vec<String>>("gfx.vulkan.layers").unwrap();
-        let vk_default_alloc_block_size = cfg.get::<u64>("gfx.vulkan.default_alloc_block_size").unwrap();
+        let vk_default_alloc_block_size = cfg
+            .get::<u64>("gfx.vulkan.default_alloc_block_size")
+            .unwrap();
 
         // TODO split up the unsafe block
         unsafe {
@@ -627,7 +511,7 @@ impl Context {
                 &vki,
                 &device_and_queues.vkd,
                 device_and_queues.physical_device,
-                vk_default_alloc_block_size
+                vk_default_alloc_block_size,
             );
 
             (

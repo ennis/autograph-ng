@@ -1,10 +1,10 @@
 //! Vulkan memory allocators
 
+use std::cell::RefCell;
 use std::error;
 use std::fmt;
 use std::ops::Range;
 use std::ptr;
-use std::cell::RefCell;
 
 use ash::version::DeviceV1_0;
 use ash::version::InstanceV1_0;
@@ -14,8 +14,8 @@ use sid_vec::{Id, IdVec};
 use context::*;
 use handle::OwnedHandle;
 
-mod linear_pool;
-use self::linear_pool::LinearMemoryPool;
+//mod linear_pool;
+//use self::linear_pool::LinearMemoryPool;
 
 #[derive(Copy, Clone, Debug)]
 pub enum HostAccess {
@@ -66,7 +66,6 @@ fn align_offset(size: u64, align: u64, space: Range<u64>) -> Option<u64> {
         Some(space.start + off)
     }
 }
-
 
 pub fn find_compatible_memory_type_index(
     memory_types: &[vk::MemoryType],
@@ -172,8 +171,8 @@ impl Allocator {
             info.preferred_flags,
             info.memory_type_bits,
         ) {
-            if let Some(alloc) =
-                self.default_pools.borrow_mut()[mt_index as usize].allocate(info.size, info.align, vkd)
+            if let Some(alloc) = self.default_pools.borrow_mut()[mt_index as usize]
+                .allocate(info.size, info.align, vkd)
             {
                 return Ok(alloc);
             }
@@ -230,7 +229,7 @@ impl Allocator {
             };
             return Ok(AllocatedMemory {
                 device_memory,
-                range: 0..info.size
+                range: 0..info.size,
             });
         }
 

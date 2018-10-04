@@ -3,14 +3,14 @@ use std::ptr;
 
 use ash::vk;
 
-use super::{MipmapsCount, ImageDimensionInfo, Dimensions, get_texture_mip_map_count};
 use super::description::ImageDescription;
+use super::{get_texture_mip_map_count, Dimensions, ImageDimensionInfo, MipmapsCount};
 
-use alloc::{AllocationCreateInfo, AllocatedMemory, Allocator};
-use context::{Context, VkDevice1, FrameNumber, FRAME_NONE};
+use alloc::{AllocatedMemory, AllocationCreateInfo, Allocator};
+use context::{Context, FrameNumber, VkDevice1, FRAME_NONE};
 use handle::OwnedHandle;
-use sync::SyncGroup;
 use resource::Resource;
+use sync::SyncGroup;
 
 /// Wrapper around an image without associated memory.
 pub(crate) struct UnboundImage {
@@ -107,8 +107,7 @@ impl Image {
         samples: vk::SampleCountFlags,
         format: vk::Format,
         usage: vk::ImageUsageFlags,
-    ) -> Image
-    {
+    ) -> Image {
         let vkd = &context.vkd;
 
         let unbound_image = UnboundImage::new(
@@ -204,9 +203,12 @@ impl Image {
     ) -> Image {
         Image {
             image,
-            dimensions:
-            if array_layers > 1 {
-                Dimensions::Dim2dArray { width, height, array_layers }
+            dimensions: if array_layers > 1 {
+                Dimensions::Dim2dArray {
+                    width,
+                    height,
+                    array_layers,
+                }
             } else {
                 Dimensions::Dim2d { width, height }
             },
