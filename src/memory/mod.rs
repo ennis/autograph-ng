@@ -4,6 +4,7 @@ use std::error;
 use std::fmt;
 use std::ops::Range;
 use std::ptr;
+use std::cell::RefCell;
 
 use ash::version::DeviceV1_0;
 use ash::version::InstanceV1_0;
@@ -11,7 +12,17 @@ use ash::vk;
 use sid_vec::{Id, IdVec};
 
 use context::*;
-use handle::OwningHandle;
+use handle::OwnedHandle;
+
+mod linear_pool;
+use self::linear_pool::LinearMemoryPool;
+
+#[derive(Copy, Clone, Debug)]
+pub enum HostAccess {
+    GpuOnly,
+    Upload,
+    Readback,
+}
 
 #[derive(Debug, Clone)]
 pub enum AllocError {
@@ -36,7 +47,7 @@ impl error::Error for AllocError {
     }
 }
 
-pub(crate) struct Allocation {
+pub(crate) struct AllocatedMemory {
     /// Associated device memory object.
     pub(crate) device_memory: vk::DeviceMemory,
     /// Offset within the device memory.
@@ -56,90 +67,6 @@ fn align_offset(size: u64, align: u64, space: Range<u64>) -> Option<u64> {
     }
 }
 
-/// A block of device memory in a pool.
-struct Block {
-    device_memory: OwningHandle<vk::DeviceMemory>,
-}
-
-/// Linear memory pools.
-/// Only appends to the end, allocate blocks when necessary.
-/// Free is a no-op.
-struct LinearMemoryPool {
-    memory_type_index: u32,
-    block_size: u64,
-    front_block: u32,
-    front_ptr: u64,
-    blocks: Vec<Block>,
-}
-
-impl LinearMemoryPool {
-    fn new(memory_type_index: u32, block_size: u64) -> LinearMemoryPool {
-        LinearMemoryPool {
-            memory_type_index,
-            block_size,
-            blocks: Vec::new(),
-            front_block: 0,
-            front_ptr: 0,
-        }
-    }
-
-    /// Should be mostly safe.
-    fn new_block(&mut self, vkd: &VkDevice1) {
-        let alloc_info = vk::MemoryAllocateInfo {
-            s_type: vk::StructureType::MemoryAllocateInfo,
-            p_next: ptr::null(),
-            allocation_size: self.block_size,
-            memory_type_index: self.memory_type_index,
-        };
-
-        let device_memory = unsafe {
-            vkd.allocate_memory(&alloc_info, None)
-                .expect("allocation failed")
-        };
-
-        self.blocks.push(Block { device_memory });
-
-        self.front_ptr = 0;
-    }
-
-    /// Should be mostly safe.
-    fn allocate(&mut self, size: u64, align: u64, vkd: &VkDevice1) -> Option<Allocation> {
-        assert!(align.is_power_of_two(), "alignment must be a power of two");
-
-        if size > self.block_size {
-            None
-        }
-
-        if self.blocks.is_empty() {
-            self.new_block(vkd);
-        }
-
-        if let Some(ptr) = align_offset(size, align, self.front_ptr..self.block_size) {
-            // suballocate
-            Some(Allocation {
-                device_memory: self.blocks.last().unwrap().device_memory.get(),
-                range: ptr..(ptr + size),
-            })
-        } else {
-            self.new_block(vkd);
-            let ptr = self.front_ptr;
-            self.front_ptr += size;
-            Some(Allocation {
-                device_memory: self.blocks.last().unwrap().device_memory.get(),
-                range: ptr..(ptr + size),
-            })
-        }
-    }
-
-    /// Unsafe because reasons.
-    unsafe fn deallocate_all(&mut self, vkd: &VkDevice1) {
-        for b in self.blocks.drain(..) {
-            b.device_memory.destroy(|device_memory| {
-                vkd.free_memory(device_memory, None);
-            });
-        }
-    }
-}
 
 pub fn find_compatible_memory_type_index(
     memory_types: &[vk::MemoryType],
@@ -205,8 +132,7 @@ pub struct Allocator {
     memory_types: Vec<vk::MemoryType>,
     memory_heaps: Vec<vk::MemoryHeap>,
     large_alloc_size: u64,
-    /// Default pools for all memory types.
-    default_pools: Vec<LinearMemoryPool>,
+    default_pools: RefCell<Vec<LinearMemoryPool>>,
 }
 
 impl Allocator {
@@ -232,12 +158,12 @@ impl Allocator {
     }
 
     pub fn allocate_memory(
-        &mut self,
-        info: &AllocationCreateInfo,
+        &self,
         vkd: &VkDevice1,
-    ) -> Result<Allocation, AllocError> {
+        info: &AllocationCreateInfo,
+    ) -> Result<AllocatedMemory, AllocError> {
         if info.size >= self.large_alloc_size {
-            self.allocate_dedicated(info, vkd);
+            return self.allocate_dedicated(info, vkd);
         }
 
         for (mt_index, mt) in compatible_memory_types(
@@ -247,7 +173,7 @@ impl Allocator {
             info.memory_type_bits,
         ) {
             if let Some(alloc) =
-                self.default_pools[mt_index as usize].allocate(info.size, info.align, vkd)
+                self.default_pools.borrow_mut()[mt_index as usize].allocate(info.size, info.align, vkd)
             {
                 return Ok(alloc);
             }
@@ -257,11 +183,16 @@ impl Allocator {
         self.allocate_dedicated(info, vkd)
     }
 
+    /// Frees the specified block of memory.
+    pub fn free_memory(&mut self, memory: AllocatedMemory) {
+        // No-op for now
+    }
+
     pub fn allocate_dedicated(
         &self,
         info: &AllocationCreateInfo,
         vkd: &VkDevice1,
-    ) -> Result<vk::DeviceMemory, AllocError> {
+    ) -> Result<AllocatedMemory, AllocError> {
         let mut found_suitable_memory_type = false;
         // find a suitable memory type
         // first, look for mem types with required + preferred, then look again with only required
@@ -287,17 +218,20 @@ impl Allocator {
             );
             //
             let vk_alloc_info = vk::MemoryAllocateInfo {
-                allocation_size: info.size as vk::types::DeviceSize,
+                allocation_size: info.size,
                 memory_type_index: mt_index as u32,
                 p_next: ptr::null(),
                 s_type: vk::StructureType::MemoryAllocateInfo,
             };
 
-            let mem = unsafe {
+            let device_memory = unsafe {
                 vkd.allocate_memory(&vk_alloc_info, None)
                     .map_err(|e| AllocError::Other(e))?
             };
-            return Ok(mem);
+            return Ok(AllocatedMemory {
+                device_memory,
+                range: 0..info.size
+            });
         }
 
         if found_suitable_memory_type {
@@ -307,6 +241,3 @@ impl Allocator {
         }
     }
 }
-
-// free a pack of allocations all at once:
-// multiple pools per pack

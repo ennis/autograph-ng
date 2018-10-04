@@ -9,9 +9,8 @@ use ash::vk;
 use downcast_rs::Downcast;
 use slotmap::Key;
 
-use alloc::Allocation;
 use context::{FrameNumber, VkDevice1, FRAME_NONE};
-use handle::OwningHandle;
+use handle::OwnedHandle;
 use sync::{FrameSync, SyncGroup};
 
 //--------------------------------------------------------------------------------------------------
@@ -19,8 +18,6 @@ use sync::{FrameSync, SyncGroup};
 
 /// Trait representing the shared functionality and properties of resources (buffers and images).
 pub trait Resource {
-    type CreateInfo: Clone;
-
     /// Gets the name of the resource.
     /// Note that the name does not uniquely identifies a resource,
     /// as it does not need to be unique among all resources.
@@ -28,7 +25,4 @@ pub trait Resource {
 
     /// The frame in which the resource was last used.
     fn last_used_frame(&self) -> FrameNumber;
-
-    fn create_info(&self) -> &Self::CreateInfo;
 }
-

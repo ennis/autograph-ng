@@ -1,45 +1,114 @@
 //! Buffers
 //!
-
+use std::ptr;
 
 use ash::vk;
 
-use handle::OwningHandle;
-use sync::SyncGroup;
-use context::{FrameNumber, VkDevice1, FRAME_NONE};
+use alloc::{Allocator, AllocatedMemory, AllocationCreateInfo};
+use context::{Context, FrameNumber, VkDevice1, FRAME_NONE};
+use handle::OwnedHandle;
 use resource::Resource;
+use sync::SyncGroup;
 
-/// A buffer resource. Possibly virtual (not yet allocated).
-/// Note that it is cloneable, but this does not extend its lifetime.
+pub trait BufferDescription
+{
+    fn size(&self) -> u64;
+    fn usage(&self) -> vk::BufferUsageFlags;
+}
+
+/// A buffer resource without device memory bound to it.
+struct UnboundBuffer {
+    buffer: OwnedHandle<vk::Buffer>,
+    size: u64,
+    usage: vk::BufferUsage,
+    memory_requirements: vk::MemoryRequirements,
+}
+
+impl UnboundBuffer
+{
+    fn new(vkd: &VkDevice1, size: u64, usage: vk::BufferUsageFlags) -> UnboundBuffer {
+        let create_info = vk::BufferCreateInfo {
+            s_type: vk::StructureType::BufferCreateInfo,
+            p_next: ptr::null(),
+            size,
+            usage,
+            flags: vk::BufferCreateFlags::empty(),
+            sharing_mode: vk::SharingMode::Exclusive,    // FIXME
+            queue_family_index_count: 0,
+            p_queue_family_indices: ptr::null(),
+        };
+
+        unsafe {
+            let buffer = vkd.create_buffer(&create_into, None).expect("could not create buffer");
+            let memory_requirements = vkd.get_buffer_memory_requirements(buffer);
+
+            UnboundBuffer {
+                buffer: OwnedHandle(buffer),
+                size,
+                usage,
+                memory_requirements
+            }
+        }
+    }
+}
+
+/// A buffer resource.
 #[derive(Debug)]
 pub struct Buffer {
-    /// Name of the resource. May not uniquely identify the resource;
-    pub(crate) name: String,
-    /// Buffer creation info. Some properties are inferred from the dependency graph.
-    // FIXME this is not what should be kept in the object.
-    pub(crate) create_info: vk::BufferCreateInfo,
-    /// Buffer resource + associated memory allocation, None if not yet allocated.
-    /// A not-yet-allocated resource is called "virtual"
-    pub(crate) buffer: Option<OwningHandle<vk::Buffer>>,
+    /// Buffer creation info.
+    size: u64,
+
+    /// Buffer usage.
+    usage: vk::BufferUsageFlags,
+
+    /// Buffer resource + associated memory allocation.
+    buffer: OwnedHandle<vk::Buffer>,
+
+    /// Device memory bound to the buffer.
+    memory: AllocatedMemory,
+
+    /// Specifies whether the memory should be freed when the buffer is destroyed.
+    should_free_memory: bool,
+
     /// Last used frame. Can be `never`
-    pub(crate) last_used: FrameNumber,
+    last_used: FrameNumber,
+
     /// Used for synchronization between frames.
-    pub(crate) exit_semaphores: SyncGroup<Vec<vk::Semaphore>>,
+    exit_semaphores: SyncGroup<Vec<vk::Semaphore>>,
 }
 
 impl Buffer {
-    /// Creates a new unallocated buffer (virtual buffer).
-    pub(crate) fn new(name: impl Into<String>, create_info: vk::BufferCreateInfo) -> Buffer {
+    /// Creates a new buffer.
+    pub(crate) fn new(context: &mut Context, size: u64, usage: vk::BufferUsageFlags) -> Buffer {
+        let vkd = &context.vkd;
+        let unbound = UnboundBuffer::new(vkd, size, usage);
+
+        let memory = context.default_allocator().
+
         Buffer {
-            name: name.into(),
-            create_info,
+            size,
+            usage,
             buffer: None,
             last_used: FRAME_NONE,
             exit_semaphores: SyncGroup::new(),
         }
     }
 
-    /// Sets a list of semaphores signalled by the resource when the frame ends.
+    pub(crate) fn bind_buffer_memory(vkd: &VkDevice1, unbound: UnboundBuffer, memory: AllocatedMemory) -> Buffer {
+        unsafe {
+            vkd.bind_buffer_memory(unbound.buffer.get(), memory.device_memory, memory.range.start);
+        };
+
+        Buffer {
+            buffer: unbound.buffer,
+            size: unbound.size,
+            usage: unbound.usage,
+            last_used: FRAME_NONE,
+            exit_semaphores: SyncGroup::new(),
+        }
+    }
+
+    /*/// Sets a list of semaphores signalled by the resource when the frame ends.
     pub(crate) fn set_exit_semaphores(
         &mut self,
         semaphores: Vec<vk::Semaphore>,
@@ -54,7 +123,7 @@ impl Buffer {
                     }
                 }
             });
-    }
+    }*/
 
     pub fn size(&self) -> vk::DeviceSize {
         self.create_info.size

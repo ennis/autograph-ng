@@ -16,9 +16,9 @@ use slotmap::{Key, SlotMap};
 use winit::Window;
 
 use alloc::Allocator;
-use handle::OwningHandle;
-use resource::*;
+use handle::OwnedHandle;
 use image::{Image, ImageDescription};
+use resource::*;
 use sync::{FrameSync, SyncGroup};
 
 pub type VkEntry1 = ash::Entry<V1_0>;
@@ -378,93 +378,6 @@ pub(crate) unsafe fn create_semaphore(vkd: &VkDevice1) -> vk::Semaphore {
 }
 
 //--------------------------------------------------------------------------------------------------
-// PRESENTATION
-
-/// Resources associated to a presentation target.
-pub struct Presentation {
-    /// Presentation target.
-    pub(crate) target: PresentationTarget,
-    /// The surface: initialized when creating the context.
-    pub(crate) surface: vk::SurfaceKHR,
-    /// The swapchain: initialized when creating the context.
-    pub(crate) swapchain: vk::SwapchainKHR,
-    /// Images in the swapchain.
-    pub(crate) images: Vec<Image>,
-}
-
-impl Presentation {
-    /// Destroys the resources associated with the presentation object.
-    /// Returns a reference to the presentation target passed on creation,
-    /// for an eventual re-use.
-    pub(crate) unsafe fn destroy(
-        mut self,
-        vkd: &VkDevice1,
-        surface_ext: &extensions::Surface,
-        swapchain_ext: &extensions::Swapchain,
-    ) -> PresentationTarget {
-        // destroy image views
-        for img in self.images.drain(..) {
-            img.image.unwrap().destroy(|img| {
-                vkd.destroy_image(img, None);
-            });
-        }
-        // destroy swapchain
-        swapchain_ext.destroy_swapchain_khr(self.swapchain, None);
-        // delete surface
-        surface_ext.destroy_surface_khr(self.surface, None);
-        self.target
-    }
-
-    /// Recreates the swap chain. To be called after receiving a `VK_ERROR_OUT_OF_DATE_KHR` result.
-    pub(crate) unsafe fn recreate_swapchain(
-        &mut self,
-        vke: &VkEntry1,
-        vki: &VkInstance1,
-        vkd: &VkDevice1,
-        surface_ext: &extensions::Surface,
-        swapchain_ext: &extensions::Swapchain,
-        physical_device: vk::PhysicalDevice,
-    ) {
-        // destroy image views
-        for img in self.images.drain(..) {
-            img.image.unwrap().destroy(|img| {
-                vkd.destroy_image(img, None);
-            });
-        }
-        // destroy swapchain
-        swapchain_ext.destroy_swapchain_khr(self.swapchain, None);
-
-        match self.target {
-            PresentationTarget::Window(ref window) => {
-                let hidpi_factor = window.get_hidpi_factor();
-                let (window_width, window_height): (u32, u32) = window
-                    .get_inner_size()
-                    .unwrap()
-                    .to_physical(hidpi_factor)
-                    .into();
-                // re-create swapchain
-                self.swapchain = create_swapchain(
-                    vke,
-                    vki,
-                    vkd,
-                    surface_ext,
-                    swapchain_ext,
-                    physical_device,
-                    window_width,
-                    window_height,
-                    self.surface,
-                ).0;
-            }
-        }
-    }
-}
-
-#[derive(Clone)]
-pub enum PresentationTarget {
-    Window(Rc<Window>),
-}
-
-//--------------------------------------------------------------------------------------------------
 // SYNC GROUPS
 
 /*
@@ -510,8 +423,6 @@ pub const FRAME_NONE: FrameNumber = FrameNumber(0);
 /// Main graphics context.
 /// Handles allocation of persistent resources.
 pub struct Context {
-    ///// The main upload buffer, where transient resources such as dynamic uniform buffers are allocated.
-    //pub(crate) upload_buffer: UploadBuffer,
     pub(crate) vke: VkEntry1,
     pub(crate) vki: VkInstance1,
     pub(crate) physical_device: vk::PhysicalDevice,
@@ -524,12 +435,9 @@ pub struct Context {
     pub(crate) present_queue_command_pool: vk::CommandPool,
     pub(crate) surface_loader: extensions::Surface,
     pub(crate) swapchain_loader: extensions::Swapchain,
-    //pub(crate) presentations: SlotMap<PresentationInternal>,
     pub(crate) max_frames_in_flight: u32,
     pub(crate) image_available: vk::Semaphore,
     pub(crate) render_finished: vk::Semaphore,
-    //pub(crate) images: SlotMap<ImageResource>,
-    //pub(crate) buffers: SlotMap<ImageResource>,
     pub(crate) allocator: Allocator,
     pub(crate) frame_sync: FrameSync,
 }
@@ -548,6 +456,7 @@ impl Context {
             .get::<Vec<String>>("gfx.vulkan.instance_extensions")
             .unwrap();
         let vk_layers = cfg.get::<Vec<String>>("gfx.vulkan.layers").unwrap();
+        let vk_default_alloc_block_size = cfg.get::<u64>("gfx.vulkan.default_alloc_block_size").unwrap();
 
         // TODO split up the unsafe block
         unsafe {
@@ -683,7 +592,7 @@ impl Context {
                                 Image::new_swapchain_image(
                                     "presentation image",
                                     &swapchain_create_info,
-                                    OwningHandle::new(img),
+                                    OwnedHandle::new(img),
                                     i as u32,
                                 )
                             }).collect::<Vec<_>>();
@@ -718,6 +627,7 @@ impl Context {
                 &vki,
                 &device_and_queues.vkd,
                 device_and_queues.physical_device,
+                vk_default_alloc_block_size
             );
 
             (
@@ -775,66 +685,18 @@ impl Context {
         img
     }
 
-    /// Creates a persistent image resource.
-    pub fn create_image(&mut self, desc: &ImageDescription) -> Image
-    {
-        let image_create_info = vk::ImageCreateInfo {
-            s_type: vk::StructureType::ImageCreateInfo,
-            p_next: ptr::null(),
-            flags: vk::ImageCreateFlags::default(),
-            image_type: vk::ImageType::Type2d,
-            format,
-            extent: vk::Extent3D {
-                width,
-                height,
-                depth: 1,
-            },
-            mip_levels: 1,                    // FIXME
-            array_layers: 1,                  // FIXME
-            samples: vk::SAMPLE_COUNT_1_BIT,  // FIXME
-            tiling: vk::ImageTiling::Optimal, // FIXME
-            // inferred from the graph
-            usage: vk::ImageUsageFlags::default(),
-            sharing_mode: vk::SharingMode::Exclusive, // FIXME
-            queue_family_index_count: 0,              // FIXME
-            p_queue_family_indices: ptr::null(),
-            initial_layout: vk::ImageLayout::Undefined, // inferred
-        };
-        Image::new("unnamed", image_create_info)
+    /// Returns the default memory allocator.
+    pub fn default_allocator(&self) -> &Allocator {
+        &self.allocator
     }
 
-
-
-    /*/// Initializes OR re-initializes a presentation target.
-    fn initialize_presentation_target(&self, target: &PresentationTarget)
-    {
-        if let Some(id) = target.index {
-            let target =
-
-        } else {
-            unimplemented!()
-        }
-    }*/
-
-    /*/// Creates a frame.
-    pub fn create_frame<'a>(&'a self, target: &PresentationTarget) -> Frame<'a> {
-        unimplemented!()
-    }*/
-
-    /*/// Returns information about a texture resource from an ID.
-    pub fn get_resource_info(&self, resource: &ResourceRef) -> ResourceInfo {
-        unimplemented!()
+    pub fn vk_instance(&self) -> &VkInstance1 {
+        &self.vki
     }
 
-    /// Creates a persistent texture, with optional initial data.
-    pub fn create_texture(&mut self, desc: &TextureDesc) -> Texture {
-        unimplemented!()
+    pub fn vk_device(&self) -> &VkDevice1 {
+        &self.vkd
     }
-
-    /// Creates a persistent buffer.
-    pub fn create_buffer(&mut self, desc: &BufferDesc) -> Buffer {
-        unimplemented!()
-    }*/
 }
 
 // persistent image creation

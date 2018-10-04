@@ -265,10 +265,19 @@ fn main() {
     let window = &mut app.window;
 
     // create a persistent image.
-    let mut persistent_img = ctx.create_image_2d((1024, 1024), vk::Format::R8g8b8a8Srgb);
+    let mut pool = MemoryPool::new(ctx);
 
-    //let mut persistent_img =
-    //    Image::new(ctx, Dimensions::Dim2D { width: 1280, height: 720 }, ...);
+    let mut persistent_img = Image::new(
+        ctx,
+        Dimensions::Dim2D {
+            width: 1280,
+            height: 720,
+        },
+        vk::Format::R8g8b8a8Srgb,
+        vk::IMAGE_USAGE_SAMPLED_BIT | vk::IMAGE_USAGE_TRANSFER_DST_BIT,
+        vk::QUEUE_GRAPHICS_BIT | vk::QUEUE_COMPUTE_BIT,
+        Some(pool),
+    );
 
     let mut first = true;
     loop {
@@ -292,59 +301,11 @@ fn main() {
                 frame.submit();
                 first = false;
             }
-
-            // ---- create frame (lock context)
-            // let mut frame = ctx.new_frame();
-            // ---- get the image associated with the presentation. (A)
-            // let presentation_image = frame.presentation_image(app.presentation);
-            // ---- clear presentation image (B)
-            // frame.clear(presentation_image);
-            // ---- submit frame (C)
-            // frame.submit();
-
-            // Dependency types:
-            // - (R) texture (sampled image) (VK_ACCESS_SHADER_READ_BIT)
-            // - (R/RW) storage image (VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT)
-            // - (R) attachment input (VK_ACCESS_INPUT_ATTACHMENT_READ_BIT )
-            // - (RW) depth attachment (VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)
-            // - (RW) stencil attachment (VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)
-            // - (RW) color attachment (VK_ACCESS_COLOR_ATTACHMENT_READ_BIT)
-            // - (RW) buffer
-            // -> Determines accessMask for barriers
-            //
-            // Dependency read barriers stage mask (for deps with R):
-            // - by default: TOP_OF_PIPE
-            // - ultimately: automagically detect from shader
-            //
-            // Dependency write barriers (for deps with W):
-            // - by default: BOTTOM_OF_PIPE
-            // - ultimately: automagically detect from shader
-            //
-            // Resource creation:
-            // - in a node?
-            // - outside, by the system?
-            // - by specialized nodes: cannot both use and create a resource in the same node.
-
-            // things that we need to clear the buffer:
-            // (A) acquire next image in swapchain
-            // (B) allocate command buffer
-            // (B) transition image to render target
-            // (B) create renderpass (from cache?)
-            //      (B)
-
-            // synchronize access with the persistent texture in the frame.
-            //let mut persistent_tex = frame.sync(persistent_tex);
-            // now persistent_tex can be used as a transient.
-            // upload shared uniforms for this frame.
-            // submit the frame to the command queue
-            //frame.finish();
-            //window.swap_buffers();
         });
         if should_close {
             break;
         }
     }
 
-    // delete persistent textures.
-    // context.release(persistent_tex);
+    // drop(persistent_img);
 }

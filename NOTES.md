@@ -193,6 +193,13 @@ Internal API:
             * Cannot expose this API to the user
             * OR: dropping the pool does not release the memory
                 * memory is released when the last image is deleted
+* Q: How does allocating anything works?
+    * vulkan spec says that all objects created with a device must be destroyed before destroying the device 
+    * but the current API does not ensure that a resource will be destroyed before the device
+        * Option 1: track number of allocated objects, panic if count not zero at drop time (**)
+            * Gives no information about the leak...
+            * Lightweight option
+        * Option 2: extend lifetime of device with Arc<Device>
 
 ```
 Image::new(..., Some(pool));
@@ -206,7 +213,22 @@ Note: the external API is quite high-level
 * Internal API issue: leaking owned handles
 * The overhead of adding an Arc<Context> is negligible
     * still, don't add it if not absolutely necessary (prefer passing VkDevice or Context)
+* The overhead for safety appears in other ways:
+    * need to put something into the created object to ensure that it won't be deleted on the wrong parent object by mistake
+        * marker indicating that it comes from some parent object
+* Conclusion: putting a refcounted backpointer to the parent object is the easiest solution
+    * must allocate context in an Arc
+    * might as well rename context to device, for good measure
 
 Lifetime of memory allocations:
 * Before deleting a pool, must be sure that all associated resources are destroyed, and not in use inside the pipeline, 
   and that no internal handles remain.
+  
+Aliasing of memory allocations:
+* Can't alias a memory allocation if passed by value to the object
+    * Optional reference to allocation
+    
+Basically, just copy vulkano (...) except that:
+* all GPU commands are managed by a frame graph
+    * notably, all resource access (except for initialization) must happen within the frame graph
+* ???

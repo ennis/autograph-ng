@@ -23,16 +23,16 @@ extern crate sid_vec;
 extern crate time;
 
 pub mod alloc;
+pub mod buffer;
 mod buffer_data;
 pub mod context;
 pub mod frame;
 mod handle;
+pub mod image;
 pub mod import;
 pub mod resource;
 mod sync;
 pub mod window;
-pub mod image;
-pub mod buffer;
 
 // re-export vulkan as gfx2::vk
 pub use ash::vk;

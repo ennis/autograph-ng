@@ -2,7 +2,7 @@
 
 use super::*;
 use alloc::Allocator;
-use handle::OwningHandle;
+use handle::OwnedHandle;
 
 use ash::vk;
 use sid_vec::{Id, IdVec};
@@ -14,7 +14,7 @@ struct PhysicalBufferTag;
 type PhysicalBufferId = Id<PhysicalBufferTag>;
 
 struct PhysicalImageAlloc {
-    image: OwningHandle<vk::Image>,
+    image: OwnedHandle<vk::Image>,
     image_type: vk::ImageType,
     dimensions: vk::Extent3D,
     format: vk::Format,
@@ -23,7 +23,7 @@ struct PhysicalImageAlloc {
 }
 
 struct PhysicalBufferAlloc {
-    buffer: OwningHandle<vk::Buffer>,
+    buffer: OwnedHandle<vk::Buffer>,
     size: vk::DeviceSize,
 }
 
