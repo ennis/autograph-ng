@@ -8,4 +8,3 @@ pub trait ImageDescription {
     fn format(&self) -> vk::Format;
     fn usage(&self) -> vk::ImageUsageFlags;
 }
-

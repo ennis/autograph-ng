@@ -4,14 +4,13 @@ use std::ptr;
 
 use ash::vk;
 
-use alloc::{Allocator, AllocatedMemory, AllocationCreateInfo};
+use alloc::{AllocatedMemory, AllocationCreateInfo, Allocator};
 use context::{Context, FrameNumber, VkDevice1, FRAME_NONE};
 use handle::OwnedHandle;
 use resource::Resource;
 use sync::SyncGroup;
 
-pub trait BufferDescription
-{
+pub trait BufferDescription {
     fn size(&self) -> u64;
     fn usage(&self) -> vk::BufferUsageFlags;
 }
@@ -24,8 +23,7 @@ struct UnboundBuffer {
     memory_requirements: vk::MemoryRequirements,
 }
 
-impl UnboundBuffer
-{
+impl UnboundBuffer {
     fn new(vkd: &VkDevice1, size: u64, usage: vk::BufferUsageFlags) -> UnboundBuffer {
         let create_info = vk::BufferCreateInfo {
             s_type: vk::StructureType::BufferCreateInfo,
@@ -33,20 +31,22 @@ impl UnboundBuffer
             size,
             usage,
             flags: vk::BufferCreateFlags::empty(),
-            sharing_mode: vk::SharingMode::Exclusive,    // FIXME
+            sharing_mode: vk::SharingMode::Exclusive, // FIXME
             queue_family_index_count: 0,
             p_queue_family_indices: ptr::null(),
         };
 
         unsafe {
-            let buffer = vkd.create_buffer(&create_into, None).expect("could not create buffer");
+            let buffer = vkd
+                .create_buffer(&create_into, None)
+                .expect("could not create buffer");
             let memory_requirements = vkd.get_buffer_memory_requirements(buffer);
 
             UnboundBuffer {
                 buffer: OwnedHandle(buffer),
                 size,
                 usage,
-                memory_requirements
+                memory_requirements,
             }
         }
     }
@@ -83,7 +83,7 @@ impl Buffer {
         let vkd = &context.vkd;
         let unbound = UnboundBuffer::new(vkd, size, usage);
 
-        let memory = context.default_allocator().
+        //let memory = context.default_allocator().
 
         Buffer {
             size,
@@ -94,9 +94,17 @@ impl Buffer {
         }
     }
 
-    pub(crate) fn bind_buffer_memory(vkd: &VkDevice1, unbound: UnboundBuffer, memory: AllocatedMemory) -> Buffer {
+    pub(crate) fn bind_buffer_memory(
+        vkd: &VkDevice1,
+        unbound: UnboundBuffer,
+        memory: AllocatedMemory,
+    ) -> Buffer {
         unsafe {
-            vkd.bind_buffer_memory(unbound.buffer.get(), memory.device_memory, memory.range.start);
+            vkd.bind_buffer_memory(
+                unbound.buffer.get(),
+                memory.device_memory,
+                memory.range.start,
+            );
         };
 
         Buffer {

@@ -11,8 +11,11 @@ use handle::OwnedHandle;
 use resource::Resource;
 use sync::SyncGroup;
 
-mod wrapper;
 mod description;
+mod wrapper;
+
+pub use self::description::ImageDescription;
+pub use self::wrapper::Image;
 
 //--------------------------------------------------------------------------------------------------
 // Image dimensions
