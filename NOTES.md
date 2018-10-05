@@ -232,3 +232,8 @@ Basically, just copy vulkano (...) except that:
 * all GPU commands are managed by a frame graph
     * notably, all resource access (except for initialization) must happen within the frame graph
 * ???
+
+Bikeshedding API
+* Parameters vs structs
+* e.g. swapchains
+* structs: indirection when using generic parameters

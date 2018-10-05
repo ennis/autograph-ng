@@ -1,91 +1,27 @@
 use std::cmp::max;
 use std::ptr;
+use std::sync::Arc;
 
 use ash::vk;
 
+use super::unbound::UnboundImage;
+use super::dimension::{Dimensions, ImageDimensionInfo};
 use super::description::ImageDescription;
-use super::{get_texture_mip_map_count, Dimensions, ImageDimensionInfo, MipmapsCount};
+use super::{get_texture_mip_map_count, MipmapsCount};
 
+use device::{Device, VkDevice1};
 use alloc::{AllocatedMemory, AllocationCreateInfo, Allocator};
 use context::{Context, FrameNumber, VkDevice1, FRAME_NONE};
 use handle::OwnedHandle;
 use resource::Resource;
 use sync::SyncGroup;
 
-/// Wrapper around an image without associated memory.
-pub(crate) struct UnboundImage {
-    image: OwnedHandle<vk::Image>,
-    dimensions: Dimensions,
-    mipmaps_count: u32,
-    format: vk::Format,
-    usage: vk::ImageUsageFlags,
-    memory_requirements: vk::MemoryRequirements,
-    samples: vk::SampleCountFlags,
-}
-
-impl UnboundImage {
-    pub fn new(
-        vkd: &VkDevice1,
-        dimensions: Dimensions,
-        mipmaps_count: MipmapsCount,
-        samples: vk::SampleCountFlags,
-        format: vk::Format,
-        usage: vk::ImageUsageFlags,
-        initial_layout: vk::InitialLayout,
-    ) -> UnboundImage {
-        let dim_info = dimensions.to_image_dimension_info();
-        let mip_levels = match mipmaps_count {
-            MipmapsCount::One => 1,
-            MipmapsCount::Specific(num) => num,
-            MipmapsCount::Log2 => {
-                let size = max(
-                    max(dim_info.extent.width, dim_info.extent.height),
-                    dim_info.extent.depth,
-                );
-                get_texture_mip_map_count(size)
-            }
-        };
-        let create_info = vk::ImageCreateInfo {
-            s_type: vk::StructureType::ImageCreateInfo,
-            p_next: ptr::null(),
-            flags: vk::ImageCreateFlags::default(),
-            image_type: vk::ImageType::Type2d,
-            format,
-            extent: dim_info.extent,
-            mip_levels,
-            array_layers: dim_info.array_layers,
-            samples,
-            tiling: vk::ImageTiling::Optimal,
-            usage,
-            sharing_mode: vk::SharingMode::Exclusive,
-            queue_family_index_count: 0,
-            p_queue_family_indices: ptr::null(),
-            initial_layout,
-        };
-
-        unsafe {
-            let image = vkd
-                .create_image(&create_info, None)
-                .expect("could not create image");
-            let memory_requirements = vkd.get_image_memory_requirements(image);
-
-            UnboundImage {
-                image: OwnedHandle(image),
-                dimensions,
-                mipmaps_count: mip_levels,
-                format,
-                samples,
-                usage,
-                memory_requirements,
-            }
-        }
-    }
-}
 
 /// Wrapper around vulkan images.
 #[derive(Debug)]
 pub struct Image {
-    image: OwnedHandle<vk::Image>,
+    device: Arc<Device>,
+    image: vk::Image,
     dimensions: Dimensions,
     format: vk::Format,
     mipmaps_count: u32,
@@ -94,20 +30,20 @@ pub struct Image {
     memory: Option<Allocation>,
     should_free_memory: bool,
     last_layout: vk::ImageLayout,
-    last_used: FrameNumber,
+    //last_used: FrameNumber,
     exit_semaphores: SyncGroup<Vec<vk::Semaphore>>,
 }
 
 impl Image {
     /// Creates a new image resource, and allocate device memory for it on a suitable pool.
     pub fn new(
-        context: &Context,
+        device: &Arc<Device>,
         dimensions: Dimensions,
         mipmaps_count: MipmapsCount,
         samples: vk::SampleCountFlags,
         format: vk::Format,
         usage: vk::ImageUsageFlags,
-    ) -> Image {
+    ) -> Arc<Image> {
         let vkd = &context.vkd;
 
         let unbound_image = UnboundImage::new(
