@@ -219,6 +219,7 @@ Note: the external API is quite high-level
 * Conclusion: putting a refcounted backpointer to the parent object is the easiest solution
     * must allocate context in an Arc
     * might as well rename context to device, for good measure
+* To support polymorphism and strongly-typed resources, images should be Arc<Image>, and have an Image trait
 
 Lifetime of memory allocations:
 * Before deleting a pool, must be sure that all associated resources are destroyed, and not in use inside the pipeline, 
@@ -235,5 +236,9 @@ Basically, just copy vulkano (...) except that:
 
 Bikeshedding API
 * Parameters vs structs
+    * Use parameters as they support generics with less noise
 * e.g. swapchains
 * structs: indirection when using generic parameters
+
+Images
+* Base unsafe type, unbound memory
