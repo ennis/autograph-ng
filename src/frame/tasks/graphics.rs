@@ -1,37 +1,57 @@
 use super::*;
 use sid_vec::ToIndex;
 
+
+//--------------------------------------------------------------------------------------------------
+pub(super) struct RenderPassTag;
+pub(super) type RenderPassId = Id<RenderPassTag, u32>;
+
+pub struct RenderPass<'a>
+{
+    frame: &'a Frame,
+}
+
+impl<'a> RenderPass<'a>
+{
+    fn new(frame: &'a Frame, index: RenderPassId) -> RenderPass<'a> {
+        RenderPass {
+            frame
+        }
+    }
+}
+
+
 //--------------------------------------------------------------------------------------------------
 
 #[derive(Debug)]
-pub(crate) struct GraphicsTask {
-    pub(crate) renderpass: RenderPassId,
-    pub(crate) color_attachments: Vec<vk::AttachmentReference>,
-    pub(crate) input_attachments: Vec<vk::AttachmentReference>,
-    pub(crate) resolve_attachments: Vec<vk::AttachmentReference>,
-    pub(crate) depth_attachment: Option<vk::AttachmentReference>,
-    pub(crate) shader_images: Vec<ImageId>,
+pub(super) struct GraphicsTask {
+    renderpass: RenderPassId,
+    color_attachments: Vec<vk::AttachmentReference>,
+    input_attachments: Vec<vk::AttachmentReference>,
+    resolve_attachments: Vec<vk::AttachmentReference>,
+    depth_attachment: Option<vk::AttachmentReference>,
+    shader_images: Vec<ImageId>,
 }
 
 //--------------------------------------------------------------------------------------------------
 
 /// Task builder specifically for graphics
-pub struct GraphicsTaskBuilder<'a, 'ctx: 'a> {
-    graph: &'a mut FrameGraph,
-    resources: &'a mut Resources<'ctx>,
-    renderpasses: &'a mut RenderPasses,
+pub struct GraphicsTaskBuilder<'a> {
+    frame: &'a Frame,
+    renderpass: &'a RenderPass<'a>,
     task: TaskId,
     graphics_task: GraphicsTask,
 }
 
-impl<'a, 'ctx: 'a> GraphicsTaskBuilder<'a, 'ctx> {
+
+impl<'a> GraphicsTaskBuilder<'a> {
     pub(super) fn new(
         name: impl Into<String>,
         renderpass: RenderPassId,
         graph: &'a mut FrameGraph,
-        resources: &'a mut Resources<'ctx>,
+        resources: &'a mut Resources,
         renderpasses: &'a mut RenderPasses,
-    ) -> GraphicsTaskBuilder<'a, 'ctx> {
+    ) -> GraphicsTaskBuilder<'a> {
         // create a dummy node in the graph that we will fill up later.
         // this avoids looking into the graph every time we modify something,
         // and still allows us to create dependencies in the graph
@@ -54,29 +74,19 @@ impl<'a, 'ctx: 'a> GraphicsTaskBuilder<'a, 'ctx> {
         }
     }
 
-    /// Adds the specified as an image sample dependency on the task.
-    pub fn sample_image(&mut self, img: &ImageRef) {
-        img.set_read().expect("R/W conflict");
+    /// Adds the specified image as an image sample dependency on the task.
+    pub fn sample_image(&mut self, image: &ImageRef) {
+        image.set_read_flag().expect("R/W conflict");
 
-        self.resources
-            .add_or_check_image_usage(img.id, vk::IMAGE_USAGE_SAMPLED_BIT);
+        self.frame.image_resource_mut(image.id()).set_usage_sampled();
 
-        self.graph.add_dependency(
-            img.task,
+        self.graph.image_barrier(
+            img,
             self.task,
-            Dependency {
-                src_stage_mask: img.src_stage_mask,
-                dst_stage_mask: vk::PIPELINE_STAGE_VERTEX_SHADER_BIT,
-                barrier: BarrierDetail::Image(ImageBarrier {
-                    id: img.id,
-                    old_layout: vk::ImageLayout::Undefined,
-                    new_layout: vk::ImageLayout::ShaderReadOnlyOptimal,
-                    src_access_mask: vk::AccessFlags::empty(),
-                    dst_access_mask: vk::ACCESS_SHADER_READ_BIT,
-                }),
-                latency: img.latency,
-            },
-        );
+            ImageLayout::ShaderReadOnlyOptimal,
+            PipelineStages { vertex_shader: true, .. PipelineStages::none() },
+            AccessFlagBits { shader_read: true, .. AccessFlagBits::none() },
+            0);
 
         self.graphics_task.shader_images.push(img.id);
     }

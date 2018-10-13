@@ -1,23 +1,22 @@
 //! Abstraction over vulkan swapchains.
-use std::sync::Arc;
 use std::ptr;
+use std::sync::Arc;
 
 use ash::vk;
 
-use device::Device;
-use image::Image;
-use instance::Instance;
-use surface::Surface;
+use crate::device::Device;
+use crate::image::swapchain::SwapchainImage;
+use crate::instance::Instance;
+use crate::surface::Surface;
 
 pub struct Swapchain {
     device: Arc<Device>,
     surface: Arc<Surface>,
     swapchain: vk::SwapchainKHR,
-    images: Vec<Image>,
+    images: Vec<SwapchainImage>,
 }
 
-pub struct SwapchainCreateInfo
-{
+pub struct SwapchainCreateInfo {
     num_images: u32,
     format: vk::Format,
     dimensions: (u32, u32),
@@ -30,13 +29,13 @@ pub struct SwapchainCreateInfo
     clipped: bool,
 }
 
-impl Swapchain
-{
-    pub fn new(device: &Arc<Device>,
-               surface: &Arc<Surface>,
-               info: &SwapchainCreateInfo,
-               old_swapchain: Option<&Arc<Swapchain>>) -> Arc<Swapchain>
-    {
+impl Swapchain {
+    pub fn new(
+        device: &Arc<Device>,
+        surface: &Arc<Surface>,
+        info: &SwapchainCreateInfo,
+        old_swapchain: Option<&Arc<Swapchain>>,
+    ) -> Arc<Swapchain> {
         let vkd = device.pointers();
         let vk_khr_surface = device.instance().extension_pointers().vk_khr_surface;
 
@@ -61,9 +60,9 @@ impl Swapchain
         let mut desired_image_count = surface_capabilities.min_image_count + 1;
         if surface_capabilities.max_image_count > 0
             && desired_image_count > surface_capabilities.max_image_count
-            {
-                desired_image_count = surface_capabilities.max_image_count;
-            }
+        {
+            desired_image_count = surface_capabilities.max_image_count;
+        }
         let surface_resolution = match surface_capabilities.current_extent.width {
             u32::MAX => vk::Extent2D {
                 width: window_width,
@@ -74,9 +73,9 @@ impl Swapchain
         let pre_transform = if surface_capabilities
             .supported_transforms
             .subset(vk::SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
-            {
-                vk::SURFACE_TRANSFORM_IDENTITY_BIT_KHR
-            } else {
+        {
+            vk::SURFACE_TRANSFORM_IDENTITY_BIT_KHR
+        } else {
             surface_capabilities.current_transform
         };
         let present_modes = surface_loader

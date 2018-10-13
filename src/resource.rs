@@ -10,7 +10,7 @@ use downcast_rs::Downcast;
 use slotmap::Key;
 
 use context::{FrameNumber, VkDevice1, FRAME_NONE};
-use handle::OwnedHandle;
+use handle::VkHandle;
 use sync::{FrameSync, SyncGroup};
 
 //--------------------------------------------------------------------------------------------------

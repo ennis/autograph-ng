@@ -1,21 +1,16 @@
 //! Frame scheduling and resource allocation.
 //!
-//! Handles many things:
-//! * calculates the lifetime of resources
-//! * infers the required usage flags of resources and pipeline barriers
-//! * creates and schedules renderpasses
-//!
-
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 
-use super::*;
-use context::VkDevice1;
+use crate::frame::graph::FrameGraph;
+use crate::device::VkDevice1;
 
-use ash::version::DeviceV1_0;
 use petgraph::algo::{has_path_connecting, toposort, DfsSpace};
 use petgraph::graph::{EdgeIndex, EdgeReference};
 use petgraph::visit::{GraphBase, IntoEdgeReferences, VisitMap, Visitable};
+
+use ash::vk;
 use sid_vec::FromIndex;
 use time;
 
@@ -36,14 +31,14 @@ struct PartialOrdering {
     right: TaskId,
 }
 
-fn subgraph_cut(g: &FrameGraphInner, sub: &[TaskId]) -> u32 {
+fn subgraph_cut(g: &FrameGraph, sub: &[TaskId]) -> u32 {
     sub.iter().fold(0, |count, &n|
         // all outgoing neighbors that do not end up in the set
         count + g.neighbors_directed(n, Direction::Outgoing).filter(|nn| !sub.contains(nn)).count() as u32
     )
 }
 
-fn minimal_linear_ordering(g: &FrameGraphInner) -> Vec<TaskId> {
+fn minimal_linear_ordering(g: &FrameGraph) -> Vec<TaskId> {
     let n = g.node_count();
 
     let mut t = HashMap::new();
@@ -178,7 +173,7 @@ pub(crate) struct CommandBuffer {
 type TaskGroupId = u32;
 
 fn subgraph_externals<'a>(
-    g: &'a FrameGraphInner,
+    g: &'a FrameGraph,
     sub: &'a [TaskId],
     direction: Direction,
 ) -> impl Iterator<Item = TaskId> + 'a {
@@ -196,7 +191,7 @@ fn subgraph_externals<'a>(
 
 /// Incoming or outgoing nodes of a subgraph.
 fn subgraph_neighbors<'a>(
-    g: &'a FrameGraphInner,
+    g: &'a FrameGraph,
     sub: &'a [TaskId],
     direction: Direction,
 ) -> impl Iterator<Item = TaskId> + 'a {
@@ -211,7 +206,7 @@ fn subgraph_neighbors<'a>(
 }
 
 fn grow_subgraph<'a>(
-    g: &'a FrameGraphInner,
+    g: &'a FrameGraph,
     visited: &'a RefCell<impl VisitMap<TaskId>>,
 ) -> impl Iterator<Item = TaskId> + 'a {
     g.node_indices()
@@ -223,7 +218,7 @@ fn grow_subgraph<'a>(
 }
 
 fn subgraph_inner_edges<'a>(
-    g: &'a FrameGraphInner,
+    g: &'a FrameGraph,
     sub: &'a [TaskId],
 ) -> impl Iterator<Item = EdgeReference<'a, Dependency>> + 'a {
     g.edge_references()
@@ -285,7 +280,7 @@ fn check_single_entry_graph(g: &FrameGraph, sub_a: &[TaskId], sub_b: &[TaskId]) 
 
 /// Finds cross-queue synchronization edges and filter the redundant ones, and creates semaphores for all of them.
 fn find_cross_queue_sync_edges(
-    g: &FrameGraphInner,
+    g: &FrameGraph,
     vkd: &VkDevice1,
 ) -> (Vec<EdgeIndex<u32>>, Vec<vk::Semaphore>) {
     let mut syncs = g
@@ -658,7 +653,7 @@ fn create_task_groups(
 const MAX_QUEUES: usize = 16;
 
 fn schedule<'ctx>(
-    g: &FrameGraphInner,
+    g: &FrameGraph,
     renderpasses: &RenderPasses,
     syncs: &[DependencyId],
     semaphores: &[vk::Semaphore],
@@ -750,11 +745,10 @@ impl Default for ScheduleOptimizationProfile {
 }
 
 impl<'ctx> Frame<'ctx> {
-    /// Inserts 'exit tasks' for all external resources imported into the graph.
+    /// Inserts dummy tasks for all external resources that handle the synchronization.
     fn insert_exit_tasks(&mut self) {
         // find last uses of each external resource
         let tasks_to_create = self
-            .resources
             .images
             .iter()
             .enumerate()

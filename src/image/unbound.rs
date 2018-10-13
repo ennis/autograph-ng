@@ -4,27 +4,26 @@ use std::sync::Arc;
 
 use ash::vk;
 
-use super::dimension::Dimensions;
-use super::description::ImageDescription;
-use super::{get_texture_mip_map_count, Dimensions, ImageDimensionInfo, MipmapsCount};
+use crate::image::traits::{Image, ImageDescription};
+use crate::image::{get_texture_mip_map_count, Dimensions, ImageExtentsAndType, MipmapsCount};
 
-use device::{Device, VkDevice1};
 use context::{Context, FrameNumber, VkDevice1, FRAME_NONE};
-use handle::OwnedHandle;
+use device::{Device, VkDevice1};
+use handle::VkHandle;
 use resource::Resource;
 use sync::SyncGroup;
 
-
 /// Wrapper around an image without associated memory.
-pub(super) struct UnboundImage {
-    pub(super) device: Arc<Device>,
-    pub(super) image: vk::Image,
-    pub(super) dimensions: Dimensions,
-    pub(super) mipmaps_count: u32,
-    pub(super) format: vk::Format,
-    pub(super) usage: vk::ImageUsageFlags,
-    pub(super) memory_requirements: vk::MemoryRequirements,
-    pub(super) samples: vk::SampleCountFlags,
+pub struct UnboundImage {
+    device: Arc<Device>,
+    image: vk::Image,
+    dimensions: Dimensions,
+    mipmaps_count: u32,
+    format: vk::Format,
+    usage: vk::ImageUsageFlags,
+    memory_requirements: vk::MemoryRequirements,
+    samples: u32,
+    layout: vk::ImageLayout,
 }
 
 impl UnboundImage {
@@ -32,21 +31,38 @@ impl UnboundImage {
         device: &Arc<Device>,
         dimensions: Dimensions,
         mipmaps_count: MipmapsCount,
-        samples: vk::SampleCountFlags,
+        samples: u32,
         format: vk::Format,
         usage: vk::ImageUsageFlags,
-        initial_layout: vk::InitialLayout,
+        initial_layout: vk::ImageLayout,
     ) -> UnboundImage {
+        let extents_and_type = dimensions.to_image_extents_and_type();
 
-        let dim_info = dimensions.to_image_dimension_info();
+        assert!(
+            samples.is_power_of_two(),
+            "sample count must be a power of two"
+        );
+        let sample_bits = match samples {
+            1 => vk::SAMPLE_COUNT_1_BIT,
+            2 => vk::SAMPLE_COUNT_2_BIT,
+            4 => vk::SAMPLE_COUNT_4_BIT,
+            8 => vk::SAMPLE_COUNT_8_BIT,
+            16 => vk::SAMPLE_COUNT_16_BIT,
+            32 => vk::SAMPLE_COUNT_32_BIT,
+            64 => vk::SAMPLE_COUNT_64_BIT,
+            _ => panic!("unsupported sample count"),
+        };
 
         let mip_levels = match mipmaps_count {
             MipmapsCount::One => 1,
             MipmapsCount::Specific(num) => num,
             MipmapsCount::Log2 => {
                 let size = max(
-                    max(dim_info.extent.width, dim_info.extent.height),
-                    dim_info.extent.depth,
+                    max(
+                        extents_and_type.extent.width,
+                        extents_and_type.extent.height,
+                    ),
+                    extents_and_type.extent.depth,
                 );
                 get_texture_mip_map_count(size)
             }
@@ -56,9 +72,9 @@ impl UnboundImage {
             s_type: vk::StructureType::ImageCreateInfo,
             p_next: ptr::null(),
             flags: vk::ImageCreateFlags::default(),
-            image_type: vk::ImageType::Type2d,
+            image_type: extents_and_type.type_,
             format,
-            extent: dim_info.extent,
+            extent: extents_and_type.extent,
             mip_levels,
             array_layers: dim_info.array_layers,
             samples,
@@ -71,7 +87,8 @@ impl UnboundImage {
         };
 
         unsafe {
-            let image = device.pointers()
+            let image = device
+                .pointers()
                 .create_image(&create_info, None)
                 .expect("could not create image");
 
@@ -86,7 +103,40 @@ impl UnboundImage {
                 samples,
                 usage,
                 memory_requirements,
+                layout: initial_layout,
             }
         }
+    }
+}
+
+impl ImageDescription for UnboundImage {
+    fn dimensions(&self) -> Dimensions {
+        self.dimensions
+    }
+
+    fn mipmaps_count(&self) -> u32 {
+        self.mipmaps_count
+    }
+
+    fn samples(&self) -> u32 {
+        self.samples
+    }
+
+    fn format(&self) -> vk::Format {
+        self.format
+    }
+
+    fn usage(&self) -> ImageUsageFlags {
+        self.usage
+    }
+}
+
+impl Image for UnboundImage {
+    fn device(&self) -> &Device {
+        unimplemented!()
+    }
+
+    fn layout(&self) -> vk::ImageLayout {
+        unimplemented!()
     }
 }

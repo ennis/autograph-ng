@@ -5,15 +5,13 @@ use ash::vk;
 use instance::Instance;
 use surface::Surface;
 
-pub(super) struct QueueConfiguration
-{
+pub(super) struct QueueConfiguration {
     pub(super) num_queues: Vec<u32>,
-    pub(super) transfer: (u32,u32),
-    pub(super) compute: (u32,u32),
-    pub(super) graphics: (u32,u32),
-    pub(super) present: (u32,u32),
+    pub(super) transfer: (u32, u32),
+    pub(super) compute: (u32, u32),
+    pub(super) graphics: (u32, u32),
+    pub(super) present: (u32, u32),
 }
-
 
 /// Ideally, this should be controlled via hints by the application.
 /// The algorithm here tries to find specialized queue families for compute, graphics, and transfer,
@@ -33,27 +31,30 @@ pub(super) fn create_queue_configuration(
                 // look for specialized transfer queues
                 prop.queue_flags.subset(vk::QUEUE_TRANSFER_BIT)
             }).chain(queue_family_properties.iter().enumerate().filter(
-            |(queue_family_index, prop)| {
-                // otherwise just use queues with GRAPHICS or COMPUTE capabilities
-                prop.queue_flags
-                    .intersects(vk::QUEUE_GRAPHICS_BIT | vk::QUEUE_COMPUTE_BIT)
-            },
-        )).next()
-            .expect("physical device does not have graphics or compute queues").0 as u32;
+                |(queue_family_index, prop)| {
+                    // otherwise just use queues with GRAPHICS or COMPUTE capabilities
+                    prop.queue_flags
+                        .intersects(vk::QUEUE_GRAPHICS_BIT | vk::QUEUE_COMPUTE_BIT)
+                },
+            )).next()
+            .expect("physical device does not have graphics or compute queues")
+            .0 as u32;
 
     let graphics_family = queue_family_properties
         .iter()
         .enumerate()
         .filter(|(queue_family_index, prop)| prop.queue_flags.subset(vk::QUEUE_GRAPHICS_BIT))
         .next()
-        .expect("unable to find a suitable graphics queue on selected device").0 as u32;
+        .expect("unable to find a suitable graphics queue on selected device")
+        .0 as u32;
 
     let compute_family = queue_family_properties
         .iter()
         .enumerate()
         .filter(|(queue_family_index, prop)| prop.queue_flags.subset(vk::QUEUE_COMPUTE_BIT))
         .next()
-        .expect("unable to find a suitable compute queue on selected device").0 as u32;
+        .expect("unable to find a suitable compute queue on selected device")
+        .0 as u32;
 
     let present_family = if let Some(surface) = surface {
         queue_family_properties
@@ -68,7 +69,9 @@ pub(super) fn create_queue_configuration(
                         queue_family_index as u32,
                         surface,
                     )
-            }).next().expect("unable to find a suitable queue for presentation on selected device").0 as u32
+            }).next()
+            .expect("unable to find a suitable queue for presentation on selected device")
+            .0 as u32
     } else {
         graphics_family
     };
@@ -85,15 +88,19 @@ pub(super) fn create_queue_configuration(
     num_queues[transfer_family as usize] += 1;
 
     // assign graphics queue
-    if num_queues[graphics_family as usize] < queue_family_properties[graphics_family as usize].queue_count {
+    if num_queues[graphics_family as usize]
+        < queue_family_properties[graphics_family as usize].queue_count
+    {
         // create another one
         num_queues[graphics_family as usize] += 1;
     }
     let graphics = num_queues[graphics_family as usize] - 1;
 
     // assign compute queue
-    if num_queues[compute_family as usize] < queue_family_properties[compute_family as usize].queue_count {
-         num_queues[compute_family as usize] += 1;
+    if num_queues[compute_family as usize]
+        < queue_family_properties[compute_family as usize].queue_count
+    {
+        num_queues[compute_family as usize] += 1;
     }
     let compute = num_queues[compute_family as usize] - 1;
 
@@ -103,33 +110,13 @@ pub(super) fn create_queue_configuration(
         // this means that there is likely a specialized queue for presentation
         num_queues[present_family as usize] += 1;
     }
-    let present = num_queues[present_family as usize] - 1
+    let present = num_queues[present_family as usize] - 1;
 
     QueueConfiguration {
         num_queues,
         present,
         compute,
         graphics,
-        transfer
+        transfer,
     }
-
-
-
-    // create the device
-
-
-    // create one graphics queue
-
-
-    // NVIDIA: 16 queues, one family, can do anything
-    // AMD: 1 graphics+compute, 4 compute, 1 transfer queues
-    // INTEL: single queue
-
-    // queue creation strategy:
-
-    // create the device and the queues
-
-    //
-
-    // now, determine how many queues we are going to create: default is one for each category
 }

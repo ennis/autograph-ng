@@ -4,58 +4,50 @@ use std::sync::Arc;
 
 use ash::vk;
 
-use super::unbound::UnboundImage;
-use super::dimension::{Dimensions, ImageDimensionInfo};
-use super::description::ImageDescription;
-use super::{get_texture_mip_map_count, MipmapsCount};
+use crate::device::Device;
+use crate::handle::VkHandle;
+use crate::image::traits::*;
+use crate::image::Dimensions;
+use crate::swapchain::Swapchain;
 
-use device::{Device, VkDevice1};
-use alloc::{AllocatedMemory, AllocationCreateInfo, Allocator};
-use context::{Context, FrameNumber, VkDevice1, FRAME_NONE};
-use handle::OwnedHandle;
-use resource::Resource;
-use sync::SyncGroup;
-
-
-/// Wrapper around vulkan images.
+/// Wrapper around an image from a swapchain images.
 #[derive(Debug)]
-pub struct Image {
-    device: Arc<Device>,
+pub struct SwapchainImage {
+    swapchain: Arc<Swapchain>,
     image: vk::Image,
-    dimensions: Dimensions,
+    dimensions: (u32, u32),
+    array_layers: u32,
     format: vk::Format,
-    mipmaps_count: u32,
     usage: vk::ImageUsageFlags,
-    samples: vk::SampleCountFlags,
-    memory: Option<Allocation>,
-    should_free_memory: bool,
-    last_layout: vk::ImageLayout,
-    //last_used: FrameNumber,
-    exit_semaphores: SyncGroup<Vec<vk::Semaphore>>,
+    samples: u32,
+    layout: vk::ImageLayout,
 }
 
-impl Image {
-    /// Creates a new image resource, and allocate device memory for it on a suitable pool.
-    pub fn new(
-        device: &Arc<Device>,
-        dimensions: Dimensions,
-        mipmaps_count: MipmapsCount,
-        samples: vk::SampleCountFlags,
+impl SwapchainImage {
+    /// Creates a new swapchain image from a raw handle.
+    pub(crate) fn new(
+        swapchain: &Arc<Swapchain>,
+        image: vk::Image,
+        index: u32,
+        dimensions: (u32, u32),
+        array_layers: u32,
+        samples: u32,
         format: vk::Format,
         usage: vk::ImageUsageFlags,
-    ) -> Arc<Image> {
-        let vkd = &context.vkd;
-
-        let unbound_image = UnboundImage::new(
-            vkd,
+        layout: vk::ImageLayout,
+    ) -> Arc<SwapchainImage> {
+        Arc::new(SwapchainImage {
+            swapchain: swapchain.clone(),
+            image,
             dimensions,
-            mipmaps_count,
-            samples,
             format,
             usage,
-            vk::ImageLayout::Undefined,
-        );
-        // allocate memory for the image from the default allocator
+            samples,
+            array_layers,
+            layout,
+        })
+
+        /*// allocate memory for the image from the default allocator
         let allocation_create_info = AllocationCreateInfo {
             size: unbound_image.memory_requirements.size,
             alignment: unbound_image.memory_requirements.alignment,
@@ -87,10 +79,10 @@ impl Image {
             last_used: FRAME_NONE,
             should_free_memory: true,
             memory,
-        }
+        }*/
     }
 
-    /// Creates a new image by binding memory to an unbound image.
+    /* /// Creates a new image by binding memory to an unbound image.
     pub(crate) fn bind_image_memory(
         vkd: &VkDevice1,
         unbound_image: UnboundImage,
@@ -116,9 +108,9 @@ impl Image {
             should_free_memory: false,
             memory,
         }
-    }
+    }*/
 
-    /// Destroys this image and returns its associated allocated memory block.
+    /*/// Destroys this image and returns its associated allocated memory block.
     pub fn destroy(mut self, context: &mut Context) -> Option<AllocatedMemory> {
         if self.should_free_memory {
             context.default_allocator().free_memory(self.memory);
@@ -126,9 +118,9 @@ impl Image {
         } else {
             Some(self.memory)
         }
-    }
+    }*/
 
-    /// Creates a new image for the specified swapchain image.
+    /*/// Creates a new image for the specified swapchain image.
     pub(crate) fn new_swapchain_image(
         image: OwnedHandle<vk::Image>,
         width: u32,
@@ -158,16 +150,31 @@ impl Image {
             exit_semaphores: SyncGroup::new(),
             should_free_memory: false,
         }
-    }
+    }*/
 }
 
-impl ImageDescription for Image {
+impl ImageDescription for SwapchainImage {
     fn dimensions(&self) -> Dimensions {
-        self.dimensions
+        if self.array_layers > 1 {
+            Dimensions::Dim2dArray {
+                width: self.dimensions.0,
+                height: self.dimensions.1,
+                array_layers: self.array_layers,
+            }
+        } else {
+            Dimensions::Dim2d {
+                width: self.dimensions.0,
+                height: self.dimensions.1,
+            }
+        }
     }
 
     fn mipmaps_count(&self) -> u32 {
-        self.mipmaps_count
+        1
+    }
+
+    fn samples(&self) -> u32 {
+        self.samples
     }
 
     fn format(&self) -> vk::Format {
@@ -179,6 +186,7 @@ impl ImageDescription for Image {
     }
 }
 
+/*
 impl Resource for Image {
     fn name(&self) -> &str {
         &self.name
@@ -188,3 +196,4 @@ impl Resource for Image {
         self.last_used
     }
 }
+*/

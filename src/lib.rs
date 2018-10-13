@@ -34,13 +34,11 @@ pub mod memory;
 pub mod resource;
 mod surface;
 mod swapchain;
-mod sync;
 pub mod window;
 
 // re-export vulkan as gfx2::vk
 pub use ash::vk;
 
-pub use self::context::*;
 pub use self::frame::*;
 pub use self::resource::*;
 pub use self::window::*;

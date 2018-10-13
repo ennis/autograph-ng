@@ -38,8 +38,7 @@ pub struct DeviceExtensionPointers {
     vk_khr_swapchain: extensions::Swapchain,
 }
 
-pub struct Queues
-{
+pub struct Queues {
     present: (u32, vk::Queue),
     transfer: (u32, vk::Queue),
     graphics: (u32, vk::Queue),
@@ -60,6 +59,10 @@ pub struct Device {
 }
 
 impl Device {
+    pub fn instance(&self) -> &Instance {
+        &self.instance
+    }
+
     pub fn pointers(&self) -> &VkDevice1 {
         &self.pointers
     }
@@ -69,20 +72,20 @@ impl Device {
         config: &Config,
         target_surface: Option<&Surface>,
     ) -> Arc<Device> {
-
-        let max_frames_in_flight = cfg
-            .get::<u32>("gfx.renderer.max_frames_in_flight")
-            .unwrap();
+        let max_frames_in_flight = cfg.get::<u32>("gfx.renderer.max_frames_in_flight").unwrap();
 
         // select physical device
         let physical_device_selection =
-            physical_device::select_physical_device(instance, target_surface).expect("unable to find a suitable physical device");
+            physical_device::select_physical_device(instance, target_surface)
+                .expect("unable to find a suitable physical device");
 
         // select the queue families to create
-        let queue_config = queue::create_queue_configuration(instance,
-                                                             physical_device_selection.physical_device,
-                                                             &physical_device_selection.queue_family_properties,
-                                                             target_surface);
+        let queue_config = queue::create_queue_configuration(
+            instance,
+            physical_device_selection.physical_device,
+            &physical_device_selection.queue_family_properties,
+            target_surface,
+        );
 
         // setup queue create infos
         let num_queue_families = physical_device_selection.queue_family_properties.len();
@@ -92,20 +95,19 @@ impl Device {
                 // FIXME no priorities for now
                 queue_priorities.push(vec![1.0f32; num_queues[i] as usize]);
             }
-        };
+        }
 
         let mut queue_create_info = Vec::new();
         for i in 0..num_queue_families {
             if num_queues[i] > 0 {
-                queue_create_info.push(
-                    vk::DeviceQueueCreateInfo {
-                        s_type: vk::StructureType::DeviceQueueCreateInfo,
-                        p_next: ptr::null(),
-                        flags: vk::DeviceQueueCreateFlags::empty(),
-                        queue_family_index: i as u32,
-                        queue_count: queue_config.num_queues[i],
-                        p_queue_priorities: queue_priorities[i].as_ptr(),
-                    });
+                queue_create_info.push(vk::DeviceQueueCreateInfo {
+                    s_type: vk::StructureType::DeviceQueueCreateInfo,
+                    p_next: ptr::null(),
+                    flags: vk::DeviceQueueCreateFlags::empty(),
+                    queue_family_index: i as u32,
+                    queue_count: queue_config.num_queues[i],
+                    p_queue_priorities: queue_priorities[i].as_ptr(),
+                });
             }
         }
 
@@ -130,45 +132,54 @@ impl Device {
         };
 
         let vkd = unsafe {
-            instance.pointers()
+            instance
+                .pointers()
                 .create_device(selected_physical_device, &device_create_info, None)
                 .expect("unable to create device")
         };
 
         let queues = unsafe {
             Queues {
-                present: (queue_config.present.0, vkd.get_device_queue(queue_config.present.0, queue_config.present.1)),
-                transfer: (queue_config.transfer.0, vkd.get_device_queue(queue_config.transfer.0, queue_config.transfer.1)),
-                graphics: (queue_config.graphics.0, vkd.get_device_queue(queue_config.graphics.0, queue_config.graphics.1)),
-                compute: (queue_config.compute.0, vkd.get_device_queue(queue_config.compute.0, queue_config.compute.1)),
+                present: (
+                    queue_config.present.0,
+                    vkd.get_device_queue(queue_config.present.0, queue_config.present.1),
+                ),
+                transfer: (
+                    queue_config.transfer.0,
+                    vkd.get_device_queue(queue_config.transfer.0, queue_config.transfer.1),
+                ),
+                graphics: (
+                    queue_config.graphics.0,
+                    vkd.get_device_queue(queue_config.graphics.0, queue_config.graphics.1),
+                ),
+                compute: (
+                    queue_config.compute.0,
+                    vkd.get_device_queue(queue_config.compute.0, queue_config.compute.1),
+                ),
             }
         };
 
         let extension_pointers = DeviceExtensionPointers {
-            vk_khr_swapchain: extensions::Swapchain::new(instance, vkd).expect("unable to load swapchain extension")
-        };
-
-
-        let image_available = {
-            let info = vk::SemaphoreCreateInfo {
-                s_type: vk::StructureType::SemaphoreCreateInfo,
-                p_next: ptr::null(),
-                flags: vk::SemaphoreCreateFlags::empty()
-            };
-            unsafe {
-                vkd.create_semaphore(&info, None).unwrap()
-            }
+            vk_khr_swapchain: extensions::Swapchain::new(instance, vkd)
+                .expect("unable to load swapchain extension"),
         };
 
         let image_available = {
             let info = vk::SemaphoreCreateInfo {
                 s_type: vk::StructureType::SemaphoreCreateInfo,
                 p_next: ptr::null(),
-                flags: vk::SemaphoreCreateFlags::empty()
+                flags: vk::SemaphoreCreateFlags::empty(),
             };
-            unsafe {
-                vkd.create_semaphore(&info, None).unwrap()
-            }
+            unsafe { vkd.create_semaphore(&info, None).unwrap() }
+        };
+
+        let image_available = {
+            let info = vk::SemaphoreCreateInfo {
+                s_type: vk::StructureType::SemaphoreCreateInfo,
+                p_next: ptr::null(),
+                flags: vk::SemaphoreCreateFlags::empty(),
+            };
+            unsafe { vkd.create_semaphore(&info, None).unwrap() }
         };
 
         Arc::new(Device {
@@ -203,7 +214,6 @@ pub(crate) struct SyncGroup {}
 /// The frames start at 1. The value 0 is reserved.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct FrameNumber(pub(crate) u64);
-
 
 /*
 /// Reinitializes a presentation object.

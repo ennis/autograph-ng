@@ -6,7 +6,7 @@ use ash::vk;
 
 use alloc::{AllocatedMemory, AllocationCreateInfo, Allocator};
 use context::{Context, FrameNumber, VkDevice1, FRAME_NONE};
-use handle::OwnedHandle;
+use handle::VkHandle;
 use resource::Resource;
 use sync::SyncGroup;
 
@@ -17,7 +17,7 @@ pub trait BufferDescription {
 
 /// A buffer resource without device memory bound to it.
 struct UnboundBuffer {
-    buffer: OwnedHandle<vk::Buffer>,
+    buffer: VkHandle<vk::Buffer>,
     size: u64,
     usage: vk::BufferUsage,
     memory_requirements: vk::MemoryRequirements,
@@ -43,7 +43,7 @@ impl UnboundBuffer {
             let memory_requirements = vkd.get_buffer_memory_requirements(buffer);
 
             UnboundBuffer {
-                buffer: OwnedHandle(buffer),
+                buffer: VkHandle(buffer),
                 size,
                 usage,
                 memory_requirements,
@@ -62,7 +62,7 @@ pub struct Buffer {
     usage: vk::BufferUsageFlags,
 
     /// Buffer resource + associated memory allocation.
-    buffer: OwnedHandle<vk::Buffer>,
+    buffer: VkHandle<vk::Buffer>,
 
     /// Device memory bound to the buffer.
     memory: AllocatedMemory,

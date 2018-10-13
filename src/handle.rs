@@ -4,9 +4,9 @@ use std::mem;
 use std::ops::Deref;
 
 #[derive(Debug)]
-pub struct OwnedHandle<T: Debug + Clone>(T);
+pub struct VkHandle<T: Debug + Clone>(T);
 
-impl<T: Debug + Clone> Deref for OwnedHandle<T> {
+impl<T: Debug + Clone> Deref for VkHandle<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -14,9 +14,9 @@ impl<T: Debug + Clone> Deref for OwnedHandle<T> {
     }
 }
 
-impl<T: Debug + Clone> OwnedHandle<T> {
-    pub fn new(t: T) -> OwnedHandle<T> {
-        OwnedHandle(t)
+impl<T: Debug + Clone> VkHandle<T> {
+    pub fn new(t: T) -> VkHandle<T> {
+        VkHandle(t)
     }
 
     pub fn get(&self) -> T {
@@ -31,7 +31,7 @@ impl<T: Debug + Clone> OwnedHandle<T> {
 }
 
 // Drop bomb
-impl<T: Debug + Clone> Drop for OwnedHandle<T> {
+impl<T: Debug + Clone> Drop for VkHandle<T> {
     fn drop(&mut self) {
         panic!("leaking owned handle")
     }
