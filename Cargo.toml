@@ -24,6 +24,7 @@ serde_derive = "*"
 downcast-rs = "*"
 time = "*"
 sid_vec = "*"
+smallvec = "*"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "*", features = ["windef", "winuser"] }

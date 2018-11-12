@@ -1,6 +1,7 @@
 //! Images
 use std::cell::Cell;
 use std::cmp::max;
+use std::fmt;
 use std::ptr;
 
 use ash::vk;
@@ -9,9 +10,14 @@ use crate::device::Device;
 use crate::handle::VkHandle;
 use crate::resource::Resource;
 
-pub mod swapchain;
-mod traits;
+pub mod attachment;
+pub mod generic;
+pub mod immutable;
+pub mod traits;
 mod unbound;
+
+pub use self::generic::GenericImage;
+pub use self::traits::{Image, ImageDescription, ImageProxy};
 
 pub struct ImageExtentsAndType {
     type_: vk::ImageType,
@@ -23,7 +29,7 @@ pub struct ImageExtentsAndType {
 // Image dimensions
 
 /// **Borrowed from vulkano**
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone)]
 pub enum Dimensions {
     Dim1d {
         width: u32,
@@ -209,6 +215,46 @@ impl Dimensions {
                 array_layers: 6 * array_layers,
             },
         }
+    }
+}
+
+impl fmt::Debug for Dimensions {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Dimensions::Dim1d { width } => {
+                write!(f, "[1D {}x1]", width);
+            }
+            Dimensions::Dim1dArray {
+                width,
+                array_layers,
+            } => {
+                write!(f, "[1D Array {}x1(x{})]", width, array_layers);
+            }
+            Dimensions::Dim2d { width, height } => {
+                write!(f, "[2D {}x{}]", width, height);
+            }
+            Dimensions::Dim2dArray {
+                width,
+                height,
+                array_layers,
+            } => {
+                write!(f, "[2D Array {}x{}(x{})]", width, height, array_layers);
+            }
+            Dimensions::Dim3d {
+                width,
+                height,
+                depth,
+            } => {
+                write!(f, "[3D {}x{}x{}]", width, height, depth);
+            }
+            Dimensions::Cubemap { size } => {
+                write!(f, "[Cubemap {}x{}]", size, size);
+            }
+            Dimensions::CubemapArray { size, array_layers } => {
+                write!(f, "[Cubemap Array {}x{}(x{})]", size, size, array_layers);
+            }
+        }
+        Ok(())
     }
 }
 

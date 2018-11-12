@@ -3,7 +3,6 @@ extern crate gfx2;
 
 use std::env;
 
-use gfx2::import::import_graph;
 use gfx2::vk;
 use gfx2::*;
 
@@ -33,7 +32,7 @@ fn downsample(frame: &mut Frame, input: &ImageRef, aux: &ImageRef) -> ImageRef {
 
     r_last.unwrap()
 }*/
-
+/*
 //--------------------------------------------------------------------------------------------------
 // somewhat closer to real-life
 fn test_frame_deferred_shading<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx mut Image) {
@@ -57,104 +56,104 @@ fn test_frame_deferred_shading<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx 
         depth: AttachmentRef,
     }
 
-    //
-    let renderpass = frame.new_renderpass();
+     let normals = frame.create_attachment(
+        "normals",
+        dimensions,
+        vk::Format::R16g16Sfloat,
+        vk::SAMPLE_COUNT_4_BIT,
+        vk::AttachmentLoadOp::DontCare,
+    );
+    let diffuse_specular = frame.create_attachment(
+        "diffuse_specular",
+        dimensions,
+        vk::Format::R16g16Sfloat,
+        vk::SAMPLE_COUNT_4_BIT,
+        vk::AttachmentLoadOp::DontCare,
+    );
+    let position = t.create_attachment(
+        "position",
+        dimensions,
+        vk::Format::R16g16b16a16Sfloat,
+        vk::SAMPLE_COUNT_4_BIT,
+        vk::AttachmentLoadOp::DontCare,
+    );
+    let emission = t.create_attachment(
+        "emission",
+        dimensions,
+        vk::Format::R16g16b16a16Sfloat,
+        vk::SAMPLE_COUNT_4_BIT,
+        vk::AttachmentLoadOp::DontCare,
+    );
+    let tangents = t.create_attachment(
+        "tangents",
+        dimensions,
+        vk::Format::R16g16Sfloat,
+        vk::SAMPLE_COUNT_4_BIT,
+        vk::AttachmentLoadOp::DontCare,
+    );
+    let velocity = t.create_attachment(
+        "velocity",
+        dimensions,
+        vk::Format::R16g16Sfloat,
+        vk::SAMPLE_COUNT_4_BIT,
+        vk::AttachmentLoadOp::DontCare,
+    );
+    let depth = t.create_attachment(
+        "depth",
+        dimensions,
+        vk::Format::D32Sfloat,
+        vk::SAMPLE_COUNT_4_BIT,
+        vk::AttachmentLoadOp::DontCare,
+    );
 
-    let (_, gbuffers) = frame.graphics_subpass("gbuffers", renderpass, |t| {
-        let normals = t.create_attachment(
-            "normals",
-            dimensions,
-            vk::Format::R16g16Sfloat,
-            vk::SAMPLE_COUNT_4_BIT,
-            vk::AttachmentLoadOp::DontCare,
-        );
-        let diffuse_specular = t.create_attachment(
-            "diffuse_specular",
-            dimensions,
-            vk::Format::R16g16Sfloat,
-            vk::SAMPLE_COUNT_4_BIT,
-            vk::AttachmentLoadOp::DontCare,
-        );
-        let position = t.create_attachment(
-            "position",
-            dimensions,
-            vk::Format::R16g16b16a16Sfloat,
-            vk::SAMPLE_COUNT_4_BIT,
-            vk::AttachmentLoadOp::DontCare,
-        );
-        let emission = t.create_attachment(
-            "emission",
-            dimensions,
-            vk::Format::R16g16b16a16Sfloat,
-            vk::SAMPLE_COUNT_4_BIT,
-            vk::AttachmentLoadOp::DontCare,
-        );
-        let tangents = t.create_attachment(
-            "tangents",
-            dimensions,
-            vk::Format::R16g16Sfloat,
-            vk::SAMPLE_COUNT_4_BIT,
-            vk::AttachmentLoadOp::DontCare,
-        );
-        let velocity = t.create_attachment(
-            "velocity",
-            dimensions,
-            vk::Format::R16g16Sfloat,
-            vk::SAMPLE_COUNT_4_BIT,
-            vk::AttachmentLoadOp::DontCare,
-        );
-        let depth = t.create_attachment(
-            "depth",
-            dimensions,
-            vk::Format::D32Sfloat,
-            vk::SAMPLE_COUNT_4_BIT,
-            vk::AttachmentLoadOp::DontCare,
-        );
 
-        t.set_color_attachments(&[
-            &normals,
-            &diffuse_specular,
-            &position,
-            &emission,
-            &tangents,
-            &velocity,
-        ]);
-        t.set_depth_attachment(&depth);
+        let (_, gbuffers) = frame.build_graphics_pass(|t| {
 
-        Gbuffers {
-            normals,
-            depth,
-            diffuse_specular,
-            emission,
-            position,
-            tangents,
-            velocity,
-        }
-    });
+            t.set_color_attachments(&[
+                &normals,
+                &diffuse_specular,
+                &position,
+                &emission,
+                &tangents,
+                &velocity,
+            ]);
+            t.set_depth_attachment(&depth);
 
-    let target = frame.import_image(persistent);
+            Gbuffers {
+                normals,
+                depth,
+                diffuse_specular,
+                emission,
+                position,
+                tangents,
+                velocity,
+            }
+        });
 
-    // lighting pass
-    let (_, target) = frame.graphics_subpass("lighting", renderpass, |t| {
-        let target = t.load_attachment(&target, vk::AttachmentLoadOp::DontCare);
+        let target = frame.import_image(persistent);
 
-        t.set_color_attachments(&[&target]);
-        t.set_input_attachments(&[
-            &gbuffers.normals,
-            &gbuffers.diffuse_specular,
-            &gbuffers.emission,
-            &gbuffers.position,
-            &gbuffers.tangents,
-            &gbuffers.velocity,
-        ]);
-        t.set_depth_attachment(&gbuffers.depth);
+        // lighting pass
+        let (_, target) = frame.graphics_subpass("lighting", renderpass, |t| {
+            let target = t.load_attachment(&target, vk::AttachmentLoadOp::DontCare);
 
-        t.store_attachment(target, vk::AttachmentStoreOp::Store)
-    });
+            t.set_color_attachments(&[&target]);
+            t.set_input_attachments(&[
+                &gbuffers.normals,
+                &gbuffers.diffuse_specular,
+                &gbuffers.emission,
+                &gbuffers.position,
+                &gbuffers.tangents,
+                &gbuffers.velocity,
+            ]);
+            t.set_depth_attachment(&gbuffers.depth);
+
+            t.store_attachment(target, vk::AttachmentStoreOp::Store)
+        });
+     });
 
     // present to screen
     frame.present(&target);
-}
+}*/
 
 /*//--------------------------------------------------------------------------------------------------
 fn test_frame_0<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx mut Image) {
@@ -261,50 +260,44 @@ fn main() {
 
     // this creates an event loop, a window, context, and a swapchain associated to the window.
     let mut app = App::new();
-    let ctx = &mut app.context;
-    let window = &mut app.window;
-
-    // create a persistent image.
-    let mut pool = MemoryPool::new(ctx);
-
-    let mut persistent_img = Image::new(
-        ctx,
-        Dimensions::Dim2D {
-            width: 1280,
-            height: 720,
-        },
-        vk::Format::R8g8b8a8Srgb,
-        vk::IMAGE_USAGE_SAMPLED_BIT | vk::IMAGE_USAGE_TRANSFER_DST_BIT,
-        vk::QUEUE_GRAPHICS_BIT | vk::QUEUE_COMPUTE_BIT,
-        Some(pool),
-    );
 
     let mut first = true;
-    loop {
-        let mut should_close = false;
-        app.events_loop.poll_events(|event| {
-            // event handling
-            match event {
-                Event::WindowEvent {
-                    event: WindowEvent::CloseRequested,
-                    ..
-                } => {
-                    should_close = true;
-                }
-                // if resize, then delete persistent resources and re-create
-                _ => (),
-            }
+    let mut should_close = false;
 
-            if first {
-                let mut frame = ctx.new_frame();
-                test_frame_deferred_shading(&mut frame, &mut persistent_img);
-                frame.submit();
-                first = false;
+    while !should_close {
+        should_close = app.poll_events(|event| {
+            // create a frame
+            let frame = device.build_frame();
+
+            let color = frame.build_pass(|pass| {
+                pass.read_image(image, vk::IMAGE_USAGE_SAMPLED_BIT, ImageMemoryBarrierHalf {
+                    access_mask: vk::ACCESS_SHADER_READ_BIT,
+                    stage_mask: vk::PIPELINE_STAGE_ALL_GRAPHICS_BIT,
+                    layout: vk::ImageLayout::ShaderReadOnlyOptimal});
+                pass.write_image(image,
+            });
+
+
+            frame.present(app.swapchain(), &color);
+            frame.submit();
+
+
+                     app.device().frame(|frame| {
+                    // import_swapchain_image -> &FrameImage
+                    let mut color_target = frame.import_swapchain_image(app.swapchain());
+                    let mut depth = frame.create_image();
+
+                    frame.build_graphics_pass()
+                        .with_color_attachment(0, &mut color_target, AttachmentLoad::Clear(...))
+                        .with_depth_attachment(&mut depth_target)
+                        .finish();
+
+                    frame.clear(&mut color_target);
+                    frame.present(&mut target);
+                });
+
             }
         });
-        if should_close {
-            break;
-        }
     }
 
     // drop(persistent_img);

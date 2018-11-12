@@ -3,8 +3,25 @@ use frame::resource::{BufferId, ImageId};
 use ash::vk;
 
 //--------------------------------------------------------------------------------------------------
+
+/// One side of an image memory barrier.
+#[derive(Copy, Clone, Debug)]
+pub struct ImageMemoryBarrierHalf {
+    pub stage_mask: vk::PipelineStageFlags,
+    pub access_mask: vk::AccessFlags,
+    pub layout: vk::ImageLayout,
+}
+
+/// One side of a buffer memory barrier.
+#[derive(Copy, Clone, Debug)]
+pub struct BufferMemoryBarrierHalf {
+    pub stage_mask: vk::PipelineStageFlags,
+    pub access_mask: vk::AccessFlags,
+}
+
+//--------------------------------------------------------------------------------------------------
 #[derive(Clone, Debug)]
-pub struct ImageBarrier {
+pub struct ImageMemoryBarrier {
     pub id: ImageId,
     pub src_access_mask: vk::AccessFlags,
     pub dst_access_mask: vk::AccessFlags,
@@ -13,7 +30,7 @@ pub struct ImageBarrier {
 }
 
 #[derive(Clone, Debug)]
-pub struct BufferBarrier {
+pub struct BufferMemoryBarrier {
     pub id: BufferId,
     pub src_access_mask: vk::AccessFlags,
     pub dst_access_mask: vk::AccessFlags,
@@ -33,9 +50,9 @@ pub struct SubpassBarrier {
 #[derive(Clone, Debug)]
 pub enum BarrierDetail {
     /// Image dependency. Analogous to `VkImageMemoryBarrier`.
-    Image(ImageBarrier),
+    Image(ImageMemoryBarrier),
     /// Buffer dependency. Analogous to  `VkBufferMemoryBarrier`.
-    Buffer(BufferBarrier),
+    Buffer(BufferMemoryBarrier),
     /// Dependency between subpasses.
     Subpass(SubpassBarrier),
     /// Represents a sequencing constraint between tasks.
@@ -119,4 +136,55 @@ impl Dependency {
             _ => None,
         }
     }
+
+    pub fn with_image_memory_barrier(
+        image: ImageId,
+        source: ImageMemoryBarrierHalf,
+        destination: ImageMemoryBarrierHalf,
+    ) -> Dependency {
+        Dependency {
+            src_stage_mask: source.stage_mask,
+            dst_stage_mask: destination.stage_mask,
+            latency: 0,
+            barrier: BarrierDetail::Image(ImageBarrier {
+                src_access_mask: source.access_mask,
+                dst_access_mask: destination.access_mask,
+                id: image,
+                old_layout: destination.layout,
+                new_layout: destination.layout,
+            }),
+        }
+    }
+
+    pub fn with_buffer_memory_barrier(
+        buffer: BufferId,
+        source: BufferMemoryBarrierHalf,
+        destination: BufferMemoryBarrierHalf,
+    ) -> Dependency {
+        Dependency {
+            src_stage_mask: source.stage_mask,
+            dst_stage_mask: destination.stage_mask,
+            latency: 0,
+            barrier: BarrierDetail::Buffer(BufferMemoryBarrier {
+                src_access_mask: source.access_mask,
+                dst_access_mask: destination.access_mask,
+                id: buffer,
+            }),
+        }
+    }
+
+    pub fn sequence() -> Dependency {
+        unimplemented!()
+    }
+}
+
+pub fn is_write_access(access_flags: vk::AccessFlags) -> bool {
+    access_flags.intersects(
+        vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+            | vk::ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
+            | vk::ACCESS_HOST_WRITE_BIT
+            | vk::ACCESS_MEMORY_WRITE_BIT
+            | vk::ACCESS_SHADER_WRITE_BIT
+            | vk::ACCESS_TRANSFER_WRITE_BIT,
+    )
 }

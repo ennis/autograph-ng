@@ -1,63 +1,58 @@
 use std::cell::Cell;
 use std::marker::PhantomData;
-
-use frame::graph::TaskId;
-use frame::resource::{BufferId, ImageId};
-use frame::{Frame, LifetimeId};
+use std::ops::Deref;
 
 use ash::vk;
 
-pub mod present;
-//mod compute;
-//mod graphics;
-//mod transfer;
-
-use self::present::PresentTask;
-//use self::graphics::GraphicsTask;
-//use super::compute::ComputeTask;
-//use super::transfer::TransferTask;
-
-#[derive(Debug)]
-pub enum TaskKind {
-    Graphics,
-    Compute,
-    Transfer,
-    Present,
-    RayTracing,
-    Other,
-}
+use crate::device::{Device, VkDevice1};
+use crate::frame::dependency::{BufferMemoryBarrierHalf, ImageMemoryBarrierHalf};
+use crate::frame::resource::{BufferId, BufferResource, ImageId, ImageResource};
+use crate::frame::PassId;
+use crate::frame::{Frame, LifetimeId};
 
 /// Represents an operation in the frame graph.
-pub trait Task {
+pub trait Pass {
     fn name(&self) -> &str;
-    fn kind(&self) -> TaskKind;
+
+    fn preferred_queue(&self) -> Option<(u32, vk::Queue)> {
+        None
+    }
 }
 
-#[derive(Debug)]
-pub struct RayTracingTask {}
+/*pub fn select_queue_for_task(task: &Task, device: &Device) -> (u32, vk::Queue) {
+    if let Some(queue) = task.preferred_queue() {
+        queue
+    } else {
+        match task.kind() {
+            TaskKind::Graphics => device.default_graphics_queue(),
+            TaskKind::Compute => device.default_compute_queue(),
+            TaskKind::Transfer => device.default_transfer_queue(),
+            TaskKind::Present => device.default_present_queue(),
+            TaskKind::RayTracing => device.default_graphics_queue(),
+            TaskKind::Other => device.default_graphics_queue(),
+        }
+    }
+}*/
 
 #[derive(Debug)]
-pub struct DummyTask;
+pub struct DummyPass;
 
-impl Task for DummyTask {
+impl Pass for DummyPass {
+    #[inline]
     fn name(&self) -> &str {
         "dummy"
     }
-
-    fn kind(&self) -> TaskKind {
-        TaskKind::Other
-    }
 }
 
-impl DummyTask {
-    pub fn new() -> DummyTask {
-        DummyTask
+impl DummyPass {
+    pub fn new() -> DummyPass {
+        DummyPass
     }
 }
 
 //--------------------------------------------------------------------------------------------------
-pub trait TaskOutput<'id> {
-    fn task(&self) -> TaskId;
+pub trait PassOutput {
+    fn pass(&self) -> Option<PassId>;
     fn latency(&self) -> u32;
     fn src_stage_mask(&self) -> vk::PipelineStageFlags;
     fn src_access(&self) -> vk::AccessFlags;
@@ -89,72 +84,68 @@ pub trait TaskOutput<'id> {
 }
 
 //--------------------------------------------------------------------------------------------------
-pub struct BufferRef<'id> {
-    _lifetime: LifetimeId<'id>,
+pub struct BufferRef {
     buffer: BufferId,
-    task: TaskId,
-    src_stage_mask: vk::PipelineStageFlags,
-    src_access: vk::AccessFlags,
+    pass: Option<PassId>,
+    src_barrier: BufferMemoryBarrierHalf,
     read_flag: Cell<bool>,
     write_flag: Cell<bool>,
     latency: u32,
 }
 
-impl<'id> TaskOutput<'id> for BufferRef<'id> {
-    fn task(&self) -> TaskId {
-        self.task
+impl PassOutput for BufferRef {
+    #[inline]
+    fn pass(&self) -> Option<PassId> {
+        self.pass
     }
 
+    #[inline]
     fn latency(&self) -> u32 {
         self.latency
     }
 
+    #[inline]
     fn src_stage_mask(&self) -> vk::PipelineStageFlags {
-        self.src_stage_mask
+        self.src_barrier.stage_mask
     }
 
+    #[inline]
     fn src_access(&self) -> vk::AccessFlags {
-        self.src_access
+        self.src_barrier.access_mask
     }
 
+    #[inline]
     fn read_flag(&self) -> &Cell<bool> {
         &self.read_flag
     }
 
+    #[inline]
     fn write_flag(&self) -> &Cell<bool> {
         &self.write_flag
     }
 }
 
 //--------------------------------------------------------------------------------------------------
-pub struct ImageRef<'id> {
-    _lifetime: LifetimeId<'id>,
+pub struct ImageRef {
     image: ImageId,
-    task: TaskId,
-    src_stage_mask: vk::PipelineStageFlags,
-    src_access: vk::AccessFlags,
-    layout: vk::ImageLayout,
+    pass: Option<PassId>,
+    src_barrier: ImageMemoryBarrierHalf,
     read_flag: Cell<bool>,
     write_flag: Cell<bool>,
     latency: u32,
 }
 
-impl<'id> ImageRef<'id> {
+impl ImageRef {
     pub fn new(
         image: ImageId,
-        task: TaskId,
-        src_stage_mask: vk::PipelineStageFlags,
-        src_access: vk::AccessFlags,
-        layout: vk::ImageLayout,
-        latency: u32,
-    ) -> ImageRef<'id> {
+        pass: Option<PassId>,
+        src_barrier: ImageMemoryBarrierHalf,
+    ) -> ImageRef
+    {
         ImageRef {
-            _lifetime: PhantomData,
             image,
-            task,
-            src_stage_mask,
-            src_access,
-            layout,
+            pass,
+            src_barrier,
             read_flag: Cell::new(false),
             write_flag: Cell::new(false),
             latency: 0,
@@ -165,32 +156,40 @@ impl<'id> ImageRef<'id> {
         self.image
     }
 
-    /*pub fn dimensions(&self) -> ImageDimensions {
-        self.frame.image_resource(self.image).dimensions()
-    }*/
-}
-
-impl<'id> TaskOutput<'id> for ImageRef<'id> {
-    fn task(&self) -> TaskId {
-        self.task
+    pub fn src_barrier(&self) -> &ImageMemoryBarrierHalf {
+        &self.src_barrier
     }
 
+}
+
+impl PassOutput for ImageRef
+{
+    #[inline]
+    fn pass(&self) -> Option<PassId> {
+        self.pass
+    }
+
+    #[inline]
     fn latency(&self) -> u32 {
         self.latency
     }
 
+    #[inline]
     fn src_stage_mask(&self) -> vk::PipelineStageFlags {
-        self.src_stage_mask
+        self.src_barrier.stage_mask
     }
 
+    #[inline]
     fn src_access(&self) -> vk::AccessFlags {
-        self.src_access
+        self.src_barrier.access_mask
     }
 
+    #[inline]
     fn read_flag(&self) -> &Cell<bool> {
         &self.read_flag
     }
 
+    #[inline]
     fn write_flag(&self) -> &Cell<bool> {
         &self.write_flag
     }

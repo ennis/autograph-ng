@@ -1,5 +1,7 @@
 //#![feature(rust_2018_preview, uniform_paths)]
 #![feature(vec_remove_item)]
+#![feature(arbitrary_self_types)]
+
 extern crate petgraph;
 #[macro_use]
 extern crate bitflags;
@@ -22,6 +24,7 @@ extern crate downcast_rs;
 extern crate sid_vec;
 extern crate time;
 
+pub mod app;
 pub mod buffer;
 mod buffer_data;
 pub mod device;
@@ -34,11 +37,11 @@ pub mod memory;
 pub mod resource;
 mod surface;
 mod swapchain;
-pub mod window;
+mod sync;
 
 // re-export vulkan as gfx2::vk
 pub use ash::vk;
 
+pub use self::app::*;
 pub use self::frame::*;
 pub use self::resource::*;
-pub use self::window::*;

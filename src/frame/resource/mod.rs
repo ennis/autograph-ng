@@ -1,14 +1,15 @@
 use super::*;
 use sid_vec::{Id, IdVec};
 
-pub mod buffer;
-pub mod image;
+mod buffer;
+mod image;
 
 pub use self::buffer::*;
 pub use self::image::*;
 
 use ash::vk;
-use crate::image::Dimensions;
+use crate::buffer::{Buffer, BufferDescription};
+use crate::image::{Dimensions, Image, ImageDescription};
 
 pub trait Resource {
     fn name(&self) -> &str;
@@ -16,13 +17,13 @@ pub trait Resource {
     fn is_allocated(&self) -> bool;
 }
 
-pub trait ImageResource: Resource {
-    fn dimensions(&self) -> Dimensions;
-    fn format(&self) -> vk::Format;
-    fn samples(&self) -> u32;
+pub trait ImageResource: Resource + ImageDescription {
     fn set_usage(&mut self, usage: vk::ImageUsageFlags) -> bool;
+    fn initial_layout(&self) -> vk::ImageLayout;
+    /// The associated swapchain, if the image is part of a swapchain.
+    fn swapchain(&self) -> Option<vk::SwapchainKHR>;
+    /// The associated swapchain index, if the image is part of a swapchain.
+    fn swapchain_index(&self) -> Option<u32>;
 }
 
-pub trait BufferResource: Resource {
-    fn byte_size(&self) -> u64;
-}
+pub trait BufferResource: Resource + BufferDescription {}

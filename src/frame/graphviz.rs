@@ -118,11 +118,11 @@ fn format_access_flags(flags: vk::AccessFlags) -> String {
     out
 }
 
-impl<'ctx> Frame<'ctx> {
-    pub(crate) fn dump_graphviz<W: Write>(
+impl<'id> Frame<'id> {
+    pub fn dump_graphviz<W: Write>(
         &self,
         w: &mut W,
-        ordering: Option<&[TaskId]>,
+        ordering: Option<&[PassId]>,
         show_details: bool,
     ) {
         writeln!(w, "digraph G {{");
@@ -170,12 +170,11 @@ impl<'ctx> Frame<'ctx> {
             "node [shape=diamond, fontcolor=black, style=filled, fillcolor=\"brown1\"];"
         );
         self.graph
-            .0
             .node_indices()
-            .map(|n| (n.index(), self.graph.0.node_weight(n).unwrap()))
-            .filter(|(_, t)| t.queue == 2)
+            .map(|n| (n.index(), self.graph.node_weight(n).unwrap()))
+            .filter(|(_, t)| t.kind() == TaskKind::Present)
             .for_each(|(i, t)| {
-                writeln!(w, "T_{} [label=\"{} (ID:{})\"];", i, t.name, i);
+                writeln!(w, "T_{} [label=\"{} (ID:{})\"];", i, t.name(), i);
             });
         writeln!(w, "}}");
 
@@ -189,12 +188,11 @@ impl<'ctx> Frame<'ctx> {
             "node [shape=diamond, fontcolor=black, style=filled, fillcolor=\"goldenrod1\"];"
         );
         self.graph
-            .0
             .node_indices()
-            .map(|n| (n.index(), self.graph.0.node_weight(n).unwrap()))
-            .filter(|(_, t)| t.queue == 0)
+            .map(|n| (n.index(), self.graph.node_weight(n).unwrap()))
+            .filter(|(_, t)| t.kind() == TaskKind::Graphics)
             .for_each(|(i, t)| {
-                writeln!(w, "T_{} [label=\"{} (ID:{})\"];", i, t.name, i);
+                writeln!(w, "T_{} [label=\"{} (ID:{})\"];", i, t.name(), i);
             });
         writeln!(w, "}}");
 
@@ -208,12 +206,11 @@ impl<'ctx> Frame<'ctx> {
             "node [shape=diamond, fontcolor=black, style=filled, fillcolor=\"palegreen\"];"
         );
         self.graph
-            .0
             .node_indices()
-            .map(|n| (n.index(), self.graph.0.node_weight(n).unwrap()))
-            .filter(|(_, t)| t.queue == 1)
+            .map(|n| (n.index(), self.graph.node_weight(n).unwrap()))
+            .filter(|(_, t)| t.kind() == TaskKind::Compute)
             .for_each(|(i, t)| {
-                writeln!(w, "T_{} [label=\"{} (ID:{})\"];", i, t.name, i);
+                writeln!(w, "T_{} [label=\"{} (ID:{})\"];", i, t.name(), i);
             });
         writeln!(w, "}}");
 
@@ -225,9 +222,9 @@ impl<'ctx> Frame<'ctx> {
         }
 
         //------------------ Dependencies ------------------
-        for e in self.graph.0.edge_indices() {
-            let (src, dest) = self.graph.0.edge_endpoints(e).unwrap();
-            let d = self.graph.0.edge_weight(e).unwrap();
+        for e in self.graph.edge_indices() {
+            let (src, dest) = self.graph.edge_endpoints(e).unwrap();
+            let d = self.graph.edge_weight(e).unwrap();
             //let imported = self.
 
             let color_code = match &d.barrier {
@@ -236,8 +233,8 @@ impl<'ctx> Frame<'ctx> {
                     dst_access_mask,
                     ..
                 }) => {
-                    let imported = self.resources.images[id].is_imported();
-                    if imported {
+                    let transient = self.images[id].is_transient();
+                    if !transient {
                         if dst_access_mask.intersects(
                             vk::ACCESS_COLOR_ATTACHMENT_READ_BIT
                                 | vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
@@ -300,90 +297,90 @@ impl<'ctx> Frame<'ctx> {
                     );
 
                     /*write!(
-                        w,
-                        "D_{} [shape=none,width=0,height=0,margin=0,label=<<FONT> \
-                <TABLE BORDER=\"0\" CELLBORDER=\"1\" BGCOLOR=\"{}\" CELLSPACING=\"0\" ALIGN=\"LEFT\" >",
-                        e.index(),
-                        color_code
-                    );
-
-                    //------------------ Dependency node ------------------
-                    match &d.details {
-                        &DependencyDetails::Image {
-                            id,
-                            new_layout,
-                            usage,
-                            ref attachment,
-                        } => {
-                            let img = &self.images[id.0 as usize];
-                            if let Some(_) = attachment {
-                                write!(
-                                    w,
-                                    "<TR><TD ALIGN=\"LEFT\" COLSPAN=\"2\">Attachment {} (ID:{})<BR/>{}</TD></TR>",
-                                    img.name(), id.0, if img.is_imported() { "Imported" } else { "" }
-                                );
-                            } else {
-                                write!(
-                                    w,
-                                    "<TR><TD ALIGN=\"LEFT\" COLSPAN=\"2\">Image {} (ID:{})<BR/>{}</TD></TR>",
-                                    img.name(), id.0, if img.is_imported() { "Imported" } else { "" }
-                                );
-                            }
-                            if show_details {
-                                write!(
-                                    w,
-                                    "<TR><TD ALIGN=\"LEFT\">accessBits</TD><TD ALIGN=\"RIGHT\">{}</TD></TR>",
-                                    format_access_flags(d.access_bits)
-                                );
-                                write!(
-                                    w,
-                                    "<TR><TD ALIGN=\"LEFT\">srcStageMask</TD><TD ALIGN=\"RIGHT\">{}</TD></TR>",
-                                    format_pipeline_stage_mask(d.src_stage_mask)
-                                );
-                                write!(
-                                    w,
-                                    "<TR><TD ALIGN=\"LEFT\">dstStageMask</TD><TD ALIGN=\"RIGHT\">{}</TD></TR>",
-                                    format_pipeline_stage_mask(d.dst_stage_mask)
-                                );
-                                write!(
-                                    w,
-                                    "<TR><TD ALIGN=\"LEFT\">newLayout</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>",
-                                    new_layout
-                                );
-                                if let Some(ref attachment) = attachment {
+                            w,
+                            "D_{} [shape=none,width=0,height=0,margin=0,label=<<FONT> \
+                    <TABLE BORDER=\"0\" CELLBORDER=\"1\" BGCOLOR=\"{}\" CELLSPACING=\"0\" ALIGN=\"LEFT\" >",
+                            e.index(),
+                            color_code
+                        );
+                    
+                        //------------------ Dependency node ------------------
+                        match &d.details {
+                            &DependencyDetails::Image {
+                                id,
+                                new_layout,
+                                usage,
+                                ref attachment,
+                            } => {
+                                let img = &self.images[id.0 as usize];
+                                if let Some(_) = attachment {
                                     write!(
                                         w,
-                                        "<TR><TD ALIGN=\"LEFT\">format</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>",
-                                        attachment.description.format
+                                        "<TR><TD ALIGN=\"LEFT\" COLSPAN=\"2\">Attachment {} (ID:{})<BR/>{}</TD></TR>",
+                                        img.name(), id.0, if img.is_imported() { "Imported" } else { "" }
                                     );
+                                } else {
                                     write!(
                                         w,
-                                        "<TR><TD ALIGN=\"LEFT\">loadOp</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>",
-                                        attachment.description.load_op
-                                    );
-                                    write!(
-                                        w,
-                                        "<TR><TD ALIGN=\"LEFT\">storeOp</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>",
-                                        attachment.description.store_op
-                                    );
-                                    write!(
-                                        w,
-                                        "<TR><TD ALIGN=\"LEFT\">finalLayout</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>",
-                                        attachment.description.final_layout
+                                        "<TR><TD ALIGN=\"LEFT\" COLSPAN=\"2\">Image {} (ID:{})<BR/>{}</TD></TR>",
+                                        img.name(), id.0, if img.is_imported() { "Imported" } else { "" }
                                     );
                                 }
+                                if show_details {
+                                    write!(
+                                        w,
+                                        "<TR><TD ALIGN=\"LEFT\">accessBits</TD><TD ALIGN=\"RIGHT\">{}</TD></TR>",
+                                        format_access_flags(d.access_bits)
+                                    );
+                                    write!(
+                                        w,
+                                        "<TR><TD ALIGN=\"LEFT\">srcStageMask</TD><TD ALIGN=\"RIGHT\">{}</TD></TR>",
+                                        format_pipeline_stage_mask(d.src_stage_mask)
+                                    );
+                                    write!(
+                                        w,
+                                        "<TR><TD ALIGN=\"LEFT\">dstStageMask</TD><TD ALIGN=\"RIGHT\">{}</TD></TR>",
+                                        format_pipeline_stage_mask(d.dst_stage_mask)
+                                    );
+                                    write!(
+                                        w,
+                                        "<TR><TD ALIGN=\"LEFT\">newLayout</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>",
+                                        new_layout
+                                    );
+                                    if let Some(ref attachment) = attachment {
+                                        write!(
+                                            w,
+                                            "<TR><TD ALIGN=\"LEFT\">format</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>",
+                                            attachment.description.format
+                                        );
+                                        write!(
+                                            w,
+                                            "<TR><TD ALIGN=\"LEFT\">loadOp</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>",
+                                            attachment.description.load_op
+                                        );
+                                        write!(
+                                            w,
+                                            "<TR><TD ALIGN=\"LEFT\">storeOp</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>",
+                                            attachment.description.store_op
+                                        );
+                                        write!(
+                                            w,
+                                            "<TR><TD ALIGN=\"LEFT\">finalLayout</TD><TD ALIGN=\"RIGHT\">{:?}</TD></TR>",
+                                            attachment.description.final_layout
+                                        );
+                                    }
+                                }
                             }
-                        }
-                        &DependencyDetails::Buffer { id, .. } => {
-                            let name = self.buffers[id.0 as usize].name();
-                            write!(
-                                w,
-                                "<TR><TD ALIGN=\"LEFT\" COLSPAN=\"2\">Buffer {} (ID:{})</TD></TR>",
-                                name, id.0
-                            );
-                        }
-                        _ => unreachable!(),
-                    }*/
+                            &DependencyDetails::Buffer { id, .. } => {
+                                let name = self.buffers[id.0 as usize].name();
+                                write!(
+                                    w,
+                                    "<TR><TD ALIGN=\"LEFT\" COLSPAN=\"2\">Buffer {} (ID:{})</TD></TR>",
+                                    name, id.0
+                                );
+                            }
+                            _ => unreachable!(),
+                        }*/
                     writeln!(w, "</TABLE></FONT>>];");
                 }
             }

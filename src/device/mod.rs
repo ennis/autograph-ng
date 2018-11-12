@@ -3,8 +3,7 @@ use std::ffi::{CStr, CString};
 use std::mem;
 use std::os::raw::c_char;
 use std::ptr;
-use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, Weak};
 use std::u32;
 
 use ash;
@@ -15,9 +14,10 @@ use config::Config;
 use sid_vec::{Id, IdVec};
 use winit::Window;
 
-use instance::{Instance, VkInstance1};
-use surface::Surface;
-use sync::{FrameSync, SyncGroup};
+use crate::instance::{Instance, VkInstance1};
+use crate::memory::MemoryPool;
+use crate::surface::Surface;
+use crate::sync::{FrameFence, SignalSemaphore, WaitSemaphore};
 
 pub type VkDevice1 = ash::Device<V1_0>;
 pub struct QueueTag;
@@ -25,6 +25,14 @@ pub type QueueId = Id<QueueTag>;
 
 mod physical_device;
 mod queue;
+mod traits;
+
+pub use self::traits::{DeviceBoundObject, FrameSynchronizedObject};
+
+pub enum SharingMode {
+    Exclusive,
+    Concurrent(Vec<u32>),
+}
 
 // queues: different queue families, each queue family has different properties
 // resources are shared between different queue families, not queues
@@ -35,7 +43,7 @@ pub struct Queue {
 }
 
 pub struct DeviceExtensionPointers {
-    vk_khr_swapchain: extensions::Swapchain,
+    pub vk_khr_swapchain: extensions::Swapchain,
 }
 
 pub struct Queues {
@@ -53,9 +61,11 @@ pub struct Device {
     physical_device: vk::PhysicalDevice,
     queues: Queues,
     max_frames_in_flight: u32,
-    image_available: vk::Semaphore,
-    render_finished: vk::Semaphore,
-    //frame_sync: FrameSync,
+    //image_available: vk::Semaphore,
+    //render_finished: vk::Semaphore,
+    default_pool_block_size: u64,
+    default_pool: Mutex<Weak<MemoryPool>>,
+    frame_fence: FrameFence,
 }
 
 impl Device {
@@ -67,12 +77,50 @@ impl Device {
         &self.pointers
     }
 
+    pub fn extension_pointers(&self) -> &DeviceExtensionPointers {
+        &self.extension_pointers
+    }
+
+    pub fn physical_device(&self) -> vk::PhysicalDevice {
+        self.physical_device
+    }
+
+    pub fn max_frames_in_flight(&self) -> u32 {
+        self.max_frames_in_flight
+    }
+
+    pub fn concurrent_across_queue_families(&self) -> SharingMode {
+        let mut queue_families = [
+            self.queues.present.0,
+            self.queues.transfer.0,
+            self.queues.graphics.0,
+            self.queues.compute.0,
+        ]
+        .to_vec();
+        queue_families.sort();
+        queue_families.dedup();
+        SharingMode::Concurrent(queue_families)
+    }
+
+    pub fn is_frame_retired(&self, frame_number: FrameNumber) -> bool {
+        self.frame_fence.last_retired_frame() >= frame_number
+    }
+
+    pub fn last_retired_frame(&self) -> FrameNumber {
+        self.frame_fence.last_retired_frame()
+    }
+
+    pub fn current_frame(&self) -> FrameNumber {
+        self.frame_fence.current_frame()
+    }
+
     pub fn new(
         instance: &Arc<Instance>,
-        config: &Config,
+        cfg: &Config,
         target_surface: Option<&Surface>,
     ) -> Arc<Device> {
-        let max_frames_in_flight = cfg.get::<u32>("gfx.renderer.max_frames_in_flight").unwrap();
+        let max_frames_in_flight = cfg.get::<u32>("gfx.max_frames_in_flight").unwrap();
+        let default_alloc_block_size = cfg.get::<u64>("gfx.default_alloc_block_size").unwrap();
 
         // select physical device
         let physical_device_selection =
@@ -93,13 +141,13 @@ impl Device {
         for i in 0..num_queue_families {
             if queue_config.num_queues[i] > 0 {
                 // FIXME no priorities for now
-                queue_priorities.push(vec![1.0f32; num_queues[i] as usize]);
+                queue_priorities.push(vec![1.0f32; queue_config.num_queues[i] as usize]);
             }
         }
 
         let mut queue_create_info = Vec::new();
         for i in 0..num_queue_families {
-            if num_queues[i] > 0 {
+            if queue_config.num_queues[i] > 0 {
                 queue_create_info.push(vk::DeviceQueueCreateInfo {
                     s_type: vk::StructureType::DeviceQueueCreateInfo,
                     p_next: ptr::null(),
@@ -122,8 +170,8 @@ impl Device {
             s_type: vk::StructureType::DeviceCreateInfo,
             p_next: ptr::null(),
             flags: Default::default(),
-            queue_create_info_count: 1,
-            p_queue_create_infos: &queue_info,
+            queue_create_info_count: queue_create_info.len() as u32,
+            p_queue_create_infos: queue_create_info.as_ptr(),
             enabled_layer_count: 0,
             pp_enabled_layer_names: ptr::null(),
             enabled_extension_count: device_extension_names_raw.len() as u32,
@@ -134,7 +182,11 @@ impl Device {
         let vkd = unsafe {
             instance
                 .pointers()
-                .create_device(selected_physical_device, &device_create_info, None)
+                .create_device(
+                    physical_device_selection.physical_device,
+                    &device_create_info,
+                    None,
+                )
                 .expect("unable to create device")
         };
 
@@ -160,7 +212,7 @@ impl Device {
         };
 
         let extension_pointers = DeviceExtensionPointers {
-            vk_khr_swapchain: extensions::Swapchain::new(instance, vkd)
+            vk_khr_swapchain: extensions::Swapchain::new(instance.pointers(), &vkd)
                 .expect("unable to load swapchain extension"),
         };
 
@@ -188,25 +240,45 @@ impl Device {
             pointers: vkd,
             instance: instance.clone(),
             extension_pointers,
-            image_available,
-            render_finished,
             max_frames_in_flight,
-            //frame_sync: FrameSync::new(),
+            default_pool_block_size: default_alloc_block_size,
+            default_pool: Mutex::new(Weak::new()),
+            frame_fence: FrameFence::new(FrameNumber(1), max_frames_in_flight),
         })
     }
+
+    pub fn default_pool(self: &Arc<Self>) -> Arc<MemoryPool> {
+        let mut pool = self.default_pool.lock().unwrap();
+
+        if let Some(p) = pool.upgrade() {
+            return p;
+        }
+
+        let new_pool = Arc::new(MemoryPool::new(&self, self.default_pool_block_size));
+        *pool = Arc::downgrade(&new_pool);
+        new_pool
+    }
+
+    pub fn default_graphics_queue(&self) -> (u32, vk::Queue) {
+        self.queues.graphics
+    }
+
+    pub fn default_compute_queue(&self) -> (u32, vk::Queue) {
+        self.queues.compute
+    }
+
+    pub fn default_transfer_queue(&self) -> (u32, vk::Queue) {
+        self.queues.transfer
+    }
+
+    pub fn default_present_queue(&self) -> (u32, vk::Queue) {
+        self.queues.present
+    }
+
+    pub fn create_semaphore(&self) -> (SignalSemaphore, WaitSemaphore) {
+        unimplemented!()
+    }
 }
-
-//--------------------------------------------------------------------------------------------------
-// SYNC GROUPS
-
-/*
-/// A sync group regroups resources that should wait on (one or more) semaphores before being used again.
-/// Resources are assigned SyncGroupIds when they are submitted to the pipeline.
-pub(crate) struct SyncGroup {}
-*/
-
-//--------------------------------------------------------------------------------------------------
-// CONTEXT
 
 /// A frame number. Represents a point in time that corresponds to the completion
 /// of a frame.
@@ -215,47 +287,4 @@ pub(crate) struct SyncGroup {}
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct FrameNumber(pub(crate) u64);
 
-/*
-/// Reinitializes a presentation object.
-pub fn reset_presentation(&mut self, presentation: &mut Presentation) {
-    // TODO: wait for all commands complete before deleting the resources associated with the presentation.
-    unsafe {
-        presentation.recreate_swapchain(
-            &self.vke,
-            &self.vki,
-            &self.vkd,
-            &self.surface_loader,
-            &self.swapchain_loader,
-            self.physical_device,
-        );
-    }
-}
-
-/// Acquires a presentation image.
-pub fn acquire_presentation_image<'a>(&mut self, presentation: &'a Presentation) -> &'a Image {
-    let next_image = unsafe {
-        self.swapchain_loader
-            .acquire_next_image_khr(
-                presentation.swapchain,
-                u64::max_value(),
-                self.image_available,
-                vk::Fence::null(),
-            ).unwrap()
-    };
-    let img = &presentation.images[next_image as usize];
-    img
-}
-
-/// Returns the default memory allocator.
-pub fn default_allocator(&self) -> &Allocator {
-    &self.allocator
-}
-
-pub fn vk_instance(&self) -> &VkInstance1 {
-    &self.vki
-}
-
-pub fn vk_device(&self) -> &VkDevice1 {
-    &self.vkd
-}
-}*/
+pub const INVALID_FRAME_NUMBER: FrameNumber = FrameNumber(0);

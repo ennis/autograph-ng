@@ -242,3 +242,286 @@ Bikeshedding API
 
 Images
 * Base unsafe type, unbound memory
+* Tagged image types
+    * TransferSourceCapability
+    * TransferDestinationCapability
+    * SampleCapability
+    * StorageCapability
+    * ColorAttachmentCapability
+    * DepthAttachmentCapability
+    * AttachmentCapability
+    * TransientAttachmentCapability
+    * Format
+    * SpecificFormat<T>
+    * UnknownFormat
+* Define tagged image types by combining capabilities
+* impl on Image or on TagType?
+    * on type tag, not instantiable
+* image tags: 
+
+ 
+```
+image_tag!{
+    pub type Transfer = TransferSourceCapability + TransferDestinationCapability;
+}
+
+fn new() -> Swapchain<ImageType> {
+}
+```
+
+Sharing between queues:
+* know in advance
+* encode in type
+* be conservative
+* rule: do not expose sharing to the user
+    * queue creation and scheduling is handled by the framework, with hints from the graph
+* make choices:
+    * presentation images are always EXCLUSIVE
+    * persistent images are always CONCURRENT across all queue families (by default)
+
+Image usage should be abstracted away:
+* delayed allocation
+* images implicitly bound to a frame graph?
+* issue: delayed uploads
+
+```
+with_frame(|frame| {
+    accum = Image(...); 
+    
+})
+
+frame {
+    image XXX { ... }
+    image YYY { ... }
+    
+    pass A { attachment <- XXX }
+}
+
+```
+
+Issue: what is the lifetime of a frame?
+- recreated on every frame
+    - can be costly (allocation, scheduling)
+    - good fit for dynamic workloads (e.g stuff that is run once every two frames?)
+- OR create once, execute many
+    - less costly, reuse stuff
+    - inflexible (borrows persistent resources forever)
+    - need "input ports" for dynamic data (cannot borrow input data forever, avoid shared references)
+    
+
+Swapchain images **owned** by the swapchain
+- acquire_swapchain_image() returns what?
+    - Arc?
+    - Borrow?
+    - Value?
+
+Question: how to store a reference to the image when used within a frame?
+    - API: expects Arc, store Arc in frame, guard with fence
+    - API: expects Image, but clone internal Arc
+    - Might be a reference to an image, but also indirectly to a swapchain
+    - Do not store a reference, just check for GPU use on drop
+A: take a copy of a generic image, or just the raw handle
+    
+Q: expose Images through Arc<> or through naked objects?
+    - naked objects are possible, with "frame borrows"
+        - frame requests that image lives as long as the current frame index
+        - when image is dropped
+            - check that frame is finished through device backref
+            - if not, move object into deferred deletion list in device
+        - need non-owning images
+
+Q: vkAcquireNextImageKHR should be called as late as possible. This raises an issue with the frame graph, which needs
+   to call it back when generating the buffers.
+   - Borrow the swapchain image
+        - ergonomics loss
+   - Turn the swapchain image into a generic "image reference"/"image proxy" that can be acquired at any moment in the future
+        - impl IntoImageProxy for SwapchainImage
+        - impl IntoImageProxy for GenericImage
+        - Must decouple borrow (the resources must live for the current frame) from GPU lock 
+            (wait for this semaphore before using the resource, signal this one when finished)
+        - ImageProxies are just another name for a borrow...
+        - Issue: cannot set some state into the borrowed resource during the frame
+            - Notably, cannot remember the layout that the image is into when exiting a frame
+            - Cannot remember anything across frames
+                - Layout is one thing, but then again the initial layout has no reason to change across frames
+                - anything else? except the data inside the image, can't think of anything
+            - Other solution: remove image and imageproxies, just use single trait image, with impl FrameSynchronizedObject for Arc<Image>, borrow with Arcs
+   
+   - Special-case swapchain images in ImageResource
+        - `fn swapchain(&self) -> Option<...>`
+        - calls underlying swapchainimageproxy
+        - remove ImageProxy trait (just query the image directly for non-swapchains)
+        
+   - (extreme) Build the command buffers on the fly
+        - a.k.a do not pursue the frame graph approach
+        
+Q: FrameGraphs vs on-the-fly command buffer generation?
+   - FrameGraphs: full knowledge of the structure and dependencies inside the frame. Can reorder and schedule.
+   
+   - On-the-fly: 
+        - No reordering possible. 
+        - Must schedule explicitly or schedule with incomplete information.
+        - Aliasing of resources is still possible. 
+        - May be faster (no scheduling, no graph allocation, commands directly put into buffers)
+        - Just-in-time synchronization
+   
+   - This is (mostly) an internal aspect, and should not change the API much: keep FrameGraph approach for now.
+        
+        
+Q: Scheduling
+    - Scheduling now happens per-task: each task is responsible for scheduling itself
+    - A task may output a command into a command buffer, or a queue operation directly (e.g. vkQueuePresentKHR), or both
+        (e.g. layout transition + queue operation)
+    - all passes that belong to the same renderpass must be scheduled in the same command buffer
+    - guarantees when calling task::schedule
+        - all resources are properly synchronized
+    - tasks should signal the context that they expect
+        - renderpass(index)
+        - command buffer
+        - queue
+        - then tasks can get the context they want: queue(), command_buffer(), wait_semaphores() ...
+    - operations:
+        - TaskOperation::SubpassCommand()
+        - TaskOperation::Command
+        - TaskOperation::QueueSubmit(command buffer)
+        - TaskOperation::QueuePresentKHR(...)
+    - TaskContext:
+        - CommandBuffer(...)
+        - RenderPass(...)
+        - Queue(...)
+    - Expose a 'virtual queue' that makes no distinction between renderpass, command buffer, or queue ops
+        - issue: cannot perform *any* synchronization within a task, even manual ones
+            - is this OK?
+            - no: provide raw access to queues
+            
+Q: texture uploads
+    - should happen outside frames
+    - problem: lifetime of staging buffer?
+        - staging buffer should be frame-bound
+        - but upload could happen outside a frame
+    - problem: uploading very large amounts of texture data in one go:
+        - upload blocks on frame finish, but the frame has not even started yet
+        - can still upload in a frame, one time
+    - solution: create "temporary" frame for upload
+        - frames do not need to correspond one-to-one with frames on the screen
+        - is that true?
+            - what about frames in flight?
+            - distinguish between visual frames & non-visual frames?
+    - submit command buffer for initial upload to transfer queue, then set initial semaphore
+    
+Q: redesign image refs
+    - more ergonomic: reference to image resource entry, with current state in the graph
+        - issue: borrows the whole frame, must refcell everything
+        - partial borrows would be nice
+        
+Target API:
+    - simple
+        - drop the need to store resource versions: use ordering of commands
+        - Read-after-write scenarios
+            - a task may call another task that modifies an input resource, and the calling task reads the new resource
+            as if it was not modified
+                - prevented by handle rename
+                - can be prevented by read-only handles, or &mut ref
+    - straightforward
+    - familiar
+    - concise
+    - prevents wrong usage
+    - use as few as possible rust-specific features
+    - importantly: does not interfere with data-driven scenarios
+        - e.g. create graph from a file
+    - should be relatively low-level
+        - higher level wrappers should be possible
+    
+Internal API for dependencies:
+    - should be able to specify one side of a dependency
+        - semaphores to wait for
+        - pipeline stage to wait for 
+    
+Q: Expose render passes or not?
+    - should not, probably
+    - must have a grouping pass:
+        - separate pass on the graph, or during scheduling?
+            - schedule pass
+            - if same renderpass tag
+                - schedule as subpass
+            - if not: terminate renderpass, start new one
+            - next one: next tasks in topological order
+                - evaluate renderpass merge candidates (does not use any of the previous attachments as sampled or storage images)
+                - set renderpass index
+                - try to schedule from given score
+            
+
+Schedule state: 
+- schedule stack (which ones to try next)
+
+API for graphics:
+- Variant A:
+    ```
+    fn set_color_attachment(index, image, load, store) -> ImageRef
+    fn set_depth_attachment(image, load, store) -> ImageRef
+    fn set_input_attachment(index, image)
+    ```
+    - Issue (set_color_attachment validation): color attachment is valid only if not read, or read by input attachment of the same task
+        However, no way of knowing that the read is from the same task
+
+- Variant B:
+    ```
+    fn set_color_attachment(index, image, load, store) -> ImageRef
+    fn set_color_input_attachment(index, image, input_index, store) -> ImageRef
+    fn set_depth_attachment(image, load, store) -> ImageRef
+    fn set_input_attachment(index, image)
+    ```
+    - set combined color+input attachment at the same time
+    - advantage vs Variant A: no need to modify ImageRef
+  
+- Variant C (index-less):
+    ```
+    fn add_color_attachment(image, load, store) -> ImageRef
+    fn set_depth_attachment(image, load, store) -> ImageRef
+    fn add_input_attachment(image)
+    ```
+    - does not work with combined color+input attachment
+    
+- Variant D:
+    ```
+    fn set_color_attachments(index, [{image, load, store}]) -> ???
+    fn set_depth_attachment(image, load, store) -> ImageRef
+    fn set_input_attachments(index, [image])
+    ```
+    - Issue: how to return new versions of color attachments? 
+    - Issue: see option A, color attachment validation
+    
+- Variant B' (cosmetic):
+    ```
+    fn color_attachment(index, image, load, store) -> ImageRef
+    fn color_input_attachment(index, image, input_index, store) -> ImageRef
+    fn depth_attachment(image, load, store) -> ImageRef
+    fn input_attachment(index, image)
+    ```
+    
+- Variant E (two-phase):
+    ```
+    fn attachment(image, load, store) -> (AttachmentId, ImageRef)
+    fn color_attachment(index, attachment_id)
+    fn depth_attachment(attachment_id)
+    fn input_attachment(attachment_id)
+    ```
+    - Potential API misuse: store AttachmentId outside subpass
+    
+- Variant E' (two-phase across subpasses: "AttachmentRef"):
+    ```
+    fn load_attachment(image, load, store) -> AttachmentRef
+    fn color_attachment(index, att_ref) -> AttachmentRef
+    fn depth_attachment(att_ref) -> AttachmentRef
+    fn input_attachment(att_ref)
+    ```
+    
+- Variant E'+B (combined color+input, two-phase across subpasses: "AttachmentRef"):
+    ```
+    fn load_attachment(image, load, store) -> AttachmentRef
+    fn color_attachment(index, att_ref) -> AttachmentRef
+    fn depth_attachment(att_ref) -> AttachmentRef
+    fn input_attachment(att_ref)
+    ```
+    - does not work very well with data-driven scenarios?
+   

@@ -4,7 +4,9 @@ use std::ptr;
 
 use sid_vec::IdVec;
 
+use ash::version::InstanceV1_0;
 use ash::vk;
+
 use instance::Instance;
 use surface::Surface;
 
@@ -26,12 +28,12 @@ pub(super) fn select_physical_device(
         .expect("unable to enumerate physical devices");
 
     let mut selected_physical_device: Option<vk::PhysicalDevice> = None;
-    let vk_khr_surface = instance.extension_pointers().vk_khr_surface;
+    let vk_khr_surface = &instance.extension_pointers().vk_khr_surface;
 
     let mut compatible_physical_devices = physical_devices
         .iter()
         .cloned()
-        .filter_map(|&physical_device| {
+        .filter_map(|physical_device| {
             // filter out incompatible physical devices
             let queue_family_properties = instance
                 .pointers()
@@ -43,15 +45,17 @@ pub(super) fn select_physical_device(
                 .iter()
                 .enumerate()
                 .for_each(|(queue_family_index, info)| {
-                    supports_graphics = info.queue_flags.subset(vk::QUEUE_GRAPHICS_BIT);
-                    supports_surface = if let Some(surface) = surface {
+                    info!("{:#?}", info);
+
+                    supports_graphics |= info.queue_flags.subset(vk::QUEUE_GRAPHICS_BIT);
+                    supports_surface |= if let Some(surface) = target_surface {
                         instance
                             .extension_pointers()
                             .vk_khr_surface
                             .get_physical_device_surface_support_khr(
                                 physical_device,
                                 queue_family_index as u32,
-                                surface,
+                                surface.internal_handle(),
                             )
                     } else {
                         true
@@ -63,7 +67,8 @@ pub(super) fn select_physical_device(
             } else {
                 None
             }
-        }).collect::<Vec<_>>();
+        })
+        .collect::<Vec<_>>();
 
     let (physical_device, queue_family_properties) =
         compatible_physical_devices.drain(..).next().ok_or(())?;

@@ -1,70 +1,57 @@
-use super::*;
-use sid_vec::ToIndex;
+use ash::vk;
+use sid_vec::{Id, ToIndex};
+use smallvec::SmallVec;
 
+use crate::frame::dependency::*;
+use crate::frame::resource::*;
+use crate::frame::tasks::{
+    AttachmentRef, BufferRef, DummyTask, ImageRef, ScheduleContext, Pass, TaskKind, TaskOutput,
+};
+use crate::frame::{DependencyId, Frame, RenderPassId, PassId};
 
 //--------------------------------------------------------------------------------------------------
-pub(super) struct RenderPassTag;
-pub(super) type RenderPassId = Id<RenderPassTag, u32>;
-
-pub struct RenderPass<'a>
-{
-    frame: &'a Frame,
+#[derive(Debug)]
+pub struct GraphicsTask {
+    name: String,
+    //renderpass_id: Option<RenderPassId>,
+    color_attachments: SmallVec<[ImageId; 8]>,
+    input_attachments: SmallVec<[ImageId; 8]>,
+    resolve_attachments: SmallVec<[ImageId; 8]>,
+    depth_attachment: Option<ImageId>,
+    shader_images: SmallVec<[ImageId; 8]>,
 }
 
-impl<'a> RenderPass<'a>
-{
-    fn new(frame: &'a Frame, index: RenderPassId) -> RenderPass<'a> {
-        RenderPass {
-            frame
-        }
+impl Pass for GraphicsTask {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn kind(&self) -> TaskKind {
+        TaskKind::Graphics
+    }
+
+    fn schedule<'sctx>(&self, sctx: &ScheduleContext<'sctx>) {
+        unimplemented!()
     }
 }
 
-
 //--------------------------------------------------------------------------------------------------
-
-#[derive(Debug)]
-pub(super) struct GraphicsTask {
-    renderpass: RenderPassId,
-    color_attachments: Vec<vk::AttachmentReference>,
-    input_attachments: Vec<vk::AttachmentReference>,
-    resolve_attachments: Vec<vk::AttachmentReference>,
-    depth_attachment: Option<vk::AttachmentReference>,
-    shader_images: Vec<ImageId>,
+pub struct GraphicsSubpassBuilder<'a, 'id: 'a> {
+    frame: &'a mut Frame<'id>,
+    task_id: PassId,
+    task: GraphicsTask,
 }
 
-//--------------------------------------------------------------------------------------------------
+impl<'a, 'id: 'a> GraphicsSubpassBuilder<'a, 'id> {
+    pub fn new(frame: &'a mut Frame<'id>) -> GraphicsSubpassBuilder<'a, 'id> {
+        let task_id = frame.create_task(DummyTask);
 
-/// Task builder specifically for graphics
-pub struct GraphicsTaskBuilder<'a> {
-    frame: &'a Frame,
-    renderpass: &'a RenderPass<'a>,
-    task: TaskId,
-    graphics_task: GraphicsTask,
-}
-
-
-impl<'a> GraphicsTaskBuilder<'a> {
-    pub(super) fn new(
-        name: impl Into<String>,
-        renderpass: RenderPassId,
-        graph: &'a mut FrameGraph,
-        resources: &'a mut Resources,
-        renderpasses: &'a mut RenderPasses,
-    ) -> GraphicsTaskBuilder<'a> {
-        // create a dummy node in the graph that we will fill up later.
-        // this avoids looking into the graph every time we modify something,
-        // and still allows us to create dependencies in the graph
-        let task = graph.create_task_on_queue(name, 0, TaskDetails::Other);
-        renderpasses[renderpass].tasks.push(task);
-
-        GraphicsTaskBuilder {
-            graph,
-            resources,
-            renderpasses,
-            task,
-            graphics_task: GraphicsTask {
-                renderpass,
+        GraphicsSubpassBuilder {
+            frame,
+            task_id,
+            task: GraphicsTask {
+                //renderpass_id: None,
+                name,
                 shader_images: Vec::new(),
                 color_attachments: Vec::new(),
                 input_attachments: Vec::new(),
@@ -75,33 +62,32 @@ impl<'a> GraphicsTaskBuilder<'a> {
     }
 
     /// Adds the specified image as an image sample dependency on the task.
-    pub fn sample_image(&mut self, image: &ImageRef) {
-        image.set_read_flag().expect("R/W conflict");
+    pub fn sample_image(&mut self, image: &ImageRef<'id>) {
+        self.frame.add_image_dependency(
+            self.task_id,
+            image,
+            vk::IMAGE_USAGE_SAMPLED_BIT,
+            ImageMemoryBarrierHalf {
+                stage_mask: vk::PIPELINE_STAGE_ALL_GRAPHICS_BIT,
+                access_mask: vk::ACCESS_SHADER_READ_BIT,
+                layout: vk::ImageLayout::ShaderReadOnlyOptimal,
+            },
+        );
 
-        self.frame.image_resource_mut(image.id()).set_usage_sampled();
-
-        self.graph.image_barrier(
-            img,
-            self.task,
-            ImageLayout::ShaderReadOnlyOptimal,
-            PipelineStages { vertex_shader: true, .. PipelineStages::none() },
-            AccessFlagBits { shader_read: true, .. AccessFlagBits::none() },
-            0);
-
-        self.graphics_task.shader_images.push(img.id);
+        self.task.shader_images.push(image.id());
     }
 
     //----------------------------------------------------------------------------------------------
     // BIND ATTACHMENTS
+    pub fn set_depth_attachment(&mut self, depth_attachment: &ImageRef<'id>) -> ImageRef<'id> {
 
-    pub fn set_depth_attachment(&mut self, depth_attachment: &AttachmentRef) {
-        self.graphics_task.depth_attachment = Some(vk::AttachmentReference {
-            attachment: depth_attachment.id.index.to_index() as u32,
-            layout: vk::ImageLayout::DepthStencilAttachmentOptimal, // FIXME may be read only
-        });
-
+        /*self.task.depth_attachment = Some(depth_attachment.id());
+        
         if depth_attachment.task != self.task {
-            self.graph.add_dependency(
+        
+            self.frame.add_image_dependency()
+        
+            self.frame.add_dependency(
                 depth_attachment.task,
                 self.task,
                 Dependency {
@@ -119,12 +105,12 @@ impl<'a> GraphicsTaskBuilder<'a> {
                 },
             );
         }
-
+        
         self.resources.add_or_check_image_usage(
             depth_attachment.id.img,
             vk::IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
         );
-
+        
         /*
         if let Some(dependency) = depth_attachment.dependency {
             self.frame.add_dependency_access_flags(
@@ -133,17 +119,40 @@ impl<'a> GraphicsTaskBuilder<'a> {
                     | vk::ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
             );
         }*/
+        */
+    }
+
+    /// Set a color attachment. If input_index is not none, also set it as an input attachment
+    pub fn set_color_attachments(
+        &mut self,
+        attachments: &[&ImageRef<'id>],
+        load_op: vk::AttachmentLoadOp,
+        store_op: vk::AttachmentStoreOp,
+    ) -> ImageRef<'id> {
+        //self.task.color_attachments
+    }
+
+    pub fn set_input_attachments(&mut self, attachments: &[&ImageRef<'id>]) {}
+
+    pub fn set_color_and_input_attachment(
+        &mut self,
+        color_index: u32,
+        input_index: u32,
+        attachment: &ImageRef<'id>,
+    ) -> ImageRef<'id> {
+
     }
 
     /// Specifies input attachments for the pass.
-    pub fn set_input_attachments(&mut self, input_attachments: &[&AttachmentRef]) {
-        self.graphics_task.input_attachments = input_attachments
+    /// LoadOp is implicitly load, because it doesn't really make sense otherwise (?)
+    pub fn set_input_attachment(&mut self, index: u32, input_attachment: &ImageRef<'id>) {
+        /*self.graphics_task.input_attachments = input_attachments
             .iter()
             .map(|a| vk::AttachmentReference {
                 attachment: a.id.index.to_index() as u32,
                 layout: vk::ImageLayout::ColorAttachmentOptimal, // FIXME should not be changed?
             }).collect::<Vec<_>>();
-
+        
         for i in input_attachments {
             // avoid self-dependencies for now (unrelated to subpass self dependencies)
             if i.task != self.task {
@@ -166,11 +175,11 @@ impl<'a> GraphicsTaskBuilder<'a> {
             } else {
                 // same task, should update creation bits directly
             }
-
+        
             // update usage bits of the resource
             self.resources
                 .add_or_check_image_usage(i.id.img, vk::IMAGE_USAGE_INPUT_ATTACHMENT_BIT);
-        }
+        }*/
     }
 
     /// Specifies the color attachments for the pass.
@@ -180,7 +189,8 @@ impl<'a> GraphicsTaskBuilder<'a> {
             .map(|a| vk::AttachmentReference {
                 attachment: a.id.index.to_index() as u32,
                 layout: vk::ImageLayout::ColorAttachmentOptimal,
-            }).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
 
         // update access bits of the dependency
         for c in color_attachments {
@@ -189,13 +199,13 @@ impl<'a> GraphicsTaskBuilder<'a> {
                     .graphics_task
                     .get_attachment_desc(c.vk_ref.attachment)
                     .load_op;
-
+            
                 let access = if load_op == vk::AttachmentLoadOp::Load {
                     vk::ACCESS_COLOR_ATTACHMENT_READ_BIT | vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT
                 } else {
                     vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT
                 };
-
+            
                 self.frame.add_dependency_access_flags(dependency, access);
             }*/
             if c.task != self.task {
@@ -348,7 +358,7 @@ impl<'a> GraphicsTaskBuilder<'a> {
         }
     }
 
-    pub(super) fn finish(mut self) -> TaskId {
+    pub(super) fn finish(mut self) -> PassId {
         self.graph.0.node_weight_mut(self.task).unwrap().details =
             TaskDetails::Graphics(self.graphics_task);
         self.task

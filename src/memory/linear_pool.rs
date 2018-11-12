@@ -1,10 +1,11 @@
 use std::ptr;
 use std::sync::Arc;
 
-use super::{align_offset, AllocatedMemory};
+use super::{align_offset, MemoryBlock};
 use crate::device::Device;
 use crate::handle::VkHandle;
 
+use ash::version::DeviceV1_0;
 use ash::vk;
 
 /// A block of device memory in a pool.
@@ -52,26 +53,31 @@ impl LinearMemoryPool {
                 .expect("allocation failed")
         };
 
-        self.blocks.push(Block { device_memory });
+        self.blocks.push(Block {
+            device_memory: VkHandle::new(device_memory),
+        });
 
         self.front_ptr = 0;
     }
 
     /// Should be mostly safe.
-    pub(super) fn allocate(&mut self, size: u64, align: u64) -> Option<AllocatedMemory> {
-        assert!(align.is_power_of_two(), "alignment must be a power of two");
+    pub(super) fn allocate(&mut self, size: u64, alignment: u64) -> Option<MemoryBlock> {
+        assert!(
+            alignment.is_power_of_two(),
+            "alignment must be a power of two"
+        );
 
         if size > self.block_size {
-            None
+            return None;
         }
 
         if self.blocks.is_empty() {
             self.new_block();
         }
 
-        if let Some(ptr) = align_offset(size, align, self.front_ptr..self.block_size) {
+        if let Some(ptr) = align_offset(size, alignment, self.front_ptr..self.block_size) {
             // suballocate
-            Some(AllocatedMemory {
+            Some(MemoryBlock {
                 device_memory: self.blocks.last().unwrap().device_memory.get(),
                 range: ptr..(ptr + size),
             })
@@ -79,19 +85,19 @@ impl LinearMemoryPool {
             self.new_block();
             let ptr = self.front_ptr;
             self.front_ptr += size;
-            Some(AllocatedMemory {
+            Some(MemoryBlock {
                 device_memory: self.blocks.last().unwrap().device_memory.get(),
                 range: ptr..(ptr + size),
             })
         }
     }
 
-    /// Unsafe because reasons.
+    /*/// Unsafe because reasons.
     pub unsafe fn deallocate_all(&mut self) {
         for b in self.blocks.drain(..) {
             b.device_memory.destroy(|device_memory| {
                 self.device.pointers().free_memory(device_memory, None);
             });
         }
-    }
+    }*/
 }

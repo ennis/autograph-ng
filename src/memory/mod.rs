@@ -6,6 +6,7 @@ use std::ops::Range;
 use std::ptr;
 use std::sync::Arc;
 
+use ash::version::{DeviceV1_0, InstanceV1_0};
 use ash::vk;
 use sid_vec::{Id, IdVec};
 
@@ -44,7 +45,7 @@ impl error::Error for AllocError {
     }
 }
 
-pub struct AllocatedMemory {
+pub struct MemoryBlock {
     /// Associated device memory object.
     pub device_memory: vk::DeviceMemory,
     /// Offset within the device memory.
@@ -64,7 +65,7 @@ fn align_offset(size: u64, align: u64, space: Range<u64>) -> Option<u64> {
     }
 }
 
-pub fn find_compatible_memory_type_index(
+/*pub fn find_compatible_memory_type_index(
     memory_types: &[vk::MemoryType],
     required_flags: vk::MemoryPropertyFlags,
     preferred_flags: vk::MemoryPropertyFlags,
@@ -82,7 +83,7 @@ pub fn find_compatible_memory_type_index(
         ).filter(|&(mt_index, _)| (1 << (mt_index as u32)) & memory_type_bits != 0)
         .next()
         .map(|(mt_index, _)| mt_index as u32)
-}
+}*/
 
 pub fn compatible_memory_types<'a>(
     memory_types: &'a [vk::MemoryType],
@@ -93,14 +94,15 @@ pub fn compatible_memory_types<'a>(
     memory_types
         .iter()
         .enumerate()
-        .filter(|(_, mt)| mt.property_flags.subset(required_flags | preferred_flags))
+        .filter(move |(_, mt)| mt.property_flags.subset(required_flags | preferred_flags))
         .chain(
             memory_types
                 .iter()
                 .enumerate()
-                .filter(|(_, mt)| mt.property_flags.subset(required_flags)),
-        ).filter(|&(mt_index, _)| (1 << (mt_index as u32)) & memory_type_bits != 0)
-        .map(|(mt_index, mt)| (mt_index as u32, mt))
+                .filter(move |(_, mt)| mt.property_flags.subset(required_flags)),
+        )
+        .filter(move |&(mt_index, _)| (1 << (mt_index as u32)) & memory_type_bits != 0)
+        .map(move |(mt_index, mt)| (mt_index as u32, mt))
 }
 
 pub fn is_compatible_memory_type(
@@ -109,10 +111,10 @@ pub fn is_compatible_memory_type(
     memory_type_bits: u32,
     flags: vk::MemoryPropertyFlags,
 ) -> bool {
-    ((memory_type_bits & (1 << (memory_type_index as u32))) != 0) && memory_types
-        [memory_type_index as usize]
-        .property_flags
-        .subset(flags)
+    ((memory_type_bits & (1 << (memory_type_index as u32))) != 0)
+        && memory_types[memory_type_index as usize]
+            .property_flags
+            .subset(flags)
 }
 
 pub struct AllocationCreateInfo {
@@ -124,7 +126,7 @@ pub struct AllocationCreateInfo {
 }
 
 /// Memory allocator for vulkan device heaps.
-pub struct Allocator {
+pub struct MemoryPool {
     device: Arc<Device>,
     memory_types: Vec<vk::MemoryType>,
     memory_heaps: Vec<vk::MemoryHeap>,
@@ -132,36 +134,31 @@ pub struct Allocator {
     default_pools: RefCell<Vec<LinearMemoryPool>>,
 }
 
-impl Allocator {
-    pub fn new(
-        device: &Arc<Device>,
-        physical_device: vk::PhysicalDevice,
-        block_size: u64,
-    ) -> Allocator {
+impl MemoryPool {
+    pub fn new(device: &Arc<Device>, block_size: u64) -> MemoryPool {
         // query all memory types
         let vki = device.instance().pointers();
 
-        let p = vki.get_physical_device_memory_properties(physical_device);
+        let p = vki.get_physical_device_memory_properties(device.physical_device());
         let memory_types = p.memory_types[0..p.memory_type_count as usize].to_vec();
         let memory_heaps = p.memory_heaps[0..p.memory_heap_count as usize].to_vec();
 
-        Allocator {
+        MemoryPool {
             device: device.clone(),
             memory_types,
             memory_heaps,
             large_alloc_size: block_size,
-            default_pools: (0..p.memory_heap_count)
-                .map(|mt_index| LinearMemoryPool::new(&device, mt_index, block_size))
-                .collect(),
+            default_pools: RefCell::new(
+                (0..p.memory_heap_count)
+                    .map(|mt_index| LinearMemoryPool::new(&device, mt_index, block_size))
+                    .collect(),
+            ),
         }
     }
 
-    pub fn allocate_memory(
-        &self,
-        info: &AllocationCreateInfo,
-    ) -> Result<AllocatedMemory, AllocError> {
+    pub fn allocate_memory(&self, info: &AllocationCreateInfo) -> Result<MemoryBlock, AllocError> {
         if info.size >= self.large_alloc_size {
-            return self.allocate_dedicated(info, vkd);
+            return self.allocate_dedicated(info);
         }
 
         for (mt_index, mt) in compatible_memory_types(
@@ -170,8 +167,8 @@ impl Allocator {
             info.preferred_flags,
             info.memory_type_bits,
         ) {
-            if let Some(alloc) =
-                self.default_pools.borrow_mut()[mt_index as usize].allocate(info.size, info.align)
+            if let Some(alloc) = self.default_pools.borrow_mut()[mt_index as usize]
+                .allocate(info.size, info.alignment)
             {
                 return Ok(alloc);
             }
@@ -182,14 +179,14 @@ impl Allocator {
     }
 
     /// Frees the specified block of memory.
-    pub fn free_memory(&mut self, memory: AllocatedMemory) {
+    pub fn free_memory(&mut self, memory: MemoryBlock) {
         // No-op for now
     }
 
     pub fn allocate_dedicated(
         &self,
         info: &AllocationCreateInfo,
-    ) -> Result<AllocatedMemory, AllocError> {
+    ) -> Result<MemoryBlock, AllocError> {
         let mut found_suitable_memory_type = false;
         // find a suitable memory type
         // first, look for mem types with required + preferred, then look again with only required
@@ -219,7 +216,7 @@ impl Allocator {
                     .allocate_memory(&vk_alloc_info, None)
                     .map_err(|e| AllocError::Other(e))?
             };
-            return Ok(AllocatedMemory {
+            return Ok(MemoryBlock {
                 device_memory,
                 range: 0..info.size,
             });

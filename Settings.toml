@@ -10,10 +10,8 @@ instance_extensions=[]
 layers=[]
 # Enable debug context
 debug=true
-default_alloc_block_size=4194304
 
 [gfx]
 max_frames_in_flight=1
+default_alloc_block_size=4194304
 default_upload_buffer_size=4194304
-
-

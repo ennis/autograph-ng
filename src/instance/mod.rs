@@ -93,15 +93,17 @@ impl Instance {
         &self.extension_pointers
     }
 
+    pub fn internal_handle(&self) -> vk::Instance {
+        self.pointers.handle()
+    }
+
     pub fn new(cfg: &Config) -> Arc<Instance> {
         // Load settings
         let vk_instance_extensions = cfg
             .get::<Vec<String>>("gfx.vulkan.instance_extensions")
             .unwrap();
         let vk_layers = cfg.get::<Vec<String>>("gfx.vulkan.layers").unwrap();
-        let vk_default_alloc_block_size = cfg
-            .get::<u64>("gfx.vulkan.default_alloc_block_size")
-            .unwrap();
+        let vk_default_alloc_block_size = cfg.get::<u64>("gfx.default_alloc_block_size").unwrap();
 
         unsafe {
             let vke = VkEntry1::new().unwrap();
@@ -166,7 +168,7 @@ impl Instance {
                 .unwrap();
 
             let vk_khr_surface =
-                extensions::Surface::new(vke, vki).expect("unable to load surface extension");
+                extensions::Surface::new(&vke, &vki).expect("unable to load surface extension");
 
             Arc::new(Instance {
                 entry: vke,
