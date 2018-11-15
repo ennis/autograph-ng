@@ -599,4 +599,10 @@ Q: what does the graph looks like? how to order and synchronize operations corre
 - constraints on async: one-way data flow only
     - resources can only be written (produced) by ONE queue 
     
-Q: window system integration 
+Q: window system integration
+- just pass a target window to the renderer constructor
+    - winit::Window
+    - OR glwindow
+- configuration done through config file
+- the renderer is a unique system (only one for the whole program)
+    - can render to multiple windows
