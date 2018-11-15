@@ -1,29 +1,7 @@
 //! Images
-use std::cell::Cell;
 use std::cmp::max;
 use std::fmt;
 use std::ptr;
-
-use ash::vk;
-
-use crate::device::Device;
-use crate::handle::VkHandle;
-use crate::resource::Resource;
-
-pub mod attachment;
-pub mod generic;
-pub mod immutable;
-pub mod traits;
-mod unbound;
-
-pub use self::generic::GenericImage;
-pub use self::traits::{Image, ImageDescription, ImageProxy};
-
-pub struct ImageExtentsAndType {
-    type_: vk::ImageType,
-    extent: vk::Extent3D,
-    array_layers: u32,
-}
 
 //--------------------------------------------------------------------------------------------------
 // Image dimensions
@@ -137,7 +115,7 @@ impl Dimensions {
         }
     }
 
-    #[inline]
+    /*#[inline]
     pub fn to_image_extents_and_type(&self) -> ImageExtentsAndType {
         match *self {
             Dimensions::Dim1d { width } => ImageExtentsAndType {
@@ -215,7 +193,7 @@ impl Dimensions {
                 array_layers: 6 * array_layers,
             },
         }
-    }
+    }*/
 }
 
 impl fmt::Debug for Dimensions {
@@ -267,4 +245,14 @@ pub enum MipmapsCount {
 
 fn get_texture_mip_map_count(size: u32) -> u32 {
     1 + f32::floor(f32::log2(size as f32)) as u32
+}
+
+bitflags! {
+    pub struct ImageUsageFlags: u32 {
+        const COLOR_ATTACHMENT = 0b00000001;
+        const DEPTH_ATTACHMENT = 0b00000010;
+        const INPUT_ATTACHMENT = 0b00000100;
+        const STORAGE          = 0b00001000;
+        const SAMPLE           = 0b00010000;
+    }
 }

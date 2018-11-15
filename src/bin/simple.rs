@@ -155,105 +155,6 @@ fn test_frame_deferred_shading<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx 
     frame.present(&target);
 }*/
 
-/*//--------------------------------------------------------------------------------------------------
-fn test_frame_0<'ctx>(frame: &mut Frame<'ctx>, persistent: &'ctx mut Image) {
-    let (t01, r01) = frame.create_task_on_queue("T01", TaskType::Graphics, 0, |t| {
-        t.create_attachment(
-            (1024, 1024),
-            vk::Format::R16g16b16a16Sfloat,
-            AttachmentLoadStore::write_only()
-        )
-    });
-
-    let (t02, r02) = frame.create_task_on_queue("T02", TaskType::Graphics, 0, |t| {
-        t.sample_image(&r01);
-        t.create_attachment(
-            AttachmentIndex::Color(0),
-            (1024, 1024),
-            vk::Format::R16g16b16a16Sfloat,
-        )
-    });
-
-    let (t11, r11) = frame.create_task_on_queue("T11", TaskType::Graphics, 1, |t| {
-        t.sample_image(&r02);
-        t.create_attachment(
-            AttachmentIndex::Color(0),
-            (1024, 1024),
-            vk::Format::R16g16b16a16Sfloat,
-        )
-    });
-
-    let (t12, r12) = frame.create_task_on_queue("T12", TaskType::Compute, 1, |t| {
-        t.sample_image(&r11);
-        t.create_attachment(
-            AttachmentIndex::Color(0),
-            (1024, 1024),
-            vk::Format::R16g16b16a16Sfloat,
-        )
-    });
-
-    let (t13, mut r13) = frame.create_task_on_queue("T13", TaskType::Compute, 1, |t| {
-        t.sample_image(&r02);
-        t.sample_image(&r11);
-        t.sample_image(&r12);
-        t.create_attachment(
-            AttachmentIndex::Color(0),
-            (1024, 1024),
-            vk::Format::R16g16b16a16Sfloat,
-        )
-    });
-
-    let (t03, mut r03) = frame.create_task_on_queue("T03", TaskType::Graphics, 0, |t| {
-        t.sample_image(&r13);
-        t.create_attachment(
-            AttachmentIndex::Color(0),
-            (1024, 1024),
-            vk::Format::R16g16b16a16Sfloat,
-        )
-    });
-
-    let (t04, mut r04) = frame.create_task_on_queue("T04", TaskType::Graphics, 0, |t| {
-        t.sample_image(&r03);
-        t.sample_image(&r12);
-        t.create_attachment(
-            AttachmentIndex::Color(0),
-            (1024, 1024),
-            vk::Format::R16g16b16a16Sfloat,
-        )
-    });
-
-    let t05 = frame.create_task_on_queue("T05", TaskType::Graphics, 0, |t| {
-        t.sample_image(&r04);
-    });
-
-    let (t21, mut r21) = frame.create_task_on_queue("T21", TaskType::Present, 2, |t| {
-        t.sample_image(&r12);
-        t.create_attachment(
-            AttachmentIndex::Color(0),
-            (1024, 1024),
-            vk::Format::R16g16b16a16Sfloat,
-        )
-    });
-
-    let (t14, mut r14) = frame.create_task_on_queue("T14", TaskType::Compute, 1, |t| {
-        t.sample_image(&r12);
-        t.sample_image(&r04);
-        t.sample_image(&r21);
-        t.create_attachment(
-            AttachmentIndex::Color(0),
-            (1024, 1024),
-            vk::Format::R16g16b16a16Sfloat,
-        )
-    });
-
-    let mut r_output = frame.import_image(persistent);
-    let t22 = frame.create_task_on_queue("T22", TaskType::Present, 2, |t| {
-        t.sample_image(&r12);
-        t.sample_image(&r14);
-        t.attachment(AttachmentIndex::Color(0), &mut r_output);
-    });
-}*/
-
 //--------------------------------------------------------------------------------------------------
 fn main() {
     env::set_current_dir(env!("CARGO_MANIFEST_DIR"));
@@ -266,37 +167,8 @@ fn main() {
 
     while !should_close {
         should_close = app.poll_events(|event| {
-            // create a frame
-            let frame = device.build_frame();
-
-            let color = frame.build_pass(|pass| {
-                pass.read_image(image, vk::IMAGE_USAGE_SAMPLED_BIT, ImageMemoryBarrierHalf {
-                    access_mask: vk::ACCESS_SHADER_READ_BIT,
-                    stage_mask: vk::PIPELINE_STAGE_ALL_GRAPHICS_BIT,
-                    layout: vk::ImageLayout::ShaderReadOnlyOptimal});
-                pass.write_image(image,
-            });
 
 
-            frame.present(app.swapchain(), &color);
-            frame.submit();
-
-
-                     app.device().frame(|frame| {
-                    // import_swapchain_image -> &FrameImage
-                    let mut color_target = frame.import_swapchain_image(app.swapchain());
-                    let mut depth = frame.create_image();
-
-                    frame.build_graphics_pass()
-                        .with_color_attachment(0, &mut color_target, AttachmentLoad::Clear(...))
-                        .with_depth_attachment(&mut depth_target)
-                        .finish();
-
-                    frame.clear(&mut color_target);
-                    frame.present(&mut target);
-                });
-
-            }
         });
     }
 

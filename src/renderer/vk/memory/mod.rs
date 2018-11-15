@@ -15,12 +15,6 @@ use crate::device::Device;
 mod linear_pool;
 use self::linear_pool::LinearMemoryPool;
 
-#[derive(Copy, Clone, Debug)]
-pub enum HostAccess {
-    GpuOnly,
-    Upload,
-    Readback,
-}
 
 #[derive(Debug, Clone)]
 pub enum AllocError {

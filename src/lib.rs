@@ -25,23 +25,6 @@ extern crate sid_vec;
 extern crate time;
 
 pub mod app;
-pub mod buffer;
-mod buffer_data;
-pub mod device;
-pub mod frame;
-mod handle;
-pub mod image;
-pub mod import;
-pub mod instance;
-pub mod memory;
-pub mod resource;
-mod surface;
-mod swapchain;
-mod sync;
-
-// re-export vulkan as gfx2::vk
-pub use ash::vk;
+pub mod renderer;
 
 pub use self::app::*;
-pub use self::frame::*;
-pub use self::resource::*;

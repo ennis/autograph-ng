@@ -525,3 +525,78 @@ API for graphics:
     ```
     - does not work very well with data-driven scenarios?
    
+- Variant Z: No API
+    - use frame graph only for synchronization
+    
+Global draw call sorting and ordering
+- Order by ID
+- ID takes into account queues, dependencies
+
+
+Redesign #3:
+- three layers of functionality
+    - synchronization (-> frame graph)
+    - memory allocation (-> frame graph)
+    - submission (-> submit)
+- new modules
+    - renderer (creation and deletion of resources)
+        - vk (vulkan backend)
+            - instance
+        - pass (API-agnostic description of passes)
+        - sync (frame graph, frame sync: API-agnostic)
+        - submit (command buffer, state caching)
+- Lightweight object handles
+ 
+
+Redesign #4: highly flexible pipeline
+- Goals: allow complex appearances that locally modify scheduling / need allocation of resources
+- a.k.a. efficient post-process materials
+- a.k.a. scatter rendering commands everywhere / gather at the end
+- add geometry dynamically based on GPU query results
+
+Scenario A (local post-proc):
+    - See mesh with a particular material / object group that has not been culled
+    - Create (or get) temp image for this material / object group
+    - Render stuff into image
+    - At the end (when all objects of this object group have been rendered), compose into current canvas
+         - In some predefined order
+         - Release temporary image
+    - Challenges:
+        - Dynamically schedule operations on another queue depending on query results
+            - acquire temporary image: imgMesh00
+            - draw (no constraint) into imgMesh00
+            - if not scheduled yet, schedule submodule
+                - get imgMesh00 AFTER mesh-group-id
+                - async blur imgMesh00
+                - get imgMesh00 AFTER blur
+                - get color AFTER mesh-group-id
+                - compose imgMesh00 into color                
+        - Schedule operation when all objects of this object group have been rendered: 
+            - depends on resources
+            - which revision of the resource?
+                - need the correct sorting key / constraint ("AFTER mesh-group-id")
+                - IMAGE image-id AFTER mesh-group-id
+                - resource given as input, but revision determined dynamically
+                - should have no need to signal explicitly the end of a mesh-group
+                    - implicit ordering
+            - which barriers?
+            
+Scenario A' (dynamically added post-procs):
+    - See mesh with custom post-procs after culling
+    - Schedule post-proc 
+
+Scenario B:
+- Get final image
+- Do post-processing on it
+
+Scenario C:
+    - See a stroke mesh
+    - Render strokes into acceleration grid
+    - When all stroke meshes are finished
+
+Q: what does the graph looks like? how to order and synchronize operations correctly?
+- Revision of resources determined by order and constraints
+- constraints on async: one-way data flow only
+    - resources can only be written (produced) by ONE queue 
+    
+Q: window system integration 

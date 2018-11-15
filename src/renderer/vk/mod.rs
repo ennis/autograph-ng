@@ -1,4 +1,3 @@
-//! Device creation
 use std::ffi::{CStr, CString};
 use std::mem;
 use std::os::raw::c_char;
@@ -54,7 +53,7 @@ pub struct Queues {
 }
 
 /// Vulkan device.
-pub struct Device {
+pub struct VulkanRenderer {
     instance: Arc<Instance>,
     pointers: VkDevice1,
     extension_pointers: DeviceExtensionPointers,
@@ -96,7 +95,7 @@ impl Device {
             self.queues.graphics.0,
             self.queues.compute.0,
         ]
-        .to_vec();
+            .to_vec();
         queue_families.sort();
         queue_families.dedup();
         SharingMode::Concurrent(queue_families)
