@@ -7,15 +7,20 @@ debug = true
 name = "gfx2"
 version = "0.1.0"
 authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
+build = "build.rs"
 #edition = '2018'
 
+[build-dependencies]
+gl_generator = "*"
+embed-resource = "*"
+
 [dependencies]
-petgraph = { version = "*", features = ["serde-1"] }
+#petgraph = { version = "*", features = ["serde-1"] }
 bitflags = "*"
 toml = "0.4"
 config = "*"
 winit = "*"
-ash = "*"
+glutin = "*"
 pretty_env_logger = "*"
 log = "*"
 slotmap = "*"
@@ -26,10 +31,10 @@ time = "*"
 sid_vec = "*"
 smallvec = "*"
 
-[target.'cfg(windows)'.dependencies]
-winapi = { version = "*", features = ["windef", "winuser"] }
+#[target.'cfg(windows)'.dependencies]
+#winapi = { version = "*", features = ["windef", "winuser"] }
 
-[target.'cfg(target_os = "macos")'.dependencies]
-metal-rs = "*"
-cocoa = "*"
-objc = "*"
+#[target.'cfg(target_os = "macos")'.dependencies]
+#metal-rs = "*"
+#cocoa = "*"
+#objc = "*"

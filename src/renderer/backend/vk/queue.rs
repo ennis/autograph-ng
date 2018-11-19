@@ -2,8 +2,6 @@
 use ash;
 use ash::vk;
 
-use instance::Instance;
-use surface::Surface;
 
 pub struct QueueConfiguration {
     pub num_queues: Vec<u32>,
@@ -18,11 +16,13 @@ pub struct QueueConfiguration {
 /// The algorithm here tries to find specialized queue families for compute, graphics, and transfer,
 /// and create one different queue from each.
 pub fn create_queue_configuration(
-    instance: &Instance,
+    instance: &ash::Instance,
+    vk_khr_surface: &ash::extensions::Surface,
     physical_device: vk::PhysicalDevice,
     queue_family_properties: &[vk::QueueFamilyProperties],
-    target_surface: Option<&Surface>,
-) -> QueueConfiguration {
+    target_surface: Option<vk::SurfaceKHR>,
+) -> QueueConfiguration
+{
     // first determine queue families for transfer, graphics, compute and present to target surface
     let transfer_family =
         queue_family_properties
@@ -64,14 +64,14 @@ pub fn create_queue_configuration(
             .iter()
             .enumerate()
             .filter(|&(queue_family_index, prop)| {
-                instance
-                    .extension_pointers()
-                    .vk_khr_surface
-                    .get_physical_device_surface_support_khr(
-                        physical_device,
-                        queue_family_index as u32,
-                        surface.internal_handle(),
-                    )
+                unsafe {
+                    vk_khr_surface
+                        .get_physical_device_surface_support_khr(
+                            physical_device,
+                            queue_family_index as u32,
+                            surface,
+                        )
+                }
             })
             .next()
             .expect("unable to find a suitable queue for presentation on selected device")

@@ -1,134 +1,44 @@
-use std::ffi::{CStr, CString};
-use std::mem;
-use std::os::raw::c_char;
-use std::ptr;
-use std::sync::{Arc, Mutex, Weak};
-use std::u32;
-
-use ash;
-use ash::extensions;
-use ash::version::{DeviceV1_0, EntryV1_0, InstanceV1_0, V1_0};
-use ash::vk;
 use config::Config;
-use sid_vec::{Id, IdVec};
 use winit::Window;
+use ash;
+use ash::vk;
+use std::ptr;
+use std::sync::Mutex;
 
-use crate::instance::{Instance, VkInstance1};
-use crate::memory::MemoryPool;
-use crate::surface::Surface;
-use crate::sync::{FrameFence, SignalSemaphore, WaitSemaphore};
+use crate::renderer::vk::VulkanRenderer;
+use crate::renderer::vk::memory::MemoryPool;
+use crate::renderer::vk::queue::create_queue_configuration;
+use crate::renderer::vk::physical_device::select_physical_device;
+use crate::renderer::vk::instance::{create_instance, InstanceAndExtensions};
 
-pub type VkDevice1 = ash::Device<V1_0>;
-pub struct QueueTag;
-pub type QueueId = Id<QueueTag>;
 
-mod physical_device;
-mod queue;
-mod traits;
-
-pub use self::traits::{DeviceBoundObject, FrameSynchronizedObject};
-
-pub enum SharingMode {
-    Exclusive,
-    Concurrent(Vec<u32>),
-}
-
-// queues: different queue families, each queue family has different properties
-// resources are shared between different queue families, not queues
-pub struct Queue {
-    family: u32,
-    queue: vk::Queue,
-    capabilities: vk::QueueFlags,
-}
-
-pub struct DeviceExtensionPointers {
-    pub vk_khr_swapchain: extensions::Swapchain,
-}
-
-pub struct Queues {
-    present: (u32, vk::Queue),
-    transfer: (u32, vk::Queue),
-    graphics: (u32, vk::Queue),
-    compute: (u32, vk::Queue),
-}
-
-/// Vulkan device.
-pub struct VulkanRenderer {
-    instance: Arc<Instance>,
-    pointers: VkDevice1,
-    extension_pointers: DeviceExtensionPointers,
-    physical_device: vk::PhysicalDevice,
-    queues: Queues,
-    max_frames_in_flight: u32,
-    //image_available: vk::Semaphore,
-    //render_finished: vk::Semaphore,
-    default_pool_block_size: u64,
-    default_pool: Mutex<Weak<MemoryPool>>,
-    frame_fence: FrameFence,
-}
-
-impl Device {
-    pub fn instance(&self) -> &Instance {
-        &self.instance
-    }
-
-    pub fn pointers(&self) -> &VkDevice1 {
-        &self.pointers
-    }
-
-    pub fn extension_pointers(&self) -> &DeviceExtensionPointers {
-        &self.extension_pointers
-    }
-
-    pub fn physical_device(&self) -> vk::PhysicalDevice {
-        self.physical_device
-    }
-
-    pub fn max_frames_in_flight(&self) -> u32 {
-        self.max_frames_in_flight
-    }
-
-    pub fn concurrent_across_queue_families(&self) -> SharingMode {
-        let mut queue_families = [
-            self.queues.present.0,
-            self.queues.transfer.0,
-            self.queues.graphics.0,
-            self.queues.compute.0,
-        ]
-            .to_vec();
-        queue_families.sort();
-        queue_families.dedup();
-        SharingMode::Concurrent(queue_families)
-    }
-
-    pub fn is_frame_retired(&self, frame_number: FrameNumber) -> bool {
-        self.frame_fence.last_retired_frame() >= frame_number
-    }
-
-    pub fn last_retired_frame(&self) -> FrameNumber {
-        self.frame_fence.last_retired_frame()
-    }
-
-    pub fn current_frame(&self) -> FrameNumber {
-        self.frame_fence.current_frame()
-    }
-
-    pub fn new(
-        instance: &Arc<Instance>,
+impl VulkanRenderer
+{
+    pub fn new_inner(
         cfg: &Config,
-        target_surface: Option<&Surface>,
-    ) -> Arc<Device> {
+        window: &Window
+    ) -> VulkanRenderer
+    {
+        // create instance
+        let InstanceAndExtensions {
+            entry,
+            instance,
+            vk_ext_debug_report,
+            vk_khr_surface,
+        } = create_instance(cfg);
+
         let max_frames_in_flight = cfg.get::<u32>("gfx.max_frames_in_flight").unwrap();
         let default_alloc_block_size = cfg.get::<u64>("gfx.default_alloc_block_size").unwrap();
 
         // select physical device
         let physical_device_selection =
-            physical_device::select_physical_device(instance, target_surface)
+            select_physical_device(instance, target_surface)
                 .expect("unable to find a suitable physical device");
 
         // select the queue families to create
-        let queue_config = queue::create_queue_configuration(
-            instance,
+        let queue_config = create_queue_configuration(
+            &instance,
+            &vk_khr_surface,
             physical_device_selection.physical_device,
             &physical_device_selection.queue_family_properties,
             target_surface,
@@ -158,7 +68,7 @@ impl Device {
             }
         }
 
-        let device_extension_names_raw = [extensions::Swapchain::name().as_ptr()];
+        let device_extension_names_raw = [ash::extensions::Swapchain::name().as_ptr()];
 
         let features = vk::PhysicalDeviceFeatures {
             shader_clip_distance: 1,
@@ -245,45 +155,4 @@ impl Device {
             frame_fence: FrameFence::new(FrameNumber(1), max_frames_in_flight),
         })
     }
-
-    pub fn default_pool(self: &Arc<Self>) -> Arc<MemoryPool> {
-        let mut pool = self.default_pool.lock().unwrap();
-
-        if let Some(p) = pool.upgrade() {
-            return p;
-        }
-
-        let new_pool = Arc::new(MemoryPool::new(&self, self.default_pool_block_size));
-        *pool = Arc::downgrade(&new_pool);
-        new_pool
-    }
-
-    pub fn default_graphics_queue(&self) -> (u32, vk::Queue) {
-        self.queues.graphics
-    }
-
-    pub fn default_compute_queue(&self) -> (u32, vk::Queue) {
-        self.queues.compute
-    }
-
-    pub fn default_transfer_queue(&self) -> (u32, vk::Queue) {
-        self.queues.transfer
-    }
-
-    pub fn default_present_queue(&self) -> (u32, vk::Queue) {
-        self.queues.present
-    }
-
-    pub fn create_semaphore(&self) -> (SignalSemaphore, WaitSemaphore) {
-        unimplemented!()
-    }
 }
-
-/// A frame number. Represents a point in time that corresponds to the completion
-/// of a frame.
-/// E.g. a value of 42 represents the instant of completion of frame 42.
-/// The frames start at 1. The value 0 is reserved.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct FrameNumber(pub(crate) u64);
-
-pub const INVALID_FRAME_NUMBER: FrameNumber = FrameNumber(0);

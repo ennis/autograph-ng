@@ -606,3 +606,28 @@ Q: window system integration
 - configuration done through config file
 - the renderer is a unique system (only one for the whole program)
     - can render to multiple windows
+    
+Q: Shaders & graphics pipeline configuration
+- type-safe, proc derive from struct
+- still need an interface to bind parameters from the generated derive
+    - `ShaderInterface::visit(binder)`: need a standardized procedural interface for the binder.
+    - ShaderInterface and descriptor set layout?
+        - can derive an unique descriptor set for a given layout, but how to specify locations?
+    - BindingGroup: equivalent to a descriptor set, binds a group of resources at a standard location
+        - shader must match (each matching binding must have the correct type)
+        - warn/error (?) when some variables in the shader are not set
+
+
+    
+```
+macro_rules! deref_to {
+    ($from:ty, $to:ty) => {
+        impl Deref for $from {
+            type Target = $to;
+            fn deref(&self) -> &$to {
+                &self.0
+            }
+        }
+    };
+}
+```

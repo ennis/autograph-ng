@@ -8,3 +8,6 @@ pub type BufferHandle = Id<BufferHandleTag>;
 
 pub struct SwapchainHandleTag;
 pub type SwapchainHandle = Id<SwapchainHandleTag>;
+
+pub struct GraphicsPipelineHandleTag;
+pub type GraphicsPipelineHandle = Id<GraphicsPipelineHandleTag>;

@@ -15,7 +15,6 @@ use crate::device::Device;
 mod linear_pool;
 use self::linear_pool::LinearMemoryPool;
 
-
 #[derive(Debug, Clone)]
 pub enum AllocError {
     NoSuitableMemoryType,
@@ -59,26 +58,6 @@ fn align_offset(size: u64, align: u64, space: Range<u64>) -> Option<u64> {
     }
 }
 
-/*pub fn find_compatible_memory_type_index(
-    memory_types: &[vk::MemoryType],
-    required_flags: vk::MemoryPropertyFlags,
-    preferred_flags: vk::MemoryPropertyFlags,
-    memory_type_bits: u32,
-) -> Option<u32> {
-    memory_types
-        .iter()
-        .enumerate()
-        .filter(|(_, mt)| mt.property_flags.subset(required_flags | preferred_flags))
-        .chain(
-            memory_types
-                .iter()
-                .enumerate()
-                .filter(|(_, mt)| mt.property_flags.subset(required_flags)),
-        ).filter(|&(mt_index, _)| (1 << (mt_index as u32)) & memory_type_bits != 0)
-        .next()
-        .map(|(mt_index, _)| mt_index as u32)
-}*/
-
 pub fn compatible_memory_types<'a>(
     memory_types: &'a [vk::MemoryType],
     required_flags: vk::MemoryPropertyFlags,
@@ -121,7 +100,6 @@ pub struct AllocationCreateInfo {
 
 /// Memory allocator for vulkan device heaps.
 pub struct MemoryPool {
-    device: Arc<Device>,
     memory_types: Vec<vk::MemoryType>,
     memory_heaps: Vec<vk::MemoryHeap>,
     large_alloc_size: u64,
@@ -129,22 +107,20 @@ pub struct MemoryPool {
 }
 
 impl MemoryPool {
-    pub fn new(device: &Arc<Device>, block_size: u64) -> MemoryPool {
-        // query all memory types
-        let vki = device.instance().pointers();
-
-        let p = vki.get_physical_device_memory_properties(device.physical_device());
+    pub fn new(vki: &ash::Instance, vkd: &ash::Device, block_size: u64) -> MemoryPool {
+        let p = unsafe {
+            vki.get_physical_device_memory_properties(device.physical_device())
+        };
         let memory_types = p.memory_types[0..p.memory_type_count as usize].to_vec();
         let memory_heaps = p.memory_heaps[0..p.memory_heap_count as usize].to_vec();
 
         MemoryPool {
-            device: device.clone(),
             memory_types,
             memory_heaps,
             large_alloc_size: block_size,
             default_pools: RefCell::new(
                 (0..p.memory_heap_count)
-                    .map(|mt_index| LinearMemoryPool::new(&device, mt_index, block_size))
+                    .map(|mt_index| LinearMemoryPool::new(mt_index, block_size))
                     .collect(),
             ),
         }
