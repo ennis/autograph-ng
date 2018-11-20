@@ -1,5 +1,4 @@
 use crate::renderer::format::Format;
-use crate::renderer::handles::{ImageHandle, BufferHandle};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum PrimitiveType {
@@ -11,7 +10,7 @@ pub enum PrimitiveType {
 }
 
 /// Texture basic data type (NOT storage format)
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ImageDataType {
     Float, // and also depth
     Integer,
@@ -50,6 +49,7 @@ pub const TYPE_MAT4: TypeDesc = TypeDesc::Matrix(PrimitiveType::Float, 4, 4);
 
 // vertex type: interpretation (FLOAT,UNORM,SNORM,INTEGER)
 
+#[derive(Copy,Clone,Debug,Eq,PartialEq)]
 pub enum ShaderResourceType
 {
     Sampler,
@@ -191,7 +191,7 @@ impl_vertex_attrib_type!(
 );
 
 /// Trait implemented by types that can serve as indices.
-pub unsafe trait IndexElementType: BufferData {
+pub unsafe trait IndexElementType {
     /// Returns the corresponding data format (the layout of the data in memory).
     const FORMAT: Format;
 }
@@ -301,7 +301,7 @@ unsafe impl BufferInterface for gfx::BufferSliceAny {
 ///     texcoords: Vec2,
 /// }
 /// ```
-pub trait VertexType: BufferData {
+pub trait VertexType {
     fn get_layout() -> &'static VertexLayout;
 }
 
@@ -324,7 +324,8 @@ pub trait ShaderInterfaceDescriptor: Sync + 'static {
     fn index_buffer(&self) -> Option<&IndexBufferDescriptor>;
 }
 
-pub trait ShaderInterfaceVisitor
+/*
+pub trait ShaderInterfaceVisitor<R: RendererBackend>
 {
     fn visit_image(&self, binding: u32, image: ImageHandle);
     //fn visit_sampled_image(&self, binding: u32, image: ImageHandle, sampler: SamplerDescriptor);
@@ -336,4 +337,4 @@ pub trait ShaderInterface
 {
     fn descriptor() -> &'static ShaderInterfaceDescriptor;
     fn do_visit(&self, visitor: &ShaderInterfaceVisitor) where Self: Sized;
-}
+}*/

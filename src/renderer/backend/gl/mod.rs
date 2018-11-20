@@ -73,8 +73,8 @@ struct GlImplementationDetails
 //--------------------------------------------------------------------------------------------------
 pub struct OpenGlBackendInner
 {
-    images: IdVec<ImageHandle, Image>,
-    buffers: IdVec<BufferHandle, Buffer>,
+    images: IdVec<Id<ImageHandleTag,u32>, Image>,
+    buffers: IdVec<Id<BufferHandleTag,u32>, Buffer>,
     frame_idx: u64,
     timeline: Timeline,
     upload_buf: MultiBuffer,
@@ -158,16 +158,30 @@ impl OpenGlBackend {
     }
 }
 
+pub struct ImageHandleTag;
+pub struct BufferHandleTag;
+pub struct SwapchainHandleTag;
+pub struct DescriptorSetHandleTag;
+pub struct DescriptorSetLayoutHandleTag;
+pub struct GraphicsPipelineHandleTag;
+
 impl RendererBackend for OpenGlBackend {
-    fn create_swapchain(&self) -> Id<SwapchainHandleTag, u32> {
+    type SwapchainHandle = Id<SwapchainHandleTag, u32>;
+    type BufferHandle = Id<BufferHandleTag, u32>;
+    type ImageHandle = Id<ImageHandleTag, u32>;
+    type DescriptorSetHandle = Id<DescriptorSetHandleTag, u32>;
+    type DescriptorSetLayoutHandle = Id<DescriptorSetLayoutHandleTag, u32>;
+    type GraphicsPipelineHandle = Id<GraphicsPipelineHandleTag, u32>;
+
+    fn create_swapchain(&self) -> Self::SwapchainHandle {
         unimplemented!()
     }
 
-    fn default_swapchain(&self) -> Option<Id<SwapchainHandleTag, u32>> {
+    fn default_swapchain(&self) -> Option<Self::SwapchainHandle> {
         Some(Id::from_index(0))
     }
 
-    fn swapchain_dimensions(&self, swapchain: Id<SwapchainHandleTag, u32>) -> (u32, u32) {
+    fn swapchain_dimensions(&self, swapchain: Self::SwapchainHandle) -> (u32, u32) {
         assert_eq!(swapchain, Id::from_index(0), "invalid swapchain handle");
         self.window.get_inner_size().unwrap().into()
     }
@@ -180,7 +194,7 @@ impl RendererBackend for OpenGlBackend {
         samples: u32,
         usage: ImageUsageFlags,
         initial_data: Option<&[u8]>,
-    ) -> ImageHandle {
+    ) -> Self::ImageHandle {
         let img = Image::new(format, dimensions, mipcount, samples);
         if let Some(data) = initial_data {
             unsafe {
@@ -197,7 +211,7 @@ impl RendererBackend for OpenGlBackend {
         self.inner.lock().unwrap().images.push(img)
     }
 
-    fn upload_transient(&self, data: &[u8]) -> BufferHandle {
+    fn upload_transient(&self, data: &[u8]) -> BufferSlice<Self::BufferHandle> {
         // acquire mapped buffer range for current frame if not already done
         // write data at current pointer
         // flush
@@ -207,7 +221,7 @@ impl RendererBackend for OpenGlBackend {
         unimplemented!()
     }
 
-    fn destroy_image(&self, image: ImageHandle) {
+    fn destroy_image(&self, image: Self::ImageHandle) {
         // delete the image right now, since OpenGL will handle the actual resource deletion
         // once the resource is not used anymore.
         let mut inner = self.inner.lock().unwrap();
@@ -217,11 +231,11 @@ impl RendererBackend for OpenGlBackend {
         }
     }
 
-    fn create_buffer(&self, size: u64) -> Id<BufferHandleTag, u32> {
+    fn create_buffer(&self, size: u64) -> Self::BufferHandle {
         unimplemented!()
     }
 
-    fn destroy_buffer(&self, buffer: Id<BufferHandleTag, u32>) {
+    fn destroy_buffer(&self, buffer: Self::BufferHandle) {
         unimplemented!()
     }
 
@@ -233,6 +247,18 @@ impl RendererBackend for OpenGlBackend {
         inner.timeline.signal(idx);
         inner.frame_idx += 1;
 
+        unimplemented!()
+    }
+
+    fn create_graphics_pipeline<'a>(&self, shaders: &GraphicsShaderPipeline<'a>) -> Self::GraphicsPipelineHandle {
+        unimplemented!()
+    }
+
+    fn create_descriptor_set_layout(&self, bindings: &[LayoutBinding]) -> Self::DescriptorSetLayoutHandle {
+        unimplemented!()
+    }
+
+    fn create_descriptor_set(&self, layout: Self::DescriptorSetLayoutHandle, resources: &[Descriptor<Self>]) -> Self::DescriptorSetHandle {
         unimplemented!()
     }
 }

@@ -69,6 +69,7 @@ mod image;
 mod sync;
 mod util;
 mod shader_interface;
+mod sampler;
 
 /*
 define_sort_key! {
@@ -85,6 +86,7 @@ pub use self::command_buffer::CommandBuffer;
 pub use self::format::*;
 pub use self::handles::*;
 pub use self::image::*;
+pub use self::sampler::*;
 
 #[derive(Copy, Clone, Debug)]
 pub enum MemoryType {
@@ -99,6 +101,46 @@ pub enum Queue {
     Transfer,
 }
 
+bitflags! {
+    #[derive(Default)]
+    pub struct ShaderStageFlags: u32 {
+        const SHADER_STAGE_VERTEX = (1 << 0);
+        const SHADER_STAGE_GEOMETRY = (1 << 1);
+        const SHADER_STAGE_FRAGMENT = (1 << 2);
+        const SHADER_STAGE_TESS_CONTROL = (1 << 3);
+        const SHADER_STAGE_TESS_EVAL = (1 << 4);
+        const SHADER_STAGE_COMPUTE = (1 << 5);
+    }
+}
+
+pub struct LayoutBinding
+{
+    pub descriptor_type: DescriptorType,
+    pub stage_flags: ShaderStageFlags,
+    pub count: usize,
+}
+
+pub enum DescriptorType
+{
+    Sampler,  // TODO
+    SampledImage,
+    StorageImage,
+    UniformBuffer,
+    StorageBuffer,
+    InputAttachment
+}
+
+pub enum Descriptor<R: RendererBackend>
+{
+    SampledImage {
+        img: R::ImageHandle,
+        sampler: SamplerDesc,
+    },
+    UniformBuffer {
+        buffer: BufferSlice<R::BufferHandle>
+    },
+}
+
 pub struct GraphicsShaderPipeline<'a>
 {
     pub vertex: &'a [u8],
@@ -108,12 +150,26 @@ pub struct GraphicsShaderPipeline<'a>
     pub tess_control: Option<&'a [u8]>
 }
 
-pub trait RendererBackend: Downcast + Sync {
-    fn create_swapchain(&self) -> SwapchainHandle;
+pub struct BufferSlice<Handle>
+{
+    pub buffer: Handle,
+    pub offset: usize,
+    pub size: usize,
+}
 
-    fn default_swapchain(&self) -> Option<SwapchainHandle>;
+pub trait RendererBackend: Sync {
+    type SwapchainHandle: Copy;
+    type BufferHandle: Copy;
+    type ImageHandle: Copy;
+    type DescriptorSetHandle: Copy;
+    type DescriptorSetLayoutHandle: Copy;
+    type GraphicsPipelineHandle: Copy;
 
-    fn swapchain_dimensions(&self, swapchain: SwapchainHandle) -> (u32, u32);
+    fn create_swapchain(&self) -> Self::SwapchainHandle;
+
+    fn default_swapchain(&self) -> Option<Self::SwapchainHandle>;
+
+    fn swapchain_dimensions(&self, swapchain: Self::SwapchainHandle) -> (u32, u32);
 
     fn create_image(
         &self,
@@ -123,57 +179,59 @@ pub trait RendererBackend: Downcast + Sync {
         samples: u32,
         usage: ImageUsageFlags,
         initial_data: Option<&[u8]>,
-    ) -> ImageHandle;
+    ) -> Self::ImageHandle;
 
-    fn upload_transient(&self, data: &[u8]) -> BufferHandle;
+    fn upload_transient(&self, data: &[u8]) -> BufferSlice<Self::BufferHandle>;
 
-    fn destroy_image(&self, image: ImageHandle);
+    fn destroy_image(&self, image: Self::ImageHandle);
 
-    fn create_buffer(&self, size: u64) -> BufferHandle;
+    fn create_buffer(&self, size: u64) -> Self::BufferHandle;
 
-    fn destroy_buffer(&self, buffer: BufferHandle);
+    fn destroy_buffer(&self, buffer: Self::BufferHandle);
 
     fn submit_frame(&self);
 
-    fn create_graphics_pipeline(&self, shaders: &GraphicsShaderPipeline) -> GraphicsPipelineHandle;
+    fn create_graphics_pipeline(&self, shaders: &GraphicsShaderPipeline) -> Self::GraphicsPipelineHandle;
+
+    fn create_descriptor_set_layout(&self, bindings: &[LayoutBinding]) -> Self::DescriptorSetLayoutHandle;
+
+    fn create_descriptor_set(&self, layout: Self::DescriptorSetLayoutHandle, resources: &[Descriptor<Self>]) -> Self::DescriptorSetHandle where Self: Sized;
 }
 
-impl_downcast!(RendererBackend);
-
-pub struct Renderer {
-    backend: Box<RendererBackend>,
-    cmdbufs: Mutex<Vec<CommandBuffer>>,
+pub struct Renderer<R: RendererBackend> {
+    backend: R,
+    cmdbufs: Mutex<Vec<CommandBuffer<R>>>,
 }
 
-impl Renderer {
-    pub fn new(backend: Box<RendererBackend>) -> Renderer {
+impl<R: RendererBackend> Renderer<R> {
+    pub fn new(backend: R) -> Renderer<R> {
         Renderer { backend, cmdbufs: Mutex::new(Vec::new()) }
     }
 
     /// Creates a swapchain.
-    pub fn create_swapchain(&self) -> SwapchainHandle {
+    pub fn create_swapchain(&self) -> R::SwapchainHandle {
         self.backend.create_swapchain()
     }
 
     /// Returns the default swapchain handle, if any.
-    pub fn default_swapchain(&self) -> Option<SwapchainHandle> {
+    pub fn default_swapchain(&self) -> Option<R::SwapchainHandle> {
         self.backend.default_swapchain()
     }
 
     /// Get swapchain dimensions.
-    pub fn swapchain_dimensions(&self, swapchain: SwapchainHandle) -> (u32, u32) {
+    pub fn swapchain_dimensions(&self, swapchain: R::SwapchainHandle) -> (u32, u32) {
         self.backend.swapchain_dimensions(swapchain)
     }
 
     /// Creates a command buffer.
-    pub fn create_command_buffer(&self) -> CommandBuffer {
+    pub fn create_command_buffer(&self) -> CommandBuffer<R> {
         CommandBuffer::new()
     }
 
     /// Creates a graphics pipeline.
     /// Pipeline = all shaders + input layout + output layout (expected buffers)
     /// Creation process?
-    pub fn create_graphics_pipeline(&self) -> ! {
+    pub fn create_graphics_pipeline(&self) -> R::GraphicsPipelineHandle {
         unimplemented!()
     }
 
@@ -189,7 +247,7 @@ impl Renderer {
         samples: u32,
         usage: ImageUsageFlags,
         initial_data: Option<&[u8]>,
-    ) -> ImageHandle {
+    ) -> R::ImageHandle {
         self.backend
             .create_image(format, &dimensions, mipcount, samples, usage, initial_data)
     }
@@ -197,13 +255,13 @@ impl Renderer {
     /// Uploads data to a transient pool.
     /// The buffer becomes invalid as soon as out of the current frame.
     /// The buffer can be used as uniform input to pipelines.
-    pub fn upload_transient(&self, data: &[u8]) -> BufferHandle {
+    pub fn upload_transient(&self, data: &[u8]) -> BufferSlice<R::BufferHandle> {
         self.backend.upload_transient(data)
     }
 
     /// Destroys an image handle. The actual image is destroyed when
     /// it is not in use anymore by the GPU.
-    pub fn destroy_image(&self, image: ImageHandle) {
+    pub fn destroy_image(&self, image: R::ImageHandle) {
         self.backend.destroy_image(image)
     }
 
@@ -211,19 +269,19 @@ impl Renderer {
     /// This function only creates a handle (name) and description of the buffer.
     /// For the memory to be allocated, it has to be initialized by a command in a command buffer.
     /// This function is thread-safe.
-    pub fn create_buffer(&self, size: u64) -> BufferHandle {
+    pub fn create_buffer(&self, size: u64) -> R::BufferHandle {
         self.backend.create_buffer(size)
     }
 
     /// Destroys a GPU buffer. The actual buffer is destroyed when
     /// it is not in use anymore by the GPU.
     /// TODO: do it in a command buffer?
-    pub fn destroy_buffer(&self, buffer: BufferHandle) {
+    pub fn destroy_buffer(&self, buffer: R::BufferHandle) {
         self.backend.destroy_buffer(buffer)
     }
 
     /// Submits a command buffer.
-    pub fn submit_command_buffer(&self, cmdbuf: CommandBuffer) {
+    pub fn submit_command_buffer(&self, cmdbuf: CommandBuffer<R>) {
         self.cmdbufs.lock().unwrap().push(cmdbuf);
     }
 
@@ -235,6 +293,7 @@ impl Renderer {
     }
 }
 
+/*
 // primitive types
 // buffer interface types: impl BufferInterface
 // sampled image types: SampledImage{1,2,3}D
@@ -251,3 +310,4 @@ struct Interface0 {
     #[uniform_buffer(index = "0")]
     camera_params: gfx::BufferSlice<CameraParams>,
 }
+*/

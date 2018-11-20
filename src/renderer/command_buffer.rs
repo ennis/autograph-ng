@@ -1,60 +1,60 @@
 use std::ops::Range;
 
-use crate::renderer::handles::*;
+use crate::renderer::RendererBackend;
 use crate::renderer::image::*;
 use crate::renderer::sync::*;
 
-struct Command {
+struct Command<R: RendererBackend> {
     sort_key: u64,
-    cmd: CommandInner,
+    cmd: CommandInner<R>,
 }
 
-enum CommandInner {
+enum CommandInner<R: RendererBackend> {
     PipelineBarrier {},
     AllocImage {
-        image: ImageHandle,
+        image: R::ImageHandle,
     },
     AllocBuffer {
-        buffer: BufferHandle,
+        buffer: R::BufferHandle,
     },
     DropImage {
-        image: ImageHandle,
+        image: R::ImageHandle,
     },
     DropBuffer {
-        buffer: BufferHandle,
+        buffer: R::BufferHandle,
     },
     SwapImages {
-        a: ImageHandle,
-        b: ImageHandle,
+        a: R::ImageHandle,
+        b: R::ImageHandle,
     },
     SwapBuffers {
-        a: BufferHandle,
-        b: BufferHandle,
+        a: R::BufferHandle,
+        b: R::BufferHandle,
     },
     ClearColorImage {
-        image: ImageHandle,
+        image: R::ImageHandle,
         color: [f32; 4],
     },
     Present {
-        image: ImageHandle,
-        swapchain: SwapchainHandle,
+        image: R::ImageHandle,
+        swapchain: R::SwapchainHandle,
     },
 }
 
-pub struct CommandBuffer {
-    commands: Vec<Command>,
+pub struct CommandBuffer<R: RendererBackend> {
+    commands: Vec<Command<R>>,
 }
 
 /// API exposed by command buffers.
 /// Can build multiple command buffers concurrently in different threads.
-impl CommandBuffer {
-    pub(super) fn new() -> CommandBuffer {
+impl<R: RendererBackend> CommandBuffer<R> {
+    pub(super) fn new() -> CommandBuffer<R> {
         CommandBuffer {
             commands: Vec::new(),
         }
     }
 
-    fn push_command(&mut self, sort_key: u64, cmd: CommandInner) {
+    fn push_command(&mut self, sort_key: u64, cmd: CommandInner<R>) {
         self.commands.push(Command { cmd, sort_key })
     }
 
@@ -67,7 +67,7 @@ impl CommandBuffer {
         sort_key: u64,
         src: PipelineStageFlags,
         dst: PipelineStageFlags,
-        memory_barriers: &[MemoryBarrier],
+        memory_barriers: &[MemoryBarrier<R>],
     ) {
         unimplemented!()
     }
@@ -77,38 +77,38 @@ impl CommandBuffer {
 
     /// Allocates or gets a temporary image to be used in this frame.
     /// (alloc_img <params>)
-    pub fn alloc_image(&mut self, sort_key: u64, image: ImageHandle) {
+    pub fn alloc_image(&mut self, sort_key: u64, image: R::ImageHandle) {
         unimplemented!()
     }
 
-    pub fn alloc_buffer(&mut self, sort_key: u64, buffer: BufferHandle) {
+    pub fn alloc_buffer(&mut self, sort_key: u64, buffer: R::BufferHandle) {
         unimplemented!()
     }
 
     /// Uploads data to a temporary buffer.
-    pub fn upload(&mut self, name: Option<&str>, data: &[u8]) -> BufferHandle {
+    pub fn upload(&mut self, name: Option<&str>, data: &[u8]) -> R::BufferHandle {
         unimplemented!()
     }
 
     /// Returns a reference to the named resource.
-    pub fn create_image(&mut self) -> ImageHandle {
+    pub fn create_image(&mut self) -> R::ImageHandle {
         unimplemented!()
     }
 
     /// Returns a reference to the named resource.
-    pub fn create_buffer(&mut self) -> BufferHandle {
+    pub fn create_buffer(&mut self) -> R::BufferHandle {
         unimplemented!()
     }
 
     /// Drops a temporary image.
     /// (drop_img <image>)
-    pub fn drop_image(&mut self, sort_key: u64, image: ImageHandle) {
+    pub fn drop_image(&mut self, sort_key: u64, image: R::ImageHandle) {
         unimplemented!()
     }
 
     /// Drops a temporary image.
     /// (drop_buf <image>)
-    pub fn drop_buffer(&mut self, sort_key: u64, buffer: BufferHandle) {
+    pub fn drop_buffer(&mut self, sort_key: u64, buffer: R::BufferHandle) {
         unimplemented!()
     }
 
@@ -117,13 +117,13 @@ impl CommandBuffer {
 
     /// Swaps two resources.
     /// (swap_img <image1> <image2>)
-    pub fn swap_images(&mut self, img_a: ImageHandle, img_b: ImageHandle) {
+    pub fn swap_images(&mut self, sort_key: u64, img_a: R::ImageHandle, img_b: R::ImageHandle) {
         unimplemented!()
     }
 
     /// Swaps two resources.
     /// (swap_buf <buf1> <buf2>)
-    pub fn swap_buffers(&mut self, buf_a: BufferHandle, buf_b: BufferHandle) {
+    pub fn swap_buffers(&mut self, sort_key: u64, buf_a: R::BufferHandle, buf_b: R::BufferHandle) {
         unimplemented!()
     }
 
@@ -134,8 +134,8 @@ impl CommandBuffer {
     pub fn copy_buffer(
         &mut self,
         sort_key: u64,
-        src: BufferHandle,
-        dst: BufferHandle,
+        src: R::BufferHandle,
+        dst: R::BufferHandle,
         src_range: Range<u64>,
         dst_range: Range<u64>,
     ) {
@@ -147,7 +147,7 @@ impl CommandBuffer {
 
     /// Presents the specified image to the swapchain.
     /// Might incur a copy / blit or format conversion if necessary.
-    pub fn present(&mut self, sort_key: u64, image: ImageHandle, swapchain: SwapchainHandle) {
+    pub fn present(&mut self, sort_key: u64, image: R::ImageHandle, swapchain: R::SwapchainHandle) {
         self.push_command(sort_key, CommandInner::Present { image, swapchain })
     }
 }

@@ -1,4 +1,4 @@
-use crate::renderer::handles::*;
+use crate::renderer::RendererBackend;
 
 bitflags! {
     /// Used for manual synchronization.
@@ -67,14 +67,14 @@ bitflags! {
 }
 
 #[derive(Clone, Debug)]
-pub enum MemoryBarrier {
+pub enum MemoryBarrier<R: RendererBackend> {
     Image {
-        handle: ImageHandle,
+        handle: R::ImageHandle,
         src_access_mask: AccessFlags,
         dst_access_mask: AccessFlags,
     },
     Buffer {
-        handle: BufferHandle,
+        handle: R::BufferHandle,
         src_access_mask: AccessFlags,
         dst_access_mask: AccessFlags,
     },

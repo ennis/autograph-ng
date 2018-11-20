@@ -1,35 +1,8 @@
 use gl;
 use gl::types::*;
 
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub enum TextureAddressMode {
-    Clamp = gl::CLAMP_TO_EDGE as isize,
-    Mirror = gl::MIRRORED_REPEAT as isize,
-    Wrap = gl::REPEAT as isize,
-}
 
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub enum TextureMinFilter {
-    Nearest = gl::NEAREST as isize,
-    Linear = gl::LINEAR as isize,
-}
-
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub enum TextureMagFilter {
-    Nearest = gl::NEAREST as isize,
-    Linear = gl::LINEAR as isize,
-}
-
-// 2D sampler
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub struct SamplerDesc {
-    pub addr_u: TextureAddressMode,
-    pub addr_v: TextureAddressMode,
-    pub addr_w: TextureAddressMode,
-    pub min_filter: TextureMinFilter,
-    pub mag_filter: TextureMagFilter,
-}
-
+/*
 pub const LINEAR_WRAP_SAMPLER: SamplerDesc = SamplerDesc {
     addr_u: TextureAddressMode::Wrap,
     addr_v: TextureAddressMode::Wrap,
@@ -65,7 +38,8 @@ impl Default for SamplerDesc {
         }
     }
 }
-
+*/
+/*
 #[derive(Debug)]
 pub struct Sampler {
     pub(super) desc: SamplerDesc,
@@ -86,6 +60,7 @@ impl Sampler {
         Sampler { desc: *desc, obj }
     }
 }
+*/
 
 /*pub fn build(&self) -> Sampler2D
     {

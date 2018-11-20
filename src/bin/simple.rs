@@ -47,7 +47,19 @@ fn main() {
         let default_swapchain = r.default_swapchain().unwrap();
         let (w, h) = r.swapchain_dimensions(default_swapchain);
 
+
+        /*// create descriptor set (manually)
+        let gbuffers_layout = r.create_descriptor_set_layout(&[
+            LayoutBinding { stage_flags: SHADER_STAGE_ALL_GRAPHICS, descriptor_type: DescriptorType::SampledImage, count: 8 },  // 8 descriptors for G-buffers
+            LayoutBinding { stage_flags: SHADER_STAGE_ALL_GRAPHICS, descriptor_type: DescriptorType::UniformBuffer, count: 1 }, // per-frame data
+        ]);
+
+        let per_object_layout = r.create_descriptor_set_layout(&[
+            LayoutBinding { stage_flags: SHADER_STAGE_ALL_GRAPHICS, descriptor_type: DescriptorType::UniformBuffer, count: 1 }, // per-object data
+        ]);
+
         // load pipeline
+        let pipeline = r.create_pipeline(combined_shader_source, &[gbuffers_layout, per_object_layout])*/
 
 
         // register resources for the frame

@@ -15,13 +15,14 @@ pub use winit::{
     MouseScrollDelta, Touch, TouchPhase, VirtualKeyCode, WindowEvent,
 };
 
+use crate::renderer::backend::gl::OpenGlBackend;
 use crate::renderer::backend::gl::create_backend_and_window;
 use crate::renderer::*;
 
 pub struct App {
     pub cfg: config::Config,
     pub events_loop: RefCell<winit::EventsLoop>,
-    pub renderer: Renderer,
+    pub renderer: Renderer<OpenGlBackend>,
 }
 
 impl App {
@@ -42,7 +43,7 @@ impl App {
             .with_dimensions((window_width, window_height).into());
 
         let backend = create_backend_and_window(&cfg, &events_loop, window_builder);
-        let renderer = Renderer::new(Box::new(backend));
+        let renderer = Renderer::new(backend);
 
         App {
             events_loop: RefCell::new(events_loop),
@@ -72,7 +73,7 @@ impl App {
         should_close
     }
 
-    pub fn renderer(&self) -> &Renderer {
+    pub fn renderer(&self) -> &Renderer<OpenGlBackend> {
         &self.renderer
     }
 }
