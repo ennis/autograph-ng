@@ -12,3 +12,8 @@ pub fn align_offset(size: u64, align: u64, space: Range<u64>) -> Option<u64> {
         Some(space.start + off)
     }
 }
+
+pub struct SlotMap
+{
+    
+}

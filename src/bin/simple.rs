@@ -69,6 +69,7 @@ fn main() {
             (w, h).into(),
             MipmapsCount::One,
             1,
+            // if SAMPLE is not specified, then the OpenGL implementation is free to allocate a renderbuffer instead
             ImageUsageFlags::COLOR_ATTACHMENT | ImageUsageFlags::SAMPLE,
             None,
         );

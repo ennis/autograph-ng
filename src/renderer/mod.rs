@@ -64,7 +64,6 @@ use downcast_rs::Downcast;
 pub mod backend;
 mod command_buffer;
 mod format;
-mod handles;
 mod image;
 mod sync;
 mod util;
@@ -84,7 +83,6 @@ sequence_id!{ opaque, layer=group_id, depth=d, pass_immediate=0 }*/
 
 pub use self::command_buffer::CommandBuffer;
 pub use self::format::*;
-pub use self::handles::*;
 pub use self::image::*;
 pub use self::sampler::*;
 
@@ -113,13 +111,16 @@ bitflags! {
     }
 }
 
+#[derive(Copy,Clone,Debug)]
 pub struct LayoutBinding
 {
+    pub binding: u32,
     pub descriptor_type: DescriptorType,
     pub stage_flags: ShaderStageFlags,
     pub count: usize,
 }
 
+#[derive(Copy,Clone,Debug)]
 pub enum DescriptorType
 {
     Sampler,  // TODO
@@ -136,9 +137,13 @@ pub enum Descriptor<R: RendererBackend>
         img: R::ImageHandle,
         sampler: SamplerDesc,
     },
-    UniformBuffer {
+    Image {
+        img: R::ImageHandle,
+    },
+    Buffer {
         buffer: BufferSlice<R::BufferHandle>
     },
+    Empty
 }
 
 pub struct GraphicsShaderPipeline<'a>

@@ -82,15 +82,17 @@ bitflags! {
 
 //--------------------------------------------------------------------------------------------------
 
-/// Wrapper for OpenGL textures
-#[derive(Debug)]
+
+/// Wrapper for OpenGL textures and renderbuffers.
+/// Copy + Clone to bypass a restriction of slotmap on stable rust.
+#[derive(Copy,Clone,Debug)]
 pub struct Image {
     pub obj: GLuint,
     pub target: GLenum,
 }
 
 impl Image {
-    pub fn new(
+    pub fn new_texture(
         format: Format,
         dimensions: &Dimensions,
         mipmaps: MipmapsCount,
@@ -168,6 +170,44 @@ impl Image {
             target: et.target,
         }
     }
+
+    pub fn new_renderbuffer(
+        format: Format,
+        dimensions: &Dimensions,
+        samples: u32) -> Image
+    {
+        let et = ExtentsAndType::from_dimensions(&dimensions);
+        let glfmt = GlFormatInfo::from_format(format);
+
+        let mut obj = 0;
+        gl::CreateRenderbuffers(1, &mut obj);
+
+        if samples > 1 {
+            gl::RenderbufferStorageMultisample(
+                obj,
+                samples as i32,
+                glfmt.internal_fmt,
+                et.width as i32,
+                et.height as i32,
+            );
+        } else {
+            gl::RenderbufferStorage(
+                obj,
+                glfmt.internal_fmt,
+                et.width as i32,
+                et.height as i32,
+            );
+        }
+
+        Image {
+            obj,
+            target: gl::RENDERBUFFER,
+        }
+    }
+
+    pub fn is_renderbuffer(&self) -> bool {
+        self.target == gl::RENDERBUFFER
+    }
 }
 
 /// Texture upload
@@ -179,10 +219,9 @@ pub unsafe fn upload_image_region(
     size: (u32, u32, u32),
     data: &[u8],
 ) {
-    /*assert!(
-        !fmt.is_compressed(),
-        "Compressed image data upload is not yet supported"
-    );*/
+    if img.is_renderbuffer() {
+        panic!("image does not support upload")
+    }
 
     let fmtinfo = fmt.get_format_info();
     assert_eq!(

@@ -16,12 +16,14 @@ extern crate winit;
 #[macro_use]
 extern crate log;
 extern crate serde;
+#[macro_use]
 extern crate slotmap;
+extern crate smallvec;
 //#[macro_use]
 //extern crate serde_derive;
 #[macro_use]
 extern crate downcast_rs;
-extern crate sid_vec;
+//extern crate sid_vec;
 extern crate time;
 
 pub mod app;

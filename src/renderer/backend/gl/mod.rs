@@ -7,6 +7,8 @@ use std::slice;
 use std::str;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::ops::Range;
+use std::cmp::{min, max};
 
 mod api;
 //mod sampler;
@@ -18,7 +20,9 @@ mod window;
 mod sync;
 
 use config::Config;
-use sid_vec::{FromIndex, Id, IdVec};
+//use sid_vec::{FromIndex, Id, IdVec};
+use slotmap::SlotMap;
+use smallvec::SmallVec;
 
 use self::api as gl;
 use self::api::types::*;
@@ -56,6 +60,8 @@ struct GlObject<T> {
     marked_for_deletion: bool,
 }
 
+/// Copy + Clone to bypass a restriction of slotmap on stable rust.
+#[derive(Copy,Clone,Debug)]
 struct Buffer
 {
     obj: GLuint,
@@ -70,11 +76,64 @@ struct GlImplementationDetails
     uniform_buffer_alignment: usize,
 }
 
+new_key_type! {
+    pub struct ImageHandle;
+    pub struct BufferHandle;
+    pub struct DescriptorSetHandle;
+    pub struct DescriptorSetLayoutHandle;
+    pub struct GraphicsPipelineHandle;
+}
+
+pub struct DescriptorSetLayout
+{
+    bindings: Vec<LayoutBinding>,
+}
+
+
+const MAX_RESOURCES_PER_SET: usize = 8;
+
+// The concept of descriptor sets does not exist in OpenGL.
+// We emulate them by mapping a descriptor set to a range of binding locations.
+// e.g. 0 => binding 0..4, 1 => binding 5..10, etc.
+// These ranges of locations are shared across every kind of binding (uniform buffers, images, textures).
+//
+
+pub struct DescriptorSet
+{
+    /*textures: [GLuint; MAX_RESOURCES_PER_SET],
+    samplers: [GLuint; MAX_RESOURCES_PER_SET],
+    images: [GLuint; MAX_RESOURCES_PER_SET],
+    uniform_buffers: [GLuint; MAX_RESOURCES_PER_SET],
+    uniform_buffer_sizes: [GLsizeiptr; MAX_RESOURCES_PER_SET],
+    uniform_buffer_offsets: [GLintptr; MAX_RESOURCES_PER_SET],
+    shader_storage_buffers: [GLuint; MAX_RESOURCES_PER_SET],
+    shader_storage_buffer_sizes: [GLsizeiptr; MAX_RESOURCES_PER_SET],
+    shader_storage_buffer_offsets: [GLintptr; MAX_RESOURCES_PER_SET],*/
+}
+
+impl DescriptorSet {
+    fn new() -> DescriptorSet {
+        DescriptorSet {
+            /*textures: SmallVec::new(),
+            samplers: SmallVec::new(),
+            images: SmallVec::new(),
+            uniform_buffers: SmallVec::new(),
+            uniform_buffer_sizes: SmallVec::new(),
+            uniform_buffer_offsets: SmallVec::new(),
+            shader_storage_buffers: SmallVec::new(),
+            shader_storage_buffer_sizes: SmallVec::new(),
+            shader_storage_buffer_offsets: SmallVec::new()*/
+        }
+    }
+}
+
 //--------------------------------------------------------------------------------------------------
 pub struct OpenGlBackendInner
 {
-    images: IdVec<Id<ImageHandleTag,u32>, Image>,
-    buffers: IdVec<Id<BufferHandleTag,u32>, Buffer>,
+    images: SlotMap<ImageHandle, Image>,
+    buffers: SlotMap<BufferHandle, Buffer>,
+    descriptor_set_layouts: SlotMap<DescriptorSetLayoutHandle, DescriptorSetLayout>,
+    descriptor_sets: SlotMap<DescriptorSetHandle, DescriptorSet>,
     frame_idx: u64,
     timeline: Timeline,
     upload_buf: MultiBuffer,
@@ -143,8 +202,10 @@ impl OpenGlBackend {
             //cache: Cache::new(),
             //sampler_cache: Mutex::new(HashMap::new()),
             inner: Mutex::new(OpenGlBackendInner {
-                images: IdVec::new(),
-                buffers: IdVec::new(),
+                images: SlotMap::with_key(),
+                buffers: SlotMap::with_key(),
+                descriptor_set_layouts: SlotMap::with_key(),
+                descriptor_sets: SlotMap::with_key(),
                 frame_idx: 1,
                 timeline,
                 upload_buf,
@@ -158,31 +219,31 @@ impl OpenGlBackend {
     }
 }
 
-pub struct ImageHandleTag;
+/*pub struct ImageHandleTag;
 pub struct BufferHandleTag;
 pub struct SwapchainHandleTag;
 pub struct DescriptorSetHandleTag;
 pub struct DescriptorSetLayoutHandleTag;
-pub struct GraphicsPipelineHandleTag;
+pub struct GraphicsPipelineHandleTag;*/
 
 impl RendererBackend for OpenGlBackend {
-    type SwapchainHandle = Id<SwapchainHandleTag, u32>;
-    type BufferHandle = Id<BufferHandleTag, u32>;
-    type ImageHandle = Id<ImageHandleTag, u32>;
-    type DescriptorSetHandle = Id<DescriptorSetHandleTag, u32>;
-    type DescriptorSetLayoutHandle = Id<DescriptorSetLayoutHandleTag, u32>;
-    type GraphicsPipelineHandle = Id<GraphicsPipelineHandleTag, u32>;
+    type SwapchainHandle = usize;
+    type BufferHandle = BufferHandle;
+    type ImageHandle = ImageHandle;
+    type DescriptorSetHandle = DescriptorSetHandle;
+    type DescriptorSetLayoutHandle = DescriptorSetLayoutHandle;
+    type GraphicsPipelineHandle = GraphicsPipelineHandle;
 
     fn create_swapchain(&self) -> Self::SwapchainHandle {
         unimplemented!()
     }
 
     fn default_swapchain(&self) -> Option<Self::SwapchainHandle> {
-        Some(Id::from_index(0))
+        Some(0)
     }
 
     fn swapchain_dimensions(&self, swapchain: Self::SwapchainHandle) -> (u32, u32) {
-        assert_eq!(swapchain, Id::from_index(0), "invalid swapchain handle");
+        assert_eq!(swapchain, 0, "invalid swapchain handle");
         self.window.get_inner_size().unwrap().into()
     }
 
@@ -195,8 +256,9 @@ impl RendererBackend for OpenGlBackend {
         usage: ImageUsageFlags,
         initial_data: Option<&[u8]>,
     ) -> Self::ImageHandle {
-        let img = Image::new(format, dimensions, mipcount, samples);
-        if let Some(data) = initial_data {
+        let img = if let Some(data) = initial_data {
+            // initial data specified, allocate a texture
+            let img = Image::new_texture(format, dimensions, mipcount, samples);
             unsafe {
                 upload_image_region(
                     &img,
@@ -207,8 +269,16 @@ impl RendererBackend for OpenGlBackend {
                     data,
                 );
             }
-        }
-        self.inner.lock().unwrap().images.push(img)
+            img
+        } else if usage.contains(ImageUsageFlags::STORAGE | ImageUsageFlags::SAMPLE) {
+            // will be used as storage or sampled image
+            Image::new_texture(format, dimensions, mipcount, samples)
+        } else {
+            // only used as color attachments: can use a renderbuffer instead
+            Image::new_renderbuffer(format, dimensions, samples)
+        };
+
+        self.inner.lock().unwrap().images.insert(img)
     }
 
     fn upload_transient(&self, data: &[u8]) -> BufferSlice<Self::BufferHandle> {
@@ -255,10 +325,39 @@ impl RendererBackend for OpenGlBackend {
     }
 
     fn create_descriptor_set_layout(&self, bindings: &[LayoutBinding]) -> Self::DescriptorSetLayoutHandle {
-        unimplemented!()
+        assert_ne!(bindings.len(), 0, "descriptor set layout has no bindings");
+        let mut inner = self.inner.lock().unwrap();
+
+        inner.descriptor_set_layouts.insert(DescriptorSetLayout {
+            bindings: bindings.to_vec(),
+        })
     }
 
-    fn create_descriptor_set(&self, layout: Self::DescriptorSetLayoutHandle, resources: &[Descriptor<Self>]) -> Self::DescriptorSetHandle {
+    fn create_descriptor_set(&self, layout: Self::DescriptorSetLayoutHandle, descriptors: &[Descriptor<Self>]) -> Self::DescriptorSetHandle {
+        // convert the descriptor set to a set of uniform and textures
+        let mut inner = self.inner.lock().unwrap();
+        let layout = &inner.descriptor_set_layouts[layout];
+        let mut ds = DescriptorSet::new();
+
+        for (i,d) in descriptors.iter().enumerate() {
+            let layout_entry = layout.bindings[i];
+
+            match layout_entry.descriptor_type {
+                DescriptorType::SampledImage => {
+                    if let &Descriptor::SampledImage { img, sampler } = d {
+
+                    } else {
+                        // wrong type
+                        warn!("descriptor #{} does not match corresponding layout entry (expected: SampledImage)", i);
+                    }
+                },
+                DescriptorType::UniformBuffer => {
+
+                },
+                DescriptorType::StorageImage => {},
+            }
+        }
+
         unimplemented!()
     }
 }

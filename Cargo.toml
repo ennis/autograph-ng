@@ -23,7 +23,7 @@ winit = "*"
 glutin = "*"
 pretty_env_logger = "*"
 log = "*"
-slotmap = "*"
+slotmap = { version = "*", features = ["unstable"] }
 serde = "*"
 serde_derive = "*"
 downcast-rs = "*"
