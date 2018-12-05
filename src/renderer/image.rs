@@ -1,13 +1,11 @@
 //! Images
-use std::cmp::max;
 use std::fmt;
-use std::ptr;
 
 //--------------------------------------------------------------------------------------------------
 // Image dimensions
 
 /// **Borrowed from vulkano**
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Dimensions {
     Dim1d {
         width: u32,
@@ -126,36 +124,36 @@ impl fmt::Debug for Dimensions {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Dimensions::Dim1d { width } => {
-                write!(f, "[1D {}x1]", width);
+                write!(f, "[1D {}x1]", width)?;
             }
             Dimensions::Dim1dArray {
                 width,
                 array_layers,
             } => {
-                write!(f, "[1D Array {}x1(x{})]", width, array_layers);
+                write!(f, "[1D Array {}x1(x{})]", width, array_layers)?;
             }
             Dimensions::Dim2d { width, height } => {
-                write!(f, "[2D {}x{}]", width, height);
+                write!(f, "[2D {}x{}]", width, height)?;
             }
             Dimensions::Dim2dArray {
                 width,
                 height,
                 array_layers,
             } => {
-                write!(f, "[2D Array {}x{}(x{})]", width, height, array_layers);
+                write!(f, "[2D Array {}x{}(x{})]", width, height, array_layers)?;
             }
             Dimensions::Dim3d {
                 width,
                 height,
                 depth,
             } => {
-                write!(f, "[3D {}x{}x{}]", width, height, depth);
+                write!(f, "[3D {}x{}x{}]", width, height, depth)?;
             }
             Dimensions::Cubemap { size } => {
-                write!(f, "[Cubemap {}x{}]", size, size);
+                write!(f, "[Cubemap {}x{}]", size, size)?;
             }
             Dimensions::CubemapArray { size, array_layers } => {
-                write!(f, "[Cubemap Array {}x{}(x{})]", size, size, array_layers);
+                write!(f, "[Cubemap Array {}x{}(x{})]", size, size, array_layers)?;
             }
         }
         Ok(())
@@ -168,6 +166,23 @@ pub enum MipmapsCount {
     One,
     Specific(u32),
 }
+
+/*impl MipmapsCount
+{
+    fn to_count(&self, size: u32) -> u32 {
+        let mipcount = match self {
+            MipmapsCount::Log2 => get_texture_mip_map_count(size),
+            MipmapsCount::Specific(count) => {
+                // Multisampled textures can't have more than one mip level
+                if samples > 1 {
+                    assert_eq!(count, 1);
+                }
+                count
+            }
+            MipmapsCount::One => 1,
+        };
+    }
+}*/
 
 ///
 /// Get the maximum number of mip map levels for a 2D texture of size (width,height)
@@ -182,10 +197,10 @@ pub fn get_texture_mip_map_count(size: u32) -> u32 {
 
 bitflags! {
     pub struct ImageUsageFlags: u32 {
-        const COLOR_ATTACHMENT = 0b00000001;
-        const DEPTH_ATTACHMENT = 0b00000010;
-        const INPUT_ATTACHMENT = 0b00000100;
-        const STORAGE          = 0b00001000;
-        const SAMPLE           = 0b00010000;
+        const COLOR_ATTACHMENT = 0b0000_0001;
+        const DEPTH_ATTACHMENT = 0b0000_0010;
+        const INPUT_ATTACHMENT = 0b0000_0100;
+        const STORAGE          = 0b0000_1000;
+        const SAMPLE           = 0b0001_0000;
     }
 }

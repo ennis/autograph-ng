@@ -8,6 +8,47 @@ use crate::renderer::backend::gl::format::*;
 use std::cmp::*;
 
 //--------------------------------------------------------------------------------------------------
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct ImageCreateInfo {
+    pub format: Format,
+    pub dimensions: Dimensions,
+    pub mipcount: u32,
+    pub samples: u32,
+    pub usage: ImageUsageFlags,
+}
+
+impl ImageCreateInfo {
+    pub fn new(
+        format: Format,
+        dimensions: Dimensions,
+        mipmaps_count: MipmapsCount,
+        samples: u32,
+        usage: ImageUsageFlags,
+    ) -> ImageCreateInfo {
+        let (w, h, d) = dimensions.width_height_depth();
+        let mipcount = match mipmaps_count {
+            // TODO mipcount for 3D textures?
+            MipmapsCount::Log2 => get_texture_mip_map_count(max(w, h)),
+            MipmapsCount::Specific(count) => {
+                // Multisampled textures can't have more than one mip level
+                if samples > 1 {
+                    assert_eq!(count, 1);
+                }
+                count
+            }
+            MipmapsCount::One => 1,
+        };
+        ImageCreateInfo {
+            format,
+            dimensions,
+            mipcount,
+            usage,
+            samples,
+        }
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
 struct ExtentsAndType {
     target: GLenum,
     width: u32,
@@ -82,13 +123,13 @@ bitflags! {
 
 //--------------------------------------------------------------------------------------------------
 
-
 /// Wrapper for OpenGL textures and renderbuffers.
 /// Copy + Clone to bypass a restriction of slotmap on stable rust.
-#[derive(Copy,Clone,Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Image {
     pub obj: GLuint,
     pub target: GLenum,
+    //pub format: Format,
 }
 
 impl Image {
@@ -168,61 +209,69 @@ impl Image {
         Image {
             obj,
             target: et.target,
+            //format
         }
     }
 
-    pub fn new_renderbuffer(
-        format: Format,
-        dimensions: &Dimensions,
-        samples: u32) -> Image
-    {
+    pub fn new_renderbuffer(format: Format, dimensions: &Dimensions, samples: u32) -> Image {
         let et = ExtentsAndType::from_dimensions(&dimensions);
         let glfmt = GlFormatInfo::from_format(format);
 
         let mut obj = 0;
-        gl::CreateRenderbuffers(1, &mut obj);
 
-        if samples > 1 {
-            gl::RenderbufferStorageMultisample(
-                obj,
-                samples as i32,
-                glfmt.internal_fmt,
-                et.width as i32,
-                et.height as i32,
-            );
-        } else {
-            gl::RenderbufferStorage(
-                obj,
-                glfmt.internal_fmt,
-                et.width as i32,
-                et.height as i32,
-            );
+        unsafe {
+            gl::CreateRenderbuffers(1, &mut obj);
+
+            if samples > 1 {
+                gl::NamedRenderbufferStorageMultisample(
+                    obj,
+                    samples as i32,
+                    glfmt.internal_fmt,
+                    et.width as i32,
+                    et.height as i32,
+                );
+            } else {
+                gl::NamedRenderbufferStorage(
+                    obj,
+                    glfmt.internal_fmt,
+                    et.width as i32,
+                    et.height as i32,
+                );
+            }
         }
 
         Image {
             obj,
             target: gl::RENDERBUFFER,
+            //format
         }
     }
 
     pub fn is_renderbuffer(&self) -> bool {
         self.target == gl::RENDERBUFFER
     }
+
+    pub fn destroy(&self) {
+        unsafe {
+            if self.target == gl::RENDERBUFFER {
+                gl::DeleteRenderbuffers(1, &self.obj);
+            } else {
+                gl::DeleteTextures(1, &self.obj);
+            }
+        }
+    }
 }
 
 /// Texture upload
 pub unsafe fn upload_image_region(
-    img: &Image,
+    target: GLenum,
+    img: GLuint,
     fmt: Format,
     mip_level: i32,
     offset: (u32, u32, u32),
     size: (u32, u32, u32),
     data: &[u8],
 ) {
-    if img.is_renderbuffer() {
-        panic!("image does not support upload")
-    }
-
     let fmtinfo = fmt.get_format_info();
     assert_eq!(
         data.len(),
@@ -234,15 +283,13 @@ pub unsafe fn upload_image_region(
     let glfmt = GlFormatInfo::from_format(fmt);
 
     let mut prev_unpack_alignment = 0;
-    unsafe {
-        gl::GetIntegerv(gl::UNPACK_ALIGNMENT, &mut prev_unpack_alignment);
-        gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
-    };
+    gl::GetIntegerv(gl::UNPACK_ALIGNMENT, &mut prev_unpack_alignment);
+    gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
 
-    match img.target {
-        gl::TEXTURE_1D => unsafe {
+    match target {
+        gl::TEXTURE_1D => {
             gl::TextureSubImage1D(
-                img.obj,
+                img,
                 mip_level,
                 offset.0 as i32,
                 size.0 as i32,
@@ -250,10 +297,10 @@ pub unsafe fn upload_image_region(
                 glfmt.upload_ty,
                 data.as_ptr() as *const GLvoid,
             );
-        },
-        gl::TEXTURE_2D => unsafe {
+        }
+        gl::TEXTURE_2D => {
             gl::TextureSubImage2D(
-                img.obj,
+                img,
                 mip_level,
                 offset.0 as i32,
                 offset.1 as i32,
@@ -263,10 +310,10 @@ pub unsafe fn upload_image_region(
                 glfmt.upload_ty,
                 data.as_ptr() as *const GLvoid,
             );
-        },
-        gl::TEXTURE_3D => unsafe {
+        }
+        gl::TEXTURE_3D => {
             gl::TextureSubImage3D(
-                img.obj,
+                img,
                 mip_level,
                 offset.0 as i32,
                 offset.1 as i32,
@@ -278,11 +325,9 @@ pub unsafe fn upload_image_region(
                 glfmt.upload_ty,
                 data.as_ptr() as *const GLvoid,
             );
-        },
+        }
         _ => unimplemented!(),
     };
 
-    unsafe {
-        gl::PixelStorei(gl::UNPACK_ALIGNMENT, prev_unpack_alignment);
-    }
+    gl::PixelStorei(gl::UNPACK_ALIGNMENT, prev_unpack_alignment);
 }

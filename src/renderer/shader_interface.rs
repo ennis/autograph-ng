@@ -1,4 +1,5 @@
 use crate::renderer::format::Format;
+use crate::renderer::*;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum PrimitiveType {
@@ -19,17 +20,17 @@ pub enum ImageDataType {
 
 /// GLSL/SPIR-V types used to interface with shader programs.
 /// i.e. the types used to describe a buffer interface.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum TypeDesc {
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum TypeDesc<'tcx> {
     Primitive(PrimitiveType),
     /// Array type, may have special alignment constraints
-    Array(Box<TypeDesc>, usize),
+    Array(&'tcx TypeDesc<'tcx>, usize),
     /// Vector type (ty,size), not all sizes are valid.
     Vector(PrimitiveType, u8),
     /// Matrix type (ty,rows,cols), not all combinations of rows and cols are valid.
     Matrix(PrimitiveType, u8, u8),
     /// A structure type: (offset, typedesc)
-    Struct(Vec<(usize, TypeDesc)>),
+    Struct(&'tcx [(usize, TypeDesc<'tcx>)]),
     /// An image type.
     Image(ImageDataType, Option<Format>),
     Unknown,
@@ -47,57 +48,70 @@ pub const TYPE_MAT2: TypeDesc = TypeDesc::Matrix(PrimitiveType::Float, 2, 2);
 pub const TYPE_MAT3: TypeDesc = TypeDesc::Matrix(PrimitiveType::Float, 3, 3);
 pub const TYPE_MAT4: TypeDesc = TypeDesc::Matrix(PrimitiveType::Float, 4, 4);
 
-// vertex type: interpretation (FLOAT,UNORM,SNORM,INTEGER)
-
-#[derive(Copy,Clone,Debug,Eq,PartialEq)]
-pub enum ShaderResourceType
-{
-    Sampler,
-    SampledImage,
-    StorageImage,
-    UniformBuffer,
-    StorageBuffer,
-    InputAttachment
+#[derive(Copy, Clone, Debug)]
+pub struct DescriptorInfo<'tcx> {
+    pub type_: DescriptorType,
+    pub binding: u32,
+    pub type_desc: &'tcx TypeDesc<'tcx>,
+    pub stages: ShaderStageFlags,
 }
 
-#[derive(Clone, Debug)]
-pub struct ShaderResourceDescriptor {
-    pub type_: ShaderResourceType,
-    pub name: Option<String>,
-    pub binding: u32,
-    pub type_desc: &'static TypeDesc,
-    // pub stages: ShaderStages
+#[derive(Copy, Clone, Debug)]
+pub struct DescriptorSetDescription<'tcx> {
+    pub descriptors: &'tcx [DescriptorInfo<'tcx>],
 }
 
-/// Describes a render target binding (a framebuffer attachement, in GL parlance)
-#[derive(Clone, Debug)]
-pub struct RenderTargetDescriptor {
-    pub name: Option<String>,
-    pub binding: u32,
-    pub format: Option<Format>,
+pub trait DescriptorSetInterface {
+    const INTERFACE: DescriptorSetDescription<'static>;
 }
 
 /// Description of a vertex attribute.
-#[derive(Clone, Debug)]
-pub struct VertexAttributeDesc {
-    /// Attribute name.
-    pub name: Option<String>,
-    /// Location.
-    pub loc: u8,
-    /// The equivalent OpenGL type.
-    pub ty: TypeDesc,
-    /// Storage format of the vertex attribute.
+#[derive(Copy, Clone, Debug)]
+pub struct TypedVertexInputAttributeDescription<'tcx> {
+    pub location: u32,
+    pub ty: &'tcx TypeDesc<'tcx>,
     pub format: Format,
-    /// Relative offset.
-    pub offset: u8,
+    pub offset: u32,
 }
 
-/// The layout of vertex data in a vertex buffer.
-#[derive(Clone, Debug)]
-pub struct VertexLayout {
-    pub attributes: &'static [VertexAttributeDesc],
+#[derive(Copy, Clone, Debug)]
+pub struct VertexInputBufferDescription<'tcx> {
+    pub elements: &'tcx [TypedVertexInputAttributeDescription<'tcx>],
     pub stride: usize,
 }
+
+#[derive(Copy, Clone, Debug)]
+pub struct FragmentOutputDescription {
+    // nothing yet, we just care about the count
+}
+
+///
+/// Trait implemented by types that represent vertex data in a vertex buffer.
+/// This is used to automatically infer the vertex layout.
+///
+/// ```rust
+/// #[derive(VertexLayout)]
+/// #[repr(C)]
+/// struct MyVertexType {
+///     position: Vec3,
+///     normals: Vec3,
+///     tangents: Vec3,
+///     texcoords: Vec2,
+/// }
+/// ```
+pub trait VertexBuffer {
+    const DESCRIPTION: &'static VertexInputBufferDescription<'static>;
+}
+
+/// Trait implemented by types that are layout-compatible with an specific
+/// to GLSL/SPIR-V type.
+/// An implementation is provided for most primitive types and arrays of primitive types.
+/// Structs can derive it automatically with `#[derive(BufferLayout)]`
+pub trait BufferLayout {
+    const TYPE: TypeDesc<'static>;
+}
+
+/*
 
 /// An input buffer for vertex data
 #[derive(Clone, Debug)]
@@ -105,7 +119,7 @@ pub struct VertexBufferDescriptor {
     pub name: Option<String>,
     pub index: u32,
     pub layout: &'static VertexLayout,
-}
+}*/
 
 /// An input buffer for indices
 #[derive(Clone, Debug)]
@@ -159,7 +173,7 @@ impl SampledTextureInterface for SampledTexture2D {
 /// Trait implemented by types that can serve as a vertex attribute.
 pub unsafe trait VertexAttributeType {
     /// The equivalent type descriptor (the type seen by the shader).
-    const EQUIVALENT_TYPE: TypeDesc;
+    const EQUIVALENT_TYPE: TypeDesc<'static>;
     /// Returns the corresponding data format (the layout of the data in memory).
     const FORMAT: Format;
 }
@@ -167,7 +181,7 @@ pub unsafe trait VertexAttributeType {
 macro_rules! impl_vertex_attrib_type {
     ($t:ty, $equiv:expr, $fmt:ident) => {
         unsafe impl VertexAttributeType for $t {
-            const EQUIVALENT_TYPE: TypeDesc = $equiv;
+            const EQUIVALENT_TYPE: TypeDesc<'static> = $equiv;
             const FORMAT: Format = Format::$fmt;
         }
     };
@@ -207,14 +221,7 @@ macro_rules! impl_index_element_type {
 impl_index_element_type!(u16, R16_UINT);
 impl_index_element_type!(u32, R32_UINT);
 
-/// Trait implemented by types that are layout-compatible with an specific
-/// to GLSL/SPIR-V type.
-/// An implementation is provided for most primitive types and arrays of primitive types.
-/// Structs can derive it automatically with `#[derive(BufferLayout)]`
-pub unsafe trait BufferLayout {
-    fn type_desc() -> &'static TypeDesc;
-}
-
+/*
 /// Trait implemented by types that can be bound to the pipeline with a
 /// variant of glProgramUniform
 /// An implementation is provided for most primitive types .
@@ -250,12 +257,15 @@ impl_uniform_type!([i32; 4], TypeDesc::Vector(PrimitiveType::Int, 4));
 impl_uniform_type!([[f32; 2]; 2], TypeDesc::Matrix(PrimitiveType::Float, 2, 2));
 impl_uniform_type!([[f32; 3]; 3], TypeDesc::Matrix(PrimitiveType::Float, 3, 3));
 impl_uniform_type!([[f32; 4]; 4], TypeDesc::Matrix(PrimitiveType::Float, 4, 4));
+*/
 
+/*
 /// Trait implemented by types that can be bound to the pipeline as a buffer object
 pub unsafe trait BufferInterface {
     /// Get the layout of the buffer data, if it is known.
     fn layout() -> Option<&'static TypeDesc>;
 }
+*/
 
 /*unsafe impl<T: BufferData+BufferLayout> BufferInterface for gfx::Buffer<T>
 {
@@ -286,26 +296,36 @@ unsafe impl BufferInterface for gfx::BufferSliceAny {
     }
 }*/
 
-
-///
-/// Trait implemented by types that represent vertex data in a vertex buffer.
-/// This is used to automatically infer the vertex layout.
-///
-/// ```rust
-/// #[derive(VertexType)]
-/// #[repr(C)]
-/// struct MyVertexType {
-///     position: Vec3,
-///     normals: Vec3,
-///     tangents: Vec3,
-///     texcoords: Vec2,
-/// }
-/// ```
-pub trait VertexType {
-    fn get_layout() -> &'static VertexLayout;
+pub trait PipelineInterfaceVisitor<R: RendererBackend> {
+    fn visit_descriptor_set(&self, descriptor_set: R::DescriptorSetHandle);
+    //fn visit_sampled_image(&self, binding: u32, image: ImageHandle, sampler: SamplerDescriptor);
+    fn visit_vertex_input(&self, buffer: R::BufferHandle);
+    fn visit_fragment_output(&self, image: R::ImageHandle);
+    //fn visit_data(&self, binding: u32, data: &[u8]);
 }
 
+/// 'static bound for getting the typeid
+pub trait PipelineInterface<R: RendererBackend>: 'static {
+    const VERTEX_INPUT_INTERFACE: &'static [VertexInputBufferDescription<'static>];
+    const FRAGMENT_OUTPUT_INTERFACE: &'static [FragmentOutputDescription];
+    const DESCRIPTOR_SET_INTERFACE: &'static [DescriptorSetDescription<'static>];
+    // TODO push constant interface
 
+    fn do_visit(&self, visitor: &mut PipelineInterfaceVisitor<R>);
+
+    // Use this interface when rust supports impl Trait in Traits
+
+    // fn vertex_inputs<'a>(&'a self) -> impl Iterator<Item=R::BufferHandle> + 'a;
+    // fn fragment_outputs<'a>(&'a self) -> impl Iterator<Item=R::ImageHandle> + 'a;
+    // fn descriptor_sets<'a>(&'a self) -> impl Iterator<Item=R::DescriptorSetHandle> + 'a;
+    // fn index_buffer(&self) -> Option<R::BufferHandle>;
+
+    // misc. render states
+    // fn viewports<'a>(&'a self) -> Option<impl Iterator<Item=&'a Viewport> + 'a>;
+    // fn scissor_rects<'a>(&'a self) -> Option<impl Iterator<Item=&'a ScissorRect> + 'a>;
+}
+
+/*
 /// Descriptions of shader interfaces.
 ///
 /// This trait is a facade to recover information about the bindings defined in a shader interface.
@@ -322,7 +342,7 @@ pub trait ShaderInterfaceDescriptor: Sync + 'static {
     fn vertex_buffers(&self) -> &[VertexBufferDescriptor];
     /// Returns the index buffer item, if any (`#[index_buffer]`)
     fn index_buffer(&self) -> Option<&IndexBufferDescriptor>;
-}
+}*/
 
 /*
 pub trait ShaderInterfaceVisitor<R: RendererBackend>

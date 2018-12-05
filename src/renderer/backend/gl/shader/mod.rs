@@ -1,43 +1,56 @@
-use failure::Error;
-use gfx;
-use gfx::pipeline::GraphicsPipelineBuilder;
-use gfx::pipeline::VertexAttribute;
-use gfx::shader;
-use gfx::shader_interface;
-use gl;
-use gl::types::*;
-use std::fs::File;
-use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::error::Error;
+use std::ffi::CString;
+use std::fmt;
+use std::mem;
+use std::os::raw::c_void;
+use std::ptr;
 
-// public for testing
-pub mod interface;
-mod preprocessor;
-mod spirv_parse;
-pub use self::preprocessor::{preprocess_combined_shader_source, PreprocessedShaders};
+//pub mod interface;
+pub mod preprocessor;
 
-bitflags! {
-    #[derive(Default)]
-    pub struct PipelineStages: u32 {
-        ///
-        const PS_VERTEX = (1 << 0);
-        const PS_GEOMETRY = (1 << 1);
-        const PS_FRAGMENT = (1 << 2);
-        const PS_TESS_CONTROL = (1 << 3);
-        const PS_TESS_EVAL = (1 << 4);
-        const PS_COMPUTE = (1 << 5);
+pub use self::preprocessor::*;
+use crate::renderer::backend::gl::api as gl;
+use crate::renderer::backend::gl::api::types::*;
+use crate::renderer::*;
+
+//--------------------------------------------------------------------------------------------------
+pub struct ShaderModule {
+    pub obj: GLuint,
+    pub stage: ShaderStageFlags,
+    /// SPIR-V bytecode of this shader. If this is not None, then obj is ignored
+    /// (the shader is created during program creation).
+    pub spirv: Option<Vec<u32>>,
+}
+
+//--------------------------------------------------------------------------------------------------
+#[derive(Debug)]
+pub struct ShaderCreationError(pub String);
+
+impl fmt::Display for ShaderCreationError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        fmt::Display::fmt(&self.0, f)
     }
 }
 
-pub struct Shader {
-    obj: GLuint,
-    stage: GLenum,
+impl Error for ShaderCreationError {}
+
+//--------------------------------------------------------------------------------------------------
+pub fn shader_stage_flags_to_glenum(stage: ShaderStageFlags) -> GLenum {
+    match stage {
+        ShaderStageFlags::VERTEX => gl::VERTEX_SHADER,
+        ShaderStageFlags::FRAGMENT => gl::FRAGMENT_SHADER,
+        ShaderStageFlags::GEOMETRY => gl::GEOMETRY_SHADER,
+        ShaderStageFlags::TESS_CONTROL => gl::TESS_CONTROL_SHADER,
+        ShaderStageFlags::TESS_EVAL => gl::TESS_EVALUATION_SHADER,
+        ShaderStageFlags::COMPUTE => gl::COMPUTE_SHADER,
+        _ => panic!("invalid shader stage"),
+    }
 }
 
 fn get_shader_info_log(obj: GLuint) -> String {
     unsafe {
-        let mut log_size: GLint = 0;
-        let mut log_buf: Vec<u8> = Vec::with_capacity(log_size as usize);
+        let mut log_size = 0;
+        let mut log_buf = Vec::with_capacity(log_size as usize);
         gl::GetShaderInfoLog(
             obj,
             log_size,
@@ -49,107 +62,74 @@ fn get_shader_info_log(obj: GLuint) -> String {
     }
 }
 
-impl Shader {
-    pub fn compile(source: &str, stage: GLenum) -> Result<Shader, String> {
-        unsafe {
-            let obj = gl::CreateShader(stage);
-            let srcs = [source.as_ptr() as *const i8];
-            let lens = [source.len() as GLint];
-            gl::ShaderSource(
-                obj,
-                1,
-                &srcs[0] as *const *const i8,
-                &lens[0] as *const GLint,
-            );
-            gl::CompileShader(obj);
-            let mut status: GLint = 0;
-            gl::GetShaderiv(obj, gl::COMPILE_STATUS, &mut status);
-            if status != gl::TRUE as GLint {
-                error!("Error compiling shader");
-                let log = get_shader_info_log(obj);
-                gl::DeleteShader(obj);
-                Err(log)
-            } else {
-                Ok(Shader { stage, obj })
-            }
-        }
-    }
-
-    pub fn from_spirv(stage: GLenum, bytecode: &[u32]) -> Result<Shader, Error> {
-        unsafe {
-            let mut obj = gl::CreateShader(stage);
-            gl::ShaderBinary(
-                1,
-                &mut obj,
-                gl::SHADER_BINARY_FORMAT_SPIR_V,
-                bytecode.as_ptr() as *const ::std::os::raw::c_void,
-                ::std::mem::size_of_val(bytecode) as i32,
-            );
-            let entry_point = ::std::ffi::CString::new("main").unwrap();
-            // TODO specialization constants
-            gl::SpecializeShader(
-                obj,
-                entry_point.as_ptr(),
-                0,
-                0 as *const GLuint,
-                0 as *const GLuint,
-            );
-            let mut status: GLint = 0;
-            gl::GetShaderiv(obj, gl::COMPILE_STATUS, &mut status);
-            if status != gl::TRUE as GLint {
-                error!("Error loading SPIR-V shader");
-                let log = get_shader_info_log(obj);
-                gl::DeleteShader(obj);
-                //Ok(Shader { stage, obj:0 })
-                Err(format_err!("{}", log))
-            } else {
-                Ok(Shader { stage, obj })
-            }
-        }
-    }
-}
-
-impl Drop for Shader {
-    fn drop(&mut self) {
-        unsafe {
-            gl::DeleteShader(self.obj);
-        }
-    }
-}
-
-fn link_program(obj: GLuint) -> Result<GLuint, String> {
+pub fn create_shader_from_glsl(
+    stage: ShaderStageFlags,
+    source: &[u8],
+) -> Result<GLuint, ShaderCreationError> {
+    let stage = shader_stage_flags_to_glenum(stage);
     unsafe {
-        gl::LinkProgram(obj);
-        let mut status: GLint = 0;
-        let mut log_size: GLint = 0;
-        gl::GetProgramiv(obj, gl::LINK_STATUS, &mut status);
-        gl::GetProgramiv(obj, gl::INFO_LOG_LENGTH, &mut log_size);
-        //trace!("LINK_STATUS: log_size: {}, status: {}", log_size, status);
+        let obj = gl::CreateShader(stage);
+        let sources = [source.as_ptr() as *const i8];
+        let lengths = [source.len() as GLint];
+        gl::ShaderSource(
+            obj,
+            1,
+            &sources[0] as *const *const i8,
+            &lengths[0] as *const GLint,
+        );
+        gl::CompileShader(obj);
+        let mut status = 0;
+        gl::GetShaderiv(obj, gl::COMPILE_STATUS, &mut status);
         if status != gl::TRUE as GLint {
-            let mut log_buf: Vec<u8> = Vec::with_capacity(log_size as usize);
-            gl::GetProgramInfoLog(
-                obj,
-                log_size,
-                &mut log_size,
-                log_buf.as_mut_ptr() as *mut i8,
-            );
-            log_buf.set_len(log_size as usize);
-            Err(String::from_utf8(log_buf).unwrap())
+            let log = get_shader_info_log(obj);
+            gl::DeleteShader(obj);
+            Err(ShaderCreationError(log))
         } else {
             Ok(obj)
         }
     }
 }
 
-impl shader::Shader for Shader {}
-impl shader::VertexShader for Shader {}
-impl shader::FragmentShader for Shader {}
-impl shader::GeometryShader for Shader {}
-impl shader::TessControlShader for Shader {}
-impl shader::TessEvalShader for Shader {}
-impl shader::ComputeShader for Shader {}
+pub fn create_specialized_spirv_shader(
+    stage: ShaderStageFlags,
+    entry_point: &str,
+    bytecode: &[u32],
+) -> Result<GLuint, ShaderCreationError> {
+    let stage = shader_stage_flags_to_glenum(stage);
+    let entry_point = CString::new(entry_point).unwrap();
 
-pub struct GlslGraphicsShaderPipeline {
+    unsafe {
+        let shader = gl::CreateShader(stage);
+        gl::ShaderBinary(
+            1,
+            &shader,
+            gl::SHADER_BINARY_FORMAT_SPIR_V,
+            bytecode.as_ptr() as *const c_void,
+            mem::size_of_val(bytecode) as i32,
+        );
+
+        gl::SpecializeShader(shader, entry_point.as_ptr(), 0, ptr::null(), ptr::null());
+        let mut status = 0;
+        gl::GetShaderiv(shader, gl::COMPILE_STATUS, &mut status);
+        if status != gl::TRUE as GLint {
+            gl::DeleteShader(shader);
+            let log = get_shader_info_log(shader);
+            Err(ShaderCreationError(log))
+        } else {
+            Ok(shader)
+        }
+    }
+}
+
+/*impl Drop for Shader {
+    fn drop(&mut self) {
+        unsafe {
+            gl::DeleteShader(self.obj);
+        }
+    }
+}*/
+
+/*pub struct GlslGraphicsShaderPipeline {
     pub vertex: Shader,
     pub fragment: Shader,
     pub geometry: Option<Shader>,
@@ -223,7 +203,8 @@ impl ::std::fmt::Debug for GlslCombinedSource {
 
 #[derive(Fail, Debug)]
 #[fail(
-    display = "Compilation of GLSL shader failed (path: {:?}, stage: {:?}).", source_path, stage
+    display = "Compilation of GLSL shader failed (path: {:?}, stage: {:?}).",
+    source_path, stage
 )]
 struct GlslCompilationError {
     source_path: PathBuf,
@@ -514,187 +495,185 @@ struct GlslViaSpirvCompilationError {
     log: String,
 }
 */
-
 use shaderc;
 
 pub struct SpirvModules {
-    //pub pp: preprocessor::PreprocessedShaders,
-    pub vs: Vec<u32>,
-    pub fs: Vec<u32>,
-    pub gs: Option<Vec<u32>>,
-    pub tcs: Option<Vec<u32>>,
-    pub tes: Option<Vec<u32>>,
+//pub pp: preprocessor::PreprocessedShaders,
+pub vs: Vec<u32>,
+pub fs: Vec<u32>,
+pub gs: Option<Vec<u32>>,
+pub tcs: Option<Vec<u32>>,
+pub tes: Option<Vec<u32>>,
 }
 
 pub fn load_combined_shader_source<P: AsRef<Path>>(
-    path: P,
+path: P,
 ) -> Result<preprocessor::PreprocessedShaders, Error> {
-    // load combined shader source
-    let mut src = String::new();
-    File::open(path.as_ref())?.read_to_string(&mut src)?;
+// load combined shader source
+let mut src = String::new();
+File::open(path.as_ref())?.read_to_string(&mut src)?;
 
-    // preprocess combined source code
-    let (_stages, pp) =
-        preprocessor::preprocess_combined_shader_source(&src, path.as_ref(), &[], &[]);
+// preprocess combined source code
+let (_stages, pp) =
+preprocessor::preprocess_combined_shader_source(&src, path.as_ref(), &[], &[]);
 
-    Ok(pp)
+Ok(pp)
 }
 
 pub struct SourceWithFileName<'a> {
-    pub source: &'a str,
-    pub file_name: &'a str,
+pub source: &'a str,
+pub file_name: &'a str,
 }
 
 /// Compile a bunch of GLSL files to SPIR-V. File names are for better error reporting.
 pub fn compile_glsl_to_spirv<'a>(
-    vert: SourceWithFileName<'a>,
-    frag: SourceWithFileName<'a>,
-    geom: Option<SourceWithFileName<'a>>,
-    tess_control: Option<SourceWithFileName<'a>>,
-    tess_eval: Option<SourceWithFileName<'a>>,
+vert: SourceWithFileName<'a>,
+frag: SourceWithFileName<'a>,
+geom: Option<SourceWithFileName<'a>>,
+tess_control: Option<SourceWithFileName<'a>>,
+tess_eval: Option<SourceWithFileName<'a>>,
 ) -> Result<SpirvModules, Error> {
-    // load combined shader source
-    /*let mut src = String::new();
-    File::open(combined_src_path.as_ref())?.read_to_string(&mut src)?;
-    let src_path_str = combined_src_path.as_ref().to_str().unwrap();
+// load combined shader source
+/*let mut src = String::new();
+File::open(combined_src_path.as_ref())?.read_to_string(&mut src)?;
+let src_path_str = combined_src_path.as_ref().to_str().unwrap();
 
-    // preprocess combined source code
-    let (_stages, pp) =
-        preprocessor::preprocess_combined_shader_source(&src, combined_src_path.as_ref(), &[], &[]);*/
+// preprocess combined source code
+let (_stages, pp) =
+    preprocessor::preprocess_combined_shader_source(&src, combined_src_path.as_ref(), &[], &[]);*/
+// try to compile shaders
 
-    // try to compile shaders
+use shaderc;
+let mut compiler = shaderc::Compiler::new().unwrap();
+let mut options = shaderc::CompileOptions::new().unwrap();
+options.set_target_env(shaderc::TargetEnv::OpenGL, 0);
+options.set_forced_version_profile(450, shaderc::GlslProfile::None);
+options.set_optimization_level(shaderc::OptimizationLevel::Zero);
 
-    use shaderc;
-    let mut compiler = shaderc::Compiler::new().unwrap();
-    let mut options = shaderc::CompileOptions::new().unwrap();
-    options.set_target_env(shaderc::TargetEnv::OpenGL, 0);
-    options.set_forced_version_profile(450, shaderc::GlslProfile::None);
-    options.set_optimization_level(shaderc::OptimizationLevel::Zero);
+//debug!("==== Preprocessed ====\n\n{}", pp.vertex.as_ref().unwrap());
 
-    //debug!("==== Preprocessed ====\n\n{}", pp.vertex.as_ref().unwrap());
+let vertex_compile_result = compiler.compile_into_spirv(
+vert.source,
+shaderc::ShaderKind::Vertex,
+vert.file_name,
+"main",
+Some(&options),
+)?;
+/*let text_result = compiler.compile_into_spirv_assembly(
+    &pp.vertex.unwrap(), shaderc::ShaderKind::Vertex,
+    &src_path_str, "main", Some(&options))?;
+debug!("==== SPIR-V ====\n\n{}",text_result.as_text());*/
+let fragment_compile_result = compiler.compile_into_spirv(
+frag.source,
+shaderc::ShaderKind::Fragment,
+frag.file_name,
+"main",
+Some(&options),
+)?;
+let geometry_compile_result = if let Some(geom) = geom {
+Some(compiler.compile_into_spirv(
+geom.source,
+shaderc::ShaderKind::Geometry,
+geom.file_name,
+"main",
+Some(&options),
+)?)
+} else {
+None
+};
+let tess_control_compile_result = if let Some(tess_control) = tess_control {
+Some(compiler.compile_into_spirv(
+tess_control.source,
+shaderc::ShaderKind::TessControl,
+tess_control.file_name,
+"main",
+Some(&options),
+)?)
+} else {
+None
+};
+let tess_eval_compile_result = if let Some(tess_eval) = tess_eval {
+Some(compiler.compile_into_spirv(
+tess_eval.source,
+shaderc::ShaderKind::TessEvaluation,
+tess_eval.file_name,
+"main",
+Some(&options),
+)?)
+} else {
+None
+};
 
-    let vertex_compile_result = compiler.compile_into_spirv(
-        vert.source,
-        shaderc::ShaderKind::Vertex,
-        vert.file_name,
-        "main",
-        Some(&options),
-    )?;
-    /*let text_result = compiler.compile_into_spirv_assembly(
-        &pp.vertex.unwrap(), shaderc::ShaderKind::Vertex,
-        &src_path_str, "main", Some(&options))?;
-    debug!("==== SPIR-V ====\n\n{}",text_result.as_text());*/
-
-    let fragment_compile_result = compiler.compile_into_spirv(
-        frag.source,
-        shaderc::ShaderKind::Fragment,
-        frag.file_name,
-        "main",
-        Some(&options),
-    )?;
-    let geometry_compile_result = if let Some(geom) = geom {
-        Some(compiler.compile_into_spirv(
-            geom.source,
-            shaderc::ShaderKind::Geometry,
-            geom.file_name,
-            "main",
-            Some(&options),
-        )?)
-    } else {
-        None
-    };
-    let tess_control_compile_result = if let Some(tess_control) = tess_control {
-        Some(compiler.compile_into_spirv(
-            tess_control.source,
-            shaderc::ShaderKind::TessControl,
-            tess_control.file_name,
-            "main",
-            Some(&options),
-        )?)
-    } else {
-        None
-    };
-    let tess_eval_compile_result = if let Some(tess_eval) = tess_eval {
-        Some(compiler.compile_into_spirv(
-            tess_eval.source,
-            shaderc::ShaderKind::TessEvaluation,
-            tess_eval.file_name,
-            "main",
-            Some(&options),
-        )?)
-    } else {
-        None
-    };
-
-    Ok(SpirvModules {
-        vs: vertex_compile_result.as_binary().into(),
-        fs: fragment_compile_result.as_binary().into(),
-        gs: geometry_compile_result.map(|gs| gs.as_binary().into()),
-        tcs: tess_control_compile_result.map(|tcs| tcs.as_binary().into()),
-        tes: tess_eval_compile_result.map(|tes| tes.as_binary().into()),
-    })
+Ok(SpirvModules {
+vs: vertex_compile_result.as_binary().into(),
+fs: fragment_compile_result.as_binary().into(),
+gs: geometry_compile_result.map(|gs| gs.as_binary().into()),
+tcs: tess_control_compile_result.map(|tcs| tcs.as_binary().into()),
+tes: tess_eval_compile_result.map(|tes| tes.as_binary().into()),
+})
 }
 
 pub trait GraphicsPipelineBuilderExt: Sized {
-    /// Loads shaders from the GLSL combined source file specified by path.
-    fn with_glsl_file<P: AsRef<Path>>(self, path: P) -> Result<Self, Error>;
-    /// Loads shaders from the GLSL combined source file specified by path.
-    fn with_glsl_file_via_spirv<P: AsRef<Path>>(self, path: P) -> Result<Self, Error>;
+/// Loads shaders from the GLSL combined source file specified by path.
+fn with_glsl_file<P: AsRef<Path>>(self, path: P) -> Result<Self, Error>;
+/// Loads shaders from the GLSL combined source file specified by path.
+fn with_glsl_file_via_spirv<P: AsRef<Path>>(self, path: P) -> Result<Self, Error>;
 }
 
 impl GraphicsPipelineBuilderExt for GraphicsPipelineBuilder {
-    fn with_glsl_file<P: AsRef<Path>>(self, path: P) -> Result<Self, Error> {
-        let compiled = create_pipeline_via_gl(path)?;
+fn with_glsl_file<P: AsRef<Path>>(self, path: P) -> Result<Self, Error> {
+let compiled = create_pipeline_via_gl(path)?;
 
-        let tmp = self
-            .with_shader_pipeline(Box::new(compiled.shader_pipeline))
-            .with_input_layout(compiled.input_layout)
-            .with_primitive_topology(compiled.primitive_topology);
+let tmp = self
+.with_shader_pipeline(Box::new(compiled.shader_pipeline))
+.with_input_layout(compiled.input_layout)
+.with_primitive_topology(compiled.primitive_topology);
 
-        Ok(tmp)
-    }
-
-    fn with_glsl_file_via_spirv<P: AsRef<Path>>(self, path: P) -> Result<Self, Error> {
-        let pp = load_combined_shader_source(path.as_ref())?;
-        let src_path_str = path.as_ref().to_str().unwrap();
-        let spv_modules = compile_glsl_to_spirv(
-            SourceWithFileName {
-                source: pp.vertex.as_ref().ok_or(format_err!("No vertex shader defined in input file (missing `#pragma stages' directive?)"))?,
-                file_name: &src_path_str,
-            },
-            SourceWithFileName {
-                source: pp.fragment.as_ref().ok_or(format_err!("No fragment shader defined in input file (missing `#pragma stages' directive?)"))?,
-                file_name: &src_path_str,
-            },
-            pp.geometry.as_ref().map(|geom| SourceWithFileName {
-                source: geom,
-                file_name: &src_path_str,
-            }),
-            pp.tess_control
-                .as_ref()
-                .map(|tess_control| SourceWithFileName {
-                    source: tess_control,
-                    file_name: &src_path_str,
-                }),
-            pp.tess_eval.as_ref().map(|tess_eval| SourceWithFileName {
-                source: tess_eval,
-                file_name: &src_path_str,
-            }),
-        )?;
-
-        let spv_pipeline = SpirvGraphicsShaderPipeline::from_binary(spv_modules)?;
-
-        let tmp = self
-            .with_shader_pipeline(Box::new(spv_pipeline))
-            .with_input_layout(pp.input_layout.ok_or(format_err!(
-                "Missing input layout in combined shader source: {}",
-                path.as_ref().display()
-            ))?)
-            .with_primitive_topology(pp.primitive_topology.ok_or(format_err!(
-                "Missing primitive topology in combined shader source: {}",
-                path.as_ref().display()
-            ))?);
-
-        Ok(tmp)
-    }
+Ok(tmp)
 }
+
+fn with_glsl_file_via_spirv<P: AsRef<Path>>(self, path: P) -> Result<Self, Error> {
+let pp = load_combined_shader_source(path.as_ref())?;
+let src_path_str = path.as_ref().to_str().unwrap();
+let spv_modules = compile_glsl_to_spirv(
+SourceWithFileName {
+source: pp.vertex.as_ref().ok_or(format_err!("No vertex shader defined in input file (missing `#pragma stages' directive?)"))?,
+file_name: &src_path_str,
+},
+SourceWithFileName {
+source: pp.fragment.as_ref().ok_or(format_err!("No fragment shader defined in input file (missing `#pragma stages' directive?)"))?,
+file_name: &src_path_str,
+},
+pp.geometry.as_ref().map(|geom| SourceWithFileName {
+source: geom,
+file_name: &src_path_str,
+}),
+pp.tess_control
+.as_ref()
+.map(|tess_control| SourceWithFileName {
+source: tess_control,
+file_name: &src_path_str,
+}),
+pp.tess_eval.as_ref().map(|tess_eval| SourceWithFileName {
+source: tess_eval,
+file_name: &src_path_str,
+}),
+)?;
+
+let spv_pipeline = SpirvGraphicsShaderPipeline::from_binary(spv_modules)?;
+
+let tmp = self
+.with_shader_pipeline(Box::new(spv_pipeline))
+.with_input_layout(pp.input_layout.ok_or(format_err!(
+"Missing input layout in combined shader source: {}",
+path.as_ref().display()
+))?)
+.with_primitive_topology(pp.primitive_topology.ok_or(format_err!(
+"Missing primitive topology in combined shader source: {}",
+path.as_ref().display()
+))?);
+
+Ok(tmp)
+}
+}
+*/

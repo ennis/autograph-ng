@@ -1,5 +1,4 @@
 //! Upload buffers (frame-synchronized ring buffers)
-use std::cell::RefCell;
 use std::collections::vec_deque::VecDeque;
 use std::mem;
 use std::ops::Range;
@@ -43,7 +42,7 @@ unsafe impl Send for MappedBufferRange {}
 impl MappedBufferRange {
     pub fn write(&self, data: &[u8], offset: usize) {
         unsafe {
-            copy_nonoverlapping(data.as_ptr(), self.ptr.offset(offset as isize), data.len());
+            copy_nonoverlapping(data.as_ptr(), self.ptr.add(offset), data.len());
         }
     }
 
@@ -54,6 +53,10 @@ impl MappedBufferRange {
             // TODO glFlushMappedBufferRange
             unimplemented!()
         }
+    }
+
+    pub fn buffer(&self) -> GLuint {
+        self.buffer
     }
 }
 
@@ -109,7 +112,7 @@ impl MultiBuffer {
 
         MappedBufferRange {
             buffer: self.buffer,
-            ptr: unsafe { self.mapped.offset((i * self.size) as isize) },
+            ptr: unsafe { self.mapped.add(i * self.size) },
             flags: gl::MAP_WRITE_BIT | gl::MAP_PERSISTENT_BIT | gl::MAP_COHERENT_BIT,
             size: self.size,
         }
@@ -122,18 +125,22 @@ pub struct MappedBufferRangeStack {
 }
 
 impl MappedBufferRangeStack {
+    pub fn buffer(&self) -> GLuint {
+        self.mapped.buffer
+    }
+
     pub fn new(mapped: MappedBufferRange) -> MappedBufferRangeStack {
         MappedBufferRangeStack { mapped, offset: 0 }
     }
 
-    /// Panics if not enough space available. Returns the offset.
+    /// Returns the offset.
     pub fn write(&mut self, data: &[u8], align: usize) -> Option<usize> {
         let offset = align_offset(
             data.len() as u64,
             align as u64,
             (self.offset as u64)..(self.mapped.size as u64),
         )? as usize;
-        let slice = self.mapped.write(data, offset);
+        self.mapped.write(data, offset);
         self.offset = offset + data.len();
         Some(offset)
     }

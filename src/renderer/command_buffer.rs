@@ -1,15 +1,27 @@
+use std::mem;
 use std::ops::Range;
 
-use crate::renderer::RendererBackend;
 use crate::renderer::image::*;
 use crate::renderer::sync::*;
+use crate::renderer::RendererBackend;
 
-struct Command<R: RendererBackend> {
-    sort_key: u64,
-    cmd: CommandInner<R>,
+pub struct Command<R: RendererBackend> {
+    pub sort_key: u64,
+    pub cmd: CommandInner<R>,
 }
 
-enum CommandInner<R: RendererBackend> {
+// Explicit clone impl because of #26925
+impl<R: RendererBackend> Clone for Command<R> {
+    fn clone(&self) -> Self {
+        Command {
+            cmd: self.cmd.clone(),
+            sort_key: self.sort_key,
+        }
+    }
+}
+
+
+pub enum CommandInner<R: RendererBackend> {
     PipelineBarrier {},
     AllocImage {
         image: R::ImageHandle,
@@ -31,14 +43,34 @@ enum CommandInner<R: RendererBackend> {
         a: R::BufferHandle,
         b: R::BufferHandle,
     },
-    ClearColorImage {
+    ClearImageFloat {
         image: R::ImageHandle,
         color: [f32; 4],
+    },
+    ClearDepthStencilImage {
+        image: R::ImageHandle,
+        depth: f32,
+        stencil: Option<u8>,
+    },
+    Draw {
+        // framebuffer (render target group)
+    // pipeline
+    // state overrides
+    // descriptor sets
+    // vertex input block
     },
     Present {
         image: R::ImageHandle,
         swapchain: R::SwapchainHandle,
     },
+}
+
+// Explicit clone impl because of #26925
+impl<R: RendererBackend> Clone for CommandInner<R> {
+    fn clone(&self) -> Self {
+        // I really don't want to match all variants just to copy bits around.
+        unsafe { mem::transmute_copy(self) }
+    }
 }
 
 pub struct CommandBuffer<R: RendererBackend> {
@@ -56,6 +88,10 @@ impl<R: RendererBackend> CommandBuffer<R> {
 
     fn push_command(&mut self, sort_key: u64, cmd: CommandInner<R>) {
         self.commands.push(Command { cmd, sort_key })
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Command<R>> {
+        self.commands.iter()
     }
 
     //----------------------------------------------------------------------------------------------
@@ -143,6 +179,38 @@ impl<R: RendererBackend> CommandBuffer<R> {
     }
 
     //----------------------------------------------------------------------------------------------
+    // Clear
+
+    /// Clears an image.
+    pub fn clear_image(&mut self, sort_key: u64, image: R::ImageHandle, color: &[f32; 4]) {
+        self.push_command(
+            sort_key,
+            CommandInner::ClearImageFloat {
+                image,
+                color: *color,
+            },
+        )
+    }
+
+    /// Clears an image.
+    pub fn clear_depth_stencil_image(
+        &mut self,
+        sort_key: u64,
+        image: R::ImageHandle,
+        depth: f32,
+        stencil: Option<u8>,
+    ) {
+        self.push_command(
+            sort_key,
+            CommandInner::ClearDepthStencilImage {
+                image,
+                depth,
+                stencil,
+            },
+        )
+    }
+
+    //----------------------------------------------------------------------------------------------
     // Draw
 
     /// Presents the specified image to the swapchain.
@@ -150,4 +218,20 @@ impl<R: RendererBackend> CommandBuffer<R> {
     pub fn present(&mut self, sort_key: u64, image: R::ImageHandle, swapchain: R::SwapchainHandle) {
         self.push_command(sort_key, CommandInner::Present { image, swapchain })
     }
+}
+
+/// TODO optimize
+pub fn sort_command_buffers<R: RendererBackend>(cmdbufs: Vec<CommandBuffer<R>>) -> Vec<Command<R>> {
+    let mut fused = Vec::new();
+    //let mut sortkeys = Vec::new();
+    //let mut i: usize = 0;
+    for cmdbuf in cmdbufs.iter() {
+        for cmd in cmdbuf.commands.iter() {
+            fused.push(cmd.clone());
+            //sortkeys.push(cmd.sort_key);
+        }
+    }
+
+    fused.sort_by(|cmd_a, cmd_b| cmd_a.sort_key.cmp(&cmd_b.sort_key));
+    fused
 }

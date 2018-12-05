@@ -1,6 +1,8 @@
+#![allow(non_upper_case_globals)]
+
 /// Storage formats of GPU data (texture, vertices, etc).
 /// These are actually Vulkan formats.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[allow(non_camel_case_types)]
 #[repr(u16)]
 pub enum Format {
@@ -208,6 +210,7 @@ pub enum ComponentLayout {
     XD,
 }
 
+#[allow(non_camel_case_types)]
 pub enum NumericFormat {
     UNKNOWN,
     UNORM,
@@ -232,6 +235,32 @@ pub struct FormatInfo {
 impl FormatInfo {
     pub fn is_compressed(&self) -> bool {
         self.component_bits == [0, 0, 0, 0]
+    }
+
+    pub fn is_normalized(&self) -> bool {
+        match self.format_type {
+            NumericFormat::UNORM | NumericFormat::SNORM => true,
+            _ => false,
+        }
+    }
+
+    pub fn num_components(&self) -> u32 {
+        match self.component_layout {
+            ComponentLayout::UNKNOWN => 0,
+            ComponentLayout::R => 1,
+            ComponentLayout::RG => 2,
+            ComponentLayout::RGB => 3,
+            ComponentLayout::RGBA => 4,
+            ComponentLayout::BGR => 3,
+            ComponentLayout::BGRA => 4,
+            ComponentLayout::ARGB => 4,
+            ComponentLayout::ABGR => 4,
+            ComponentLayout::EBGR => 4,
+            ComponentLayout::D => 1,
+            ComponentLayout::DS => 2,
+            ComponentLayout::S => 1,
+            ComponentLayout::XD => 2,
+        }
     }
 
     pub fn byte_size(&self) -> usize {

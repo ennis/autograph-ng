@@ -1,4 +1,3 @@
-
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub enum SamplerAddressMode {
     Clamp,
@@ -7,7 +6,7 @@ pub enum SamplerAddressMode {
 }
 
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub enum SamplerFilter {
+pub enum Filter {
     Nearest,
     Linear,
 }
@@ -20,11 +19,11 @@ pub enum SamplerMipmapMode {
 
 // 2D sampler
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub struct SamplerDesc {
+pub struct SamplerDescription {
     pub addr_u: SamplerAddressMode,
     pub addr_v: SamplerAddressMode,
     pub addr_w: SamplerAddressMode,
-    pub min_filter: SamplerFilter,
-    pub mag_filter: SamplerFilter,
+    pub min_filter: Filter,
+    pub mag_filter: Filter,
     pub mipmap_mode: SamplerMipmapMode,
 }

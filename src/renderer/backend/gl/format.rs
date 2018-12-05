@@ -43,6 +43,11 @@ static GLF_R32G32_SFLOAT: GlFormatInfo = GlFormatInfo {
     upload_components: gl::RG,
     upload_ty: gl::FLOAT,
 };
+static GLF_R32G32B32_SFLOAT: GlFormatInfo = GlFormatInfo {
+    internal_fmt: gl::RGB32F,
+    upload_components: gl::RGB,
+    upload_ty: gl::FLOAT,
+};
 static GLF_R32G32B32A32_SFLOAT: GlFormatInfo = GlFormatInfo {
     internal_fmt: gl::RGBA32F,
     upload_components: gl::RGBA,
@@ -94,6 +99,7 @@ impl GlFormatInfo {
             Format::R16G16_SFLOAT => &GLF_R16G16_SFLOAT,
             Format::R16G16B16A16_SFLOAT => &GLF_R16G16B16A16_SFLOAT,
             Format::R32G32_SFLOAT => &GLF_R32G32_SFLOAT,
+            Format::R32G32B32_SFLOAT => &GLF_R32G32B32_SFLOAT,
             Format::R32G32B32A32_SFLOAT => &GLF_R32G32B32A32_SFLOAT,
             Format::R8G8B8A8_UNORM => &GLF_R8G8B8A8_UNORM,
             Format::R8G8B8A8_SNORM => &GLF_R8G8B8A8_SNORM,
@@ -102,7 +108,7 @@ impl GlFormatInfo {
             Format::R8G8B8_SRGB => &GLF_R8G8B8_SRGB,
             Format::R8G8B8A8_SRGB => &GLF_R8G8B8A8_SRGB,
             Format::D32_SFLOAT => &GLF_D32_SFLOAT,
-            _ => panic!("Unsupported format"),
+            _ => panic!("Unsupported format: {:?}", fmt),
         }
     }
 }

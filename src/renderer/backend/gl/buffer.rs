@@ -1,11 +1,21 @@
 use std::mem;
-use std::ops::Deref;
-use std::os::raw::c_void;
-use std::sync::Arc;
+use std::ptr;
 
 use crate::renderer::backend::gl::api as gl;
 use crate::renderer::backend::gl::api::types::*;
 
+//--------------------------------------------------------------------------------------------------
+
+/// Copy + Clone to bypass a restriction of slotmap on stable rust.
+#[derive(Copy, Clone, Debug)]
+pub struct Buffer {
+    pub obj: GLuint,
+    pub shared: bool,
+    pub offset: usize,
+    pub size: usize,
+}
+
+//--------------------------------------------------------------------------------------------------
 pub fn create_buffer(byte_size: usize, flags: GLenum, initial_data: Option<&[u8]>) -> GLuint {
     let mut obj: GLuint = 0;
     unsafe {
@@ -16,7 +26,7 @@ pub fn create_buffer(byte_size: usize, flags: GLenum, initial_data: Option<&[u8]
             if let Some(data) = initial_data {
                 data.as_ptr() as *const GLvoid
             } else {
-                0 as *const GLvoid
+                ptr::null()
             },
             flags,
         );

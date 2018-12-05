@@ -14,9 +14,6 @@ fn parse_module(bytecode: &[u32]) -> ModuleWrapper {
     ModuleWrapper(parse_spirv_u32s(bytecode).unwrap())
 }
 
-struct Std140LayoutBuilder {
-    next_offset: usize,
-}
 
 fn align_offset(ptr: usize, align: usize) -> usize {
     let offset = ptr % align;
@@ -36,6 +33,12 @@ fn round_up(value: usize, multiple: usize) -> usize {
         return value;
     }
     value + multiple - remainder
+}
+
+/*
+
+struct Std140LayoutBuilder {
+    next_offset: usize,
 }
 
 impl Std140LayoutBuilder {
@@ -98,6 +101,7 @@ impl Std140LayoutBuilder {
         current_offset
     }
 }
+*/
 
 struct Std140LayoutBuilder2 {
     next_offset: usize,
@@ -187,7 +191,8 @@ fn compare_types(shader_ty: &TypeDesc, host_ty: &TypeDesc) -> Result<(), Error> 
             compare_types(
                 &TypeDesc::Primitive(shader_comp_ty),
                 &TypeDesc::Primitive(host_comp_ty),
-            ).context(format!(
+            )
+            .context(format!(
                 "type mismatch: {:?} (shader) and {:?} (host)",
                 shader_ty, host_ty
             ))?;
@@ -207,7 +212,8 @@ fn compare_types(shader_ty: &TypeDesc, host_ty: &TypeDesc) -> Result<(), Error> 
             compare_types(
                 &TypeDesc::Primitive(shader_ty),
                 &TypeDesc::Primitive(host_ty),
-            ).context(format!(
+            )
+            .context(format!(
                 "type mismatch: {:?} (shader) and {:?} (host)",
                 shader_ty, host_ty
             ))?;
@@ -280,10 +286,7 @@ impl ModuleWrapper {
             Instruction::Name(IName {
                 target_id,
                 ref name,
-            }) if target_id == id =>
-            {
-                Some(name.as_ref())
-            }
+            }) if target_id == id => Some(name.as_ref()),
             _ => None,
         })
     }

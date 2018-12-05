@@ -15,14 +15,20 @@ pub use winit::{
     MouseScrollDelta, Touch, TouchPhase, VirtualKeyCode, WindowEvent,
 };
 
-use crate::renderer::backend::gl::OpenGlBackend;
 use crate::renderer::backend::gl::create_backend_and_window;
+use crate::renderer::backend::gl::OpenGlBackend;
 use crate::renderer::*;
 
 pub struct App {
     pub cfg: config::Config,
     pub events_loop: RefCell<winit::EventsLoop>,
     pub renderer: Renderer<OpenGlBackend>,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl App {
@@ -32,7 +38,7 @@ impl App {
         cfg.merge(config::File::with_name("Settings")).unwrap();
         load_environment_config(&mut cfg);
 
-        let mut events_loop = create_events_loop();
+        let events_loop = create_events_loop();
         let window_width = cfg.get::<u32>("gfx.window.width").unwrap();
         let window_height = cfg.get::<u32>("gfx.window.height").unwrap();
         let fullscreen = cfg.get::<u32>("gfx.window.fullscreen").unwrap();

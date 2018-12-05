@@ -2,7 +2,6 @@ use super::OpenGlBackend;
 
 use config::Config;
 use glutin;
-use glutin::{Api, GlContext, GlWindow};
 use winit::{EventsLoop, WindowBuilder};
 
 impl OpenGlBackend {}
