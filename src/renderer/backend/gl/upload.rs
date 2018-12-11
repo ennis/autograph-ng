@@ -1,9 +1,9 @@
-//! Upload buffers (frame-synchronized ring buffers)
-use std::collections::vec_deque::VecDeque;
+//! Upload buffers
 use std::mem;
 use std::ops::Range;
 use std::ptr;
 use std::ptr::copy_nonoverlapping;
+use std::sync::Mutex;
 
 use crate::renderer::backend::gl::api as gl;
 use crate::renderer::backend::gl::api::types::*;
@@ -11,35 +11,38 @@ use crate::renderer::backend::gl::buffer::create_buffer;
 use crate::renderer::backend::gl::sync::{Timeline, Timeout};
 use crate::renderer::util::align_offset;
 
-/*
-struct FencedRegion {
-    fence_value: FenceValue,
-    begin_ptr: usize,
-    end_ptr: usize,
-}
-
-pub struct UploadBufferState {
-    write: usize,
-    begin: usize,
-    used: usize,
-
-    fenced_regions: VecDeque<FencedRegion>,
-    // TODO frame fences
-    //frame_fences:
-}
-*/
-const MULTI_BUFFER_COUNT: usize = 3;
-
-pub struct MappedBufferRange {
+pub struct MappedBuffer {
     buffer: GLuint,
     ptr: *mut u8,
     size: usize,
     flags: GLenum,
 }
 
-unsafe impl Send for MappedBufferRange {}
+unsafe impl Send for MappedBuffer {}
 
-impl MappedBufferRange {
+impl MappedBuffer {
+    pub fn new(size: usize) -> MappedBuffer {
+        let buffer = create_buffer(
+            size,
+            gl::MAP_WRITE_BIT | gl::MAP_PERSISTENT_BIT | gl::MAP_COHERENT_BIT,
+            None,
+        );
+        // map the buffer
+        let map_flags = gl::MAP_UNSYNCHRONIZED_BIT
+            | gl::MAP_WRITE_BIT
+            | gl::MAP_PERSISTENT_BIT
+            | gl::MAP_COHERENT_BIT;
+        let ptr =
+            unsafe { gl::MapNamedBufferRange(buffer, 0, size as isize, map_flags) as *mut u8 };
+
+        MappedBuffer {
+            buffer,
+            ptr,
+            size,
+            flags: map_flags,
+        }
+    }
+
     pub fn write(&self, data: &[u8], offset: usize) {
         unsafe {
             copy_nonoverlapping(data.as_ptr(), self.ptr.add(offset), data.len());
@@ -55,97 +58,42 @@ impl MappedBufferRange {
         }
     }
 
-    pub fn buffer(&self) -> GLuint {
+    pub fn raw_buffer(&self) -> GLuint {
         self.buffer
     }
 }
 
-/// Only supports upload.
-pub struct MultiBuffer {
-    buffer: GLuint,
-    frames: Vec<u64>,
-    cur_idx: usize,
-    mapped: *mut u8,
-    size: usize,
-}
-
-unsafe impl Send for MultiBuffer {}
-
-impl MultiBuffer {
-    pub fn new(size: usize) -> MultiBuffer {
-        // TODO align size properly
-        let total_size = MULTI_BUFFER_COUNT * size;
-        let buffer = create_buffer(
-            total_size,
-            gl::MAP_WRITE_BIT | gl::MAP_PERSISTENT_BIT | gl::MAP_COHERENT_BIT,
-            None,
-        );
-        // map the buffer
-        let mapped = unsafe {
-            let map_flags = gl::MAP_UNSYNCHRONIZED_BIT
-                | gl::MAP_WRITE_BIT
-                | gl::MAP_PERSISTENT_BIT
-                | gl::MAP_COHERENT_BIT;
-            gl::MapNamedBufferRange(buffer, 0, total_size as isize, map_flags) as *mut u8
-        };
-
-        MultiBuffer {
-            buffer,
-            mapped,
-            frames: vec![0; MULTI_BUFFER_COUNT],
-            cur_idx: 0,
-            size,
-        }
-    }
-
-    /// Once finished writing to the mapped memory, flush it.
-    pub fn acquire_buffer_range(
-        &mut self,
-        frame_number: u64,
-        frame_timeline: &mut Timeline,
-    ) -> MappedBufferRange {
-        let i = self.cur_idx;
-        frame_timeline.client_sync(self.frames[i], Timeout::Infinite);
-        self.frames[i] = frame_number;
-
-        self.cur_idx = (self.cur_idx + 1) % MULTI_BUFFER_COUNT;
-
-        MappedBufferRange {
-            buffer: self.buffer,
-            ptr: unsafe { self.mapped.add(i * self.size) },
-            flags: gl::MAP_WRITE_BIT | gl::MAP_PERSISTENT_BIT | gl::MAP_COHERENT_BIT,
-            size: self.size,
-        }
-    }
-}
-
-pub struct MappedBufferRangeStack {
-    mapped: MappedBufferRange,
+struct UploadBufferInner {
+    buffer: MappedBuffer,
     offset: usize,
 }
 
-impl MappedBufferRangeStack {
-    pub fn buffer(&self) -> GLuint {
-        self.mapped.buffer
-    }
+pub struct UploadBuffer(Mutex<UploadBufferInner>);
 
-    pub fn new(mapped: MappedBufferRange) -> MappedBufferRangeStack {
-        MappedBufferRangeStack { mapped, offset: 0 }
+impl UploadBuffer {
+    pub fn new(buffer: MappedBuffer) -> UploadBuffer {
+        UploadBuffer(Mutex::new(UploadBufferInner { buffer, offset: 0 }))
     }
 
     /// Returns the offset.
-    pub fn write(&mut self, data: &[u8], align: usize) -> Option<usize> {
+    pub fn write(&self, data: &[u8], align: usize) -> Option<(GLuint, usize)> {
+        let mut self_ = self.0.lock().unwrap();
+
         let offset = align_offset(
             data.len() as u64,
             align as u64,
-            (self.offset as u64)..(self.mapped.size as u64),
+            (self_.offset as u64)..(self_.buffer.size as u64),
         )? as usize;
-        self.mapped.write(data, offset);
-        self.offset = offset + data.len();
-        Some(offset)
+        self_.buffer.write(data, offset);
+        self_.offset = offset + data.len();
+        Some((self_.buffer.raw_buffer(), offset))
     }
 
     pub fn flush(&self) {
-        self.mapped.flush()
+        self.0.lock().unwrap().buffer.flush()
+    }
+
+    pub fn into_inner(self) -> MappedBuffer {
+        self.0.into_inner().unwrap().buffer
     }
 }

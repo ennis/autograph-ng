@@ -1,4 +1,6 @@
 extern crate gfx2;
+#[macro_use]
+extern crate log;
 extern crate nalgebra_glm as glm;
 
 use std::env;
@@ -6,6 +8,14 @@ use std::env;
 use gfx2::app::*;
 use gfx2::renderer::backend::gl as gl_backend;
 use gfx2::renderer::*;
+
+type Backend = gl_backend::OpenGlBackend;
+type Image = <Backend as RendererBackend>::Image;
+type Framebuffer = <Backend as RendererBackend>::Framebuffer;
+type Buffer = <Backend as RendererBackend>::Buffer;
+type DescriptorSet = <Backend as RendererBackend>::DescriptorSet;
+type DescriptorSetLayout = <Backend as RendererBackend>::DescriptorSetLayout;
+type GraphicsPipeline = <Backend as RendererBackend>::GraphicsPipeline;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -50,39 +60,6 @@ struct ObjectParameters {
     object_id: i32,
 }
 
-// descriptor set layout = struct
-// - descriptor::UniformBuffer<T>
-// - descriptor::SampledImage
-// - descriptor::Sampler
-// - descriptor::StorageBuffer<T>
-//
-// vertex input binding = struct [repr(C)]
-//
-// pipeline interface = struct
-// - members: descriptor set layout structs
-// -
-//
-// derive(DescriptorSetLayout) -> reusable between different pipelines as DescriptorSetLayouts
-// derive(PushConstantInterface)
-// derive(FragmentOutputInterface) -> reusable?
-// derive(VertexInputInterface) -> not reusable
-// derive(BufferInterface)
-// derive(PipelineInterface)
-// derive(AttachmentGroup)
-//
-// trait PipelineInterface {
-//      fn fragment_output_interface_description() -> &'static AttachmentDescription
-//      fn fragment_output_interface(&self) -> impl Iterator<&AttachmentReference<ImageView>>
-//      fn vertex_input_interface(&self) -> impl Iterator<&VertexBuffer>
-// }
-//
-// Some interfaces can be determined from the types (but not all)
-// - Descriptor set interfaces
-// - Push constant interface
-// - Framebuffer interface
-// - Vertex input interface
-// The rest must be specified explicitly (or through custom attributes?)
-
 /*
 #[derive(FragmentOutputInterface)]
 struct SamplePipelineAttachments
@@ -124,13 +101,62 @@ struct SamplePipelineInterface
 }
 */
 
-fn create_pipelines(
-    renderer: &Renderer<gl_backend::OpenGlBackend>,
-) -> gl_backend::GraphicsPipelineHandle {
+//--------------------------------------------------------------------------------------------------
+struct PerFrameUniforms<'a, R: RendererBackend> {
+    camera_params: &'a R::Buffer,
+    test: &'a R::Buffer,
+}
+
+// SHOULD BE AUTOMATICALLY DERIVED
+impl<'a, R: RendererBackend> DescriptorSetInterface<'a, R> for PerFrameUniforms<'a, R> {
+    const INTERFACE: DescriptorSetDescription<'static> = DescriptorSetDescription {
+        descriptors: &[DescriptorSetLayoutBinding {
+            binding: 0,
+            descriptor_type: DescriptorType::UniformBuffer,
+            stage_flags: ShaderStageFlags::ALL_GRAPHICS,
+            count: 1,
+            tydesc: None,
+        }],
+    };
+
+    fn do_visit(&self, visitor: &mut impl DescriptorSetInterfaceVisitor<'a, R>) {
+        visitor.visit_buffer(0, self.camera_params);
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+struct PerObjectUniforms<'a, R: RendererBackend> {
+    obj_params: &'a R::Buffer,
+}
+
+// SHOULD BE AUTOMATICALLY DERIVED
+impl<'a, R: RendererBackend> DescriptorSetInterface<'a, R> for PerObjectUniforms<'a, R> {
+    const INTERFACE: DescriptorSetDescription<'static> = DescriptorSetDescription {
+        descriptors: &[DescriptorSetLayoutBinding {
+            binding: 0,
+            descriptor_type: DescriptorType::UniformBuffer,
+            stage_flags: ShaderStageFlags::ALL_GRAPHICS,
+            count: 1,
+            tydesc: None,
+        }],
+    };
+
+    fn do_visit(&self, visitor: &mut impl DescriptorSetInterfaceVisitor<'a, R>) {
+        visitor.visit_buffer(0, self.obj_params);
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+struct PipelineAndLayout<'a> {
+    pipeline: &'a GraphicsPipeline,
+    per_frame_descriptor_set_layout: &'a DescriptorSetLayout,
+    per_object_descriptor_set_layout: &'a DescriptorSetLayout,
+}
+
+fn create_pipelines<'rcx, 'a>(arena: &'a Arena<'rcx, Backend>) -> PipelineAndLayout<'a> {
     // load pipeline file
-    let pp =
-        gl_backend::PipelineDescriptionFile::load("tests/data/shaders/deferred.glsl", renderer)
-            .unwrap();
+    let pp = gl_backend::PipelineDescriptionFile::load(arena, "tests/data/shaders/deferred.glsl")
+        .unwrap();
 
     let shader_stages = GraphicsPipelineShaderStages {
         vertex: pp.modules.vs.unwrap(),
@@ -176,30 +202,33 @@ fn create_pipelines(
         primitive_restart_enable: false,
     };
 
-    let per_frame_descriptor_set_layout = renderer.create_descriptor_set_layout(&[
+    let per_frame_descriptor_set_layout = arena.create_descriptor_set_layout(&[
         // camera parameters
-        LayoutBinding {
+        DescriptorSetLayoutBinding {
             binding: 0,
             stage_flags: ShaderStageFlags::ALL_GRAPHICS,
             descriptor_type: DescriptorType::UniformBuffer,
             count: 1,
+            tydesc: None,
         },
     ]);
 
-    let per_object_descriptor_set_layout = renderer.create_descriptor_set_layout(&[
+    let per_object_descriptor_set_layout = arena.create_descriptor_set_layout(&[
         // per-object parameters
-        LayoutBinding {
+        DescriptorSetLayoutBinding {
             binding: 0,
             descriptor_type: DescriptorType::UniformBuffer,
             stage_flags: ShaderStageFlags::ALL_GRAPHICS,
             count: 1,
+            tydesc: None,
         },
         // diffuse texture
-        LayoutBinding {
-            binding: 0,
+        DescriptorSetLayoutBinding {
+            binding: 1,
             descriptor_type: DescriptorType::SampledImage,
             stage_flags: ShaderStageFlags::FRAGMENT,
             count: 1,
+            tydesc: None,
         },
     ]);
 
@@ -240,7 +269,7 @@ fn create_pipelines(
     };
 
     let additional = gl_backend::GraphicsPipelineCreateInfoAdditional {
-        descriptor_map: pp.preprocessed.descriptor_map.clone(),
+        descriptor_map: pp.descriptor_map.clone(),
         static_samplers: pp.preprocessed.static_samplers.clone(),
     };
 
@@ -259,7 +288,46 @@ fn create_pipelines(
         additional: &additional,
     };
 
-    renderer.create_graphics_pipeline(&gci)
+    PipelineAndLayout {
+        pipeline: arena.create_graphics_pipeline(&gci),
+        per_frame_descriptor_set_layout,
+        per_object_descriptor_set_layout,
+    }
+}
+
+//#[derive(FramebufferAttachments)]
+struct GBuffers<'a> {
+    //#[color_attachment(0)]
+    //#[format(R16G16B16A16_SFLOAT)]
+    normal: &'a Image,
+    //#[color_attachment(1)]
+    tangents: &'a Image,
+}
+
+struct SimplePipelineInterface<'a> {
+    // #[fragment_output]
+    framebuffer: &'a Framebuffer,
+    // #[descriptor_set(0)]
+    per_frame_data: &'a DescriptorSet,
+    // #[descriptor_set(1)]
+    per_object_data: &'a DescriptorSet,
+    // #[viewport]
+    viewport: Viewport,
+    // #[vertex_input(0)]
+    vertex_buffer: &'a Buffer,
+}
+
+impl<'a> PipelineInterface<'a, Backend> for SimplePipelineInterface<'a> {
+    // TODO
+    const VERTEX_INPUT_INTERFACE: &'static [VertexInputBufferDescription<'static>] = &[];
+    const FRAGMENT_OUTPUT_INTERFACE: &'static [FragmentOutputDescription] = &[];
+    const DESCRIPTOR_SET_INTERFACE: &'static [DescriptorSetDescription<'static>] = &[];
+
+    fn do_visit(&self, visitor: &mut PipelineInterfaceVisitor<'a, Backend>) {
+        visitor.visit_descriptor_sets(&[self.per_frame_data, self.per_object_data]);
+        visitor.visit_framebuffer(self.framebuffer);
+        visitor.visit_vertex_buffers(&[self.vertex_buffer]);
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -273,20 +341,21 @@ fn main() {
     let mut should_close = false;
 
     let r = app.renderer();
-
+    let arena_long_lived = r.create_arena();
     // create pipeline
-    let pipeline = create_pipelines(r);
+    let pipeline = create_pipelines(&arena_long_lived);
+    let long_lived_buffer = arena_long_lived.create_immutable_buffer(64, &[0, 0, 0, 0, 0, 0, 0, 0]);
 
-    while !should_close {
-        should_close = app.poll_events(|event| {});
-
+    // swapchain-sized resource scope
+    loop {
         let default_swapchain = r.default_swapchain().unwrap();
-        let (w, h) = r.swapchain_dimensions(default_swapchain);
+        let (w, h) = default_swapchain.size();
 
-        // create resources
-        // FP16 color buffer
-        let color_buffer = r.create_scoped_image(
-            Scope::global(),
+        info!("Allocating swapchain resources ({}x{})", w, h);
+        let arena_swapchain = r.create_arena();
+
+        let color_buffer = arena_swapchain.create_image(
+            AliasScope::no_alias(),
             Format::R16G16B16A16_SFLOAT,
             (w, h).into(),
             MipmapsCount::One,
@@ -294,8 +363,8 @@ fn main() {
             ImageUsageFlags::COLOR_ATTACHMENT,
         );
 
-        let depth_buffer = r.create_scoped_image(
-            Scope::global(),
+        let depth_buffer = arena_swapchain.create_image(
+            AliasScope::no_alias(),
             Format::D32_SFLOAT,
             (w, h).into(),
             MipmapsCount::One,
@@ -303,18 +372,66 @@ fn main() {
             ImageUsageFlags::COLOR_ATTACHMENT,
         );
 
-        // load pipeline
-        //let pipeline = r.create_pipeline(combined_shader_source, &[gbuffers_layout, per_object_layout])
+        let framebuffer = arena_swapchain.create_framebuffer(&[color_buffer], Some(depth_buffer));
 
-        let mut cmdbuf = r.create_command_buffer();
-        cmdbuf.clear_image(0x0, color_buffer, &[0.0, 0.2, 0.8, 1.0]);
-        cmdbuf.clear_depth_stencil_image(0x0, depth_buffer, 1.0, None);
-        cmdbuf.present(0x0, color_buffer, default_swapchain);
-        r.submit_command_buffer(cmdbuf);
-        r.end_frame();
+        // inner event loop (frame-based resource scope)
+        while !should_close {
+            should_close = app.poll_events(|event| {});
 
-        // destroy after the frame is submitted
-        r.destroy_image(color_buffer);
-        r.destroy_image(depth_buffer);
+            let a = r.create_arena();
+            let camera_params = a.create_immutable_buffer(64, &[0, 0, 0, 0, 0, 0, 0, 0]);
+            let object_params = a.create_immutable_buffer(64, &[0, 0, 0, 0, 0, 0, 0, 0]);
+
+            let per_frame_data = a.create_descriptor_set(
+                pipeline.per_frame_descriptor_set_layout,
+                PerFrameUniforms {
+                    camera_params,
+                    test: long_lived_buffer,
+                },
+            );
+
+            let per_object_data = a.create_descriptor_set(
+                pipeline.per_object_descriptor_set_layout,
+                PerObjectUniforms {
+                    obj_params: long_lived_buffer,
+                },
+            );
+
+            let mut cmdbuf = r.create_command_buffer();
+            cmdbuf.clear_image(0x0, &color_buffer, &[0.0, 0.2, 0.8, 1.0]);
+            cmdbuf.clear_depth_stencil_image(0x0, &depth_buffer, 1.0, None);
+
+            cmdbuf.draw(
+                0x0,
+                pipeline.pipeline,
+                &SimplePipelineInterface {
+                    framebuffer,
+                    per_frame_data,
+                    per_object_data,
+                    viewport: Viewport {
+                        x: 0.0.into(),
+                        y: 0.0.into(),
+                        width: (w as f32).into(),
+                        height: (h as f32).into(),
+                        min_depth: 0.0.into(),
+                        max_depth: 1.0.into(),
+                    },
+                    vertex_buffer: long_lived_buffer,
+                },
+            );
+
+            /*cmdbuf.draw(PipelineInterface {
+                framebuffer: a.create_framebuffer(&[color_buffer]),
+            });*/
+
+            cmdbuf.present(0x0, &color_buffer, default_swapchain);
+            r.submit_frame(vec![cmdbuf]);
+
+            // should break the loop if swapchain was resized
+        }
+
+        if should_close {
+            break;
+        }
     }
 }

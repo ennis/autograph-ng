@@ -6,10 +6,21 @@ use std::io;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use crate::renderer::backend::gl::*;
-use crate::renderer::format::Format;
-use crate::renderer::sampler::{Filter, SamplerAddressMode, SamplerDescription, SamplerMipmapMode};
-use crate::renderer::{PrimitiveTopology, ShaderStageFlags, VertexInputAttributeDescription};
+use crate::renderer::backend::gl::pipeline::{BindingSpace, DescriptorMap, StaticSamplerEntry};
+use crate::renderer::{
+    Filter, Format, PrimitiveTopology, SamplerAddressMode, SamplerDescription, SamplerMipmapMode,
+    ShaderStageFlags, VertexInputAttributeDescription,
+};
+
+// TODO Descriptor maps are defined the wrong way
+// must be a map (set,binding) -> (space, range)
+#[derive(Copy, Clone, Debug)]
+pub struct ParsedDescriptorMapping {
+    pub gl_binding_space: BindingSpace,
+    pub gl_binding_range: (u32, u32),
+    pub set: u32,
+    pub binding_base: u32,
+}
 
 pub struct SourceMapEntry {
     pub index: u32,
@@ -28,7 +39,7 @@ pub struct PreprocessResult {
     pub topology: Option<PrimitiveTopology>,
     pub source_map: Vec<SourceMapEntry>,
     pub version: Option<u32>,
-    pub descriptor_map: Vec<DescriptorMapEntry>,
+    pub descriptor_map: Vec<ParsedDescriptorMapping>,
     pub static_samplers: Vec<StaticSamplerEntry>,
 }
 
@@ -403,27 +414,26 @@ fn preprocess_shader_internal<'a>(
                         continue 'line;
                     };
 
-                    let target_binding_range_str = &captures["target_binding_range"];
-                    let target_binding_range = parse_binding_range(target_binding_range_str);
+                    let gl_binding_range_str = &captures["target_binding_range"];
+                    let gl_binding_range = parse_binding_range(gl_binding_range_str);
 
-                    let target_binding_space =
-                        match target_binding_range_str.chars().next().unwrap() {
-                            't' => BindingSpace::Texture,
-                            'i' => BindingSpace::Image,
-                            's' => BindingSpace::ShaderStorageBuffer,
-                            'u' => BindingSpace::UniformBuffer,
-                            'a' => BindingSpace::AtomicCounterBuffer,
-                            other => unimplemented!("unimplemented binding space '{}'", other),
-                        };
+                    let gl_binding_space = match gl_binding_range_str.chars().next().unwrap() {
+                        't' => BindingSpace::Texture,
+                        'i' => BindingSpace::Image,
+                        's' => BindingSpace::ShaderStorageBuffer,
+                        'u' => BindingSpace::UniformBuffer,
+                        'a' => BindingSpace::AtomicCounterBuffer,
+                        other => unimplemented!("unimplemented binding space '{}'", other),
+                    };
 
                     let binding_base = (&captures["binding"]).parse::<u32>().unwrap();
                     let set = (&captures["set"]).parse::<u32>().unwrap();
 
-                    let desc = DescriptorMapEntry {
+                    let desc = ParsedDescriptorMapping {
                         set,
                         binding_base,
-                        target_binding_space,
-                        target_binding_range,
+                        gl_binding_space,
+                        gl_binding_range,
                     };
 
                     result.descriptor_map.push(desc);

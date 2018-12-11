@@ -1,7 +1,8 @@
 use glutin::{GlContext, GlWindow};
+use std::cell::Cell;
+use std::collections::VecDeque;
 use std::ffi::CStr;
 use std::mem;
-use std::cell::Cell;
 use std::ops::DerefMut;
 use std::os::raw::c_char;
 use std::ptr;
@@ -13,8 +14,8 @@ use std::sync::Mutex;
 mod api;
 // Buffer objects
 mod buffer;
-// Resource cache
-mod cache;
+// Resource pool
+mod pool;
 // OpenGL formats
 mod format;
 // Image objects
@@ -28,6 +29,10 @@ mod state;
 // synchronization primitives
 mod sync;
 // upload buffers
+mod command;
+mod descriptor;
+mod framebuffer;
+mod resource;
 mod upload;
 mod window;
 
@@ -42,22 +47,34 @@ use smallvec::SmallVec;
 
 use self::api as gl;
 use self::api::types::*;
-use self::buffer::*;
-use self::cache::*;
-use self::format::*;
-use self::image::*;
-pub use self::pipeline::GraphicsPipelineCreateInfoAdditional;
-use self::pipeline::*;
-pub use self::pipeline_file::PipelineDescriptionFile;
-use self::shader::*;
-use self::state::*;
-use self::sync::*;
-use self::upload::*;
-pub use self::window::create_backend_and_window;
-use crate::renderer::command_buffer::*;
+use self::command::ExecuteContext;
 use crate::renderer;
+use crate::renderer::command_buffer::*;
 use crate::renderer::util;
-use crate::renderer::*;
+use crate::renderer::{
+    AliasScope, AttachmentDescription, Descriptor, DescriptorSetLayoutBinding, DescriptorType,
+    Dimensions, Format, GraphicsPipelineCreateInfo, ImageUsageFlags, MipmapsCount, RendererBackend,
+    ShaderStageFlags,
+};
+
+use self::{
+    buffer::RawBuffer,
+    descriptor::{DescriptorSet, DescriptorSetLayout},
+    framebuffer::Framebuffer,
+    image::{upload_image_region, RawImage},
+    resource::{Arena, Buffer, Image, Resources, SamplerCache},
+    shader::{create_shader_from_glsl, ShaderModule},
+    state::StateCache,
+    sync::{Timeline, Timeout},
+};
+
+pub use self::pipeline::{
+    create_graphics_pipeline_internal, GraphicsPipeline, GraphicsPipelineCreateInfoAdditional,
+};
+pub use self::pipeline_file::PipelineDescriptionFile;
+pub use self::window::create_backend_and_window;
+
+//pub use self::{descriptor::DescriptorSet, descriptor::DescriptorSetLayout, };
 
 //--------------------------------------------------------------------------------------------------
 extern "system" fn debug_callback(
@@ -73,16 +90,6 @@ extern "system" fn debug_callback(
         str::from_utf8(slice::from_raw_parts(msg as *const u8, length as usize)).unwrap()
     };
     debug!("(GL) {}", str);
-}
-
-//--------------------------------------------------------------------------------------------------
-struct FrameBoundObject<T> {
-    /// Handle
-    obj: T,
-    /// Pending uses in frame
-    pending_uses: u64,
-    /// Should be deleted or recycled once free
-    marked_for_deletion: bool,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -108,109 +115,27 @@ impl ImplementationParameters {
     }
 }
 
-pub struct DescriptorSetLayout {
-    bindings: Vec<LayoutBinding>,
-}
-
-pub struct AttachmentLayout {
-    attachments: Vec<AttachmentDescription>,
-}
-
-const MAX_RESOURCES_PER_SET: usize = 8;
-
-// The concept of descriptor sets does not exist in OpenGL.
-// We emulate them by mapping a descriptor set to a range of binding locations.
-// e.g. 0 => binding 0..4, 1 => binding 5..10, etc.
-// These ranges of locations are shared across every kind of binding (uniform buffers, images, textures).
-//
-
-pub struct DescriptorSet {
-    /*textures: [GLuint; MAX_RESOURCES_PER_SET],
-samplers: [GLuint; MAX_RESOURCES_PER_SET],
-images: [GLuint; MAX_RESOURCES_PER_SET],
-uniform_buffers: [GLuint; MAX_RESOURCES_PER_SET],
-uniform_buffer_sizes: [GLsizeiptr; MAX_RESOURCES_PER_SET],
-uniform_buffer_offsets: [GLintptr; MAX_RESOURCES_PER_SET],
-shader_storage_buffers: [GLuint; MAX_RESOURCES_PER_SET],
-shader_storage_buffer_sizes: [GLsizeiptr; MAX_RESOURCES_PER_SET],
-shader_storage_buffer_offsets: [GLintptr; MAX_RESOURCES_PER_SET],*/}
-
-impl DescriptorSet {
-    fn new() -> DescriptorSet {
-        DescriptorSet {
-            /*textures: SmallVec::new(),
-            samplers: SmallVec::new(),
-            images: SmallVec::new(),
-            uniform_buffers: SmallVec::new(),
-            uniform_buffer_sizes: SmallVec::new(),
-            uniform_buffer_offsets: SmallVec::new(),
-            shader_storage_buffers: SmallVec::new(),
-            shader_storage_buffer_sizes: SmallVec::new(),
-            shader_storage_buffer_offsets: SmallVec::new()*/
-        }
-    }
-}
-
-/*//--------------------------------------------------------------------------------------------------
-new_key_type! {
-    pub struct ImageHandle;
-    pub struct BufferHandle;
-    pub struct DescriptorSetHandle;
-    pub struct DescriptorSetLayoutHandle;
-    pub struct ShaderModuleHandle;
-    pub struct GraphicsPipelineHandle;
-    pub struct TransientImageCacheKey;
-    pub struct TransientBufferCacheKey;
-}*/
-
 //--------------------------------------------------------------------------------------------------
-
-struct Swapchain
-{
-    size: Cell<(u32,u32)>,
+#[derive(Debug)]
+pub struct Swapchain {
+    size: Mutex<(u32, u32)>,
 }
 
-impl renderer::Swapchain for Swapchain
-{
+impl renderer::Swapchain for Swapchain {
     fn size(&self) -> (u32, u32) {
-        self.size.get()
+        *self.size.lock().unwrap()
     }
-}
-
-impl renderer::Buffer for Buffer {}
-impl renderer::Image for Image {}
-impl renderer::DescriptorSet for DescriptorSet {}
-
-pub struct Arena
-{
-    pub swapchains: util::SyncArena<Swapchain>,
-    pub buffers: util::SyncArena<Buffer>,
-    pub images: util::SyncArena<Image>,
-    pub descriptor_sets: util::SyncArena<DescriptorSet>,
-    pub descriptor_set_layouts: util::SyncArena<DescriptorSetLayout>,
-    pub shader_modules: util::SyncArena<ShaderModule>,
-    pub graphics_pipelines: util::SyncArena<GraphicsPipeline>
-}
-
-
-pub struct OpenGlBackendInner {
-    target_size: (u32, u32),
-    image_cache: Vec<Image>,
-    frame_idx: u64,
-    timeline: Timeline,
-    upload_buf: MultiBuffer,
-    upload_range: MappedBufferRangeStack,
-    state_cache: StateCache,
 }
 
 pub struct OpenGlBackend {
-    //cache: Cache,
-    //sampler_cache: Mutex<HashMap<SamplerDesc, Sampler>>,
-    //fbo_cache
-    inner: Mutex<OpenGlBackendInner>,
-    arena: Arena,
+    resources: Mutex<Resources>,
+    timeline: Mutex<Timeline>,
+    frame_number: Mutex<u64>, // replace with AtomicU64 once stabilized
+    state_cache: Mutex<StateCache>,
+    sampler_cache: Mutex<SamplerCache>,
     impl_params: ImplementationParameters,
     window: GlWindow,
+    default_swapchain: Swapchain,
     max_frames_in_flight: u32,
 }
 
@@ -256,150 +181,168 @@ impl OpenGlBackend {
         let max_frames_in_flight = cfg.get::<u32>("gfx.max_frames_in_flight").unwrap();
 
         let mut timeline = Timeline::new(0);
-        let mut upload_buf = MultiBuffer::new(upload_buffer_size as usize);
-        let upload_range =
-            MappedBufferRangeStack::new(upload_buf.acquire_buffer_range(1, &mut timeline));
 
         let impl_params = ImplementationParameters::populate();
         let state_cache = StateCache::new(&impl_params);
 
         OpenGlBackend {
-            //cache: Cache::new(),
-            //sampler_cache: Mutex::new(HashMap::new()),
-            inner: Mutex::new(OpenGlBackendInner {
-                images: ResourceCache::new(),
-                buffers: SlotMap::with_key(),
-                state_cache,
-                descriptor_set_layouts: SlotMap::with_key(),
-                descriptor_sets: SlotMap::with_key(),
-                graphics_pipelines: SlotMap::with_key(),
-                shader_modules: SlotMap::with_key(),
-                frame_idx: 1,
-                timeline,
-                upload_buf,
-                upload_range,
-                target_size: window.get_inner_size().unwrap().into(),
-            }),
+            resources: Mutex::new(Resources::new(upload_buffer_size as usize)),
+            timeline: Mutex::new(timeline),
+            frame_number: Mutex::new(1),
+            default_swapchain: Swapchain {
+                size: Mutex::new(window.get_inner_size().unwrap().into()),
+            },
             window,
             max_frames_in_flight,
             impl_params,
+            state_cache: Mutex::new(state_cache),
+            sampler_cache: Mutex::new(SamplerCache::new()),
         }
     }
 }
 
 // TODO move this into a function in the spirv module
 const SPIRV_MAGIC: u32 = 0x0723_0203;
+const UPLOAD_DEDICATED_THRESHOLD: usize = 65536;
+
+impl renderer::GraphicsPipeline for GraphicsPipeline {}
+impl renderer::ShaderModule for ShaderModule {}
+impl renderer::DescriptorSetLayout for DescriptorSetLayout {}
+impl renderer::Buffer for Buffer {}
+impl renderer::Image for Image {}
+impl renderer::Framebuffer for Framebuffer {}
+//impl renderer::DescriptorSet for DescriptorSet {}
 
 impl RendererBackend for OpenGlBackend {
-    type Arena = Arena;
     type Swapchain = Swapchain;
     type Buffer = Buffer;
     type Image = Image;
+    type Framebuffer = Framebuffer;
     type DescriptorSet = DescriptorSet;
     type DescriptorSetLayout = DescriptorSetLayout;
     type ShaderModule = ShaderModule;
     type GraphicsPipeline = GraphicsPipeline;
     type GraphicsPipelineCreateInfoAdditional = GraphicsPipelineCreateInfoAdditional;
+    type Arena = Arena;
     //type AttachmentLayoutHandle = AttachmentLayoutHandle;
 
     fn create_arena(&self) -> Self::Arena {
-        unimplemented!()
+        self.resources.lock().unwrap().create_arena()
+    }
+
+    fn drop_arena(&self, arena: Self::Arena) {
+        self.resources.lock().unwrap().drop_arena(arena)
     }
 
     //----------------------------------------------------------------------------------------------
-    fn create_swapchain<'a>(&self, arena: &'a Self::Arena) -> &'a Self::Swapchain
-    {
+    fn create_swapchain<'a>(&self, arena: &'a Self::Arena) -> &'a Self::Swapchain {
         unimplemented!()
     }
 
-    fn default_swapchain<'rcx>(&'rcx self) -> Option<&'rcx Self::Swapchain>
-    {
-        unimplemented!()
+    fn default_swapchain<'rcx>(&'rcx self) -> Option<&'rcx Self::Swapchain> {
+        Some(&self.default_swapchain)
+    }
+
+    //----------------------------------------------------------------------------------------------
+    fn create_immutable_image<'a>(
+        &self,
+        arena: &'a Self::Arena,
+        format: Format,
+        dimensions: Dimensions,
+        mipcount: MipmapsCount,
+        samples: u32,
+        usage: ImageUsageFlags,
+        data: &[u8],
+    ) -> &'a Self::Image {
+        // initial data specified, allocate a texture
+        let raw = RawImage::new_texture(format, &dimensions, mipcount, samples);
+
+        unsafe {
+            upload_image_region(
+                raw.target,
+                raw.obj,
+                format,
+                0,
+                (0, 0, 0),
+                dimensions.width_height_depth(),
+                data,
+            );
+        }
+
+        arena.images.alloc(Image {
+            should_destroy: true,
+            obj: raw.obj,
+            target: raw.target,
+            alias_info: None,
+        })
     }
 
     //----------------------------------------------------------------------------------------------
     fn create_image<'a>(
         &self,
         arena: &'a Self::Arena,
-        format: Format,
-        dimensions: Dimensions,
-        mipcount: MipmapsCount,
-        samples: u32,
-        usage: ImageUsageFlags,
-        initial_data: Option<&[u8]>,
-    ) -> &'a Self::Image
-    {
-        let img = if let Some(data) = initial_data {
-            // initial data specified, allocate a texture
-            let img = Image::new_texture(format, &dimensions, mipcount, samples);
-            unsafe {
-                upload_image_region(
-                    img.target,
-                    img.obj,
-                    format,
-                    0,
-                    (0, 0, 0),
-                    dimensions.width_height_depth(),
-                    data,
-                );
-            }
-            img
-        } else if usage.intersects(ImageUsageFlags::STORAGE | ImageUsageFlags::SAMPLE) {
-            // will be used as storage or sampled image
-            Image::new_texture(format, &dimensions, mipcount, samples)
-        } else {
-            // only used as color attachments: can use a renderbuffer instead
-            Image::new_renderbuffer(format, &dimensions, samples)
-        };
-
-        arena.images.alloc(img)
-    }
-
-    //----------------------------------------------------------------------------------------------
-    fn create_scoped_image<'a>(
-        &self,
-        arena: &'a Self::Arena,
-        scope: Scope,
+        scope: AliasScope,
         format: Format,
         dimensions: Dimensions,
         mipcount: MipmapsCount,
         samples: u32,
         usage: ImageUsageFlags,
     ) -> &'a Self::Image {
-        let create_info = ImageCreateInfo::new(format, dimensions, mipcount, samples, usage);
-        let mut inner = self.inner.lock().unwrap();
-        let key = inner.images.create_scoped(scope, create_info);
-        let frame = inner.frame_idx;
-        inner.images.allocate_scoped(key, frame, |c| {
-            debug!(
-                "Allocating new scoped image {:?} ({:?}, {:?}, mips: {}, samples: {})",
-                c.dimensions, c.format, c.usage, c.mipcount, c.samples
-            );
-            if c.usage
-                .intersects(ImageUsageFlags::STORAGE | ImageUsageFlags::SAMPLE)
-            {
-                // will be used as storage or sampled image
-                Image::new_texture(
-                    c.format,
-                    &c.dimensions,
-                    MipmapsCount::Specific(c.mipcount),
-                    samples,
-                )
-            } else {
-                // only used as color attachments: can use a renderbuffer instead
-                Image::new_renderbuffer(c.format, &c.dimensions, c.samples)
-            }
-        });
-        key
+        self.resources
+            .lock()
+            .unwrap()
+            .alloc_aliased_image(arena, scope, format, dimensions, mipcount, samples, usage)
     }
 
+    //----------------------------------------------------------------------------------------------
+
+    /// Creates a framebuffer. See trait documentation for explanation of unsafety.
+    fn create_framebuffer<'a>(
+        &self,
+        arena: &'a Self::Arena,
+        color_attachments: &[&'a Self::Image],
+        depth_stencil_attachment: Option<&'a Self::Image>,
+    ) -> &'a Self::Framebuffer {
+        arena
+            .framebuffers
+            .alloc(Framebuffer::new(color_attachments, depth_stencil_attachment).unwrap())
+    }
+
+    //----------------------------------------------------------------------------------------------
+    fn create_immutable_buffer<'a>(
+        &self,
+        arena: &'a Self::Arena,
+        size: u64,
+        data: &[u8],
+    ) -> &'a Self::Buffer {
+        if size < UPLOAD_DEDICATED_THRESHOLD as u64 {
+            // if the buffer is small enough, allocate through the upload buffer
+            let (obj, offset) = arena.upload_buffer.write(data, 64).unwrap();
+            arena.buffers.alloc(Buffer {
+                obj,
+                offset,
+                size: size as usize,
+                alias_info: None,
+                should_destroy: false,
+            })
+        } else {
+            // TODO
+            unimplemented!()
+        }
+    }
+
+    //----------------------------------------------------------------------------------------------
+    fn create_buffer<'a>(&self, arena: &'a Self::Arena, size: u64) -> &'a Self::Buffer {
+        unimplemented!()
+    }
+
+    //----------------------------------------------------------------------------------------------
     fn create_shader_module<'a>(
         &self,
         arena: &'a Self::Arena,
         data: &[u8],
         stage: ShaderStageFlags,
-    ) -> &'a Self::ShaderModule
-    {
+    ) -> &'a Self::ShaderModule {
         // detect SPIR-V or GLSL
         // TODO big-endian is also possible!
         // FIXME clippy warning: data may be misaligned
@@ -431,102 +374,24 @@ impl RendererBackend for OpenGlBackend {
         arena.shader_modules.alloc(module)
     }
 
-    /*
-    fn destroy_shader_module(&self, module: Self::ShaderModuleHandle) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.shader_modules.remove(module);
-    }*/
-
-    //----------------------------------------------------------------------------------------------
-    /*fn upload_transient(&self, data: &[u8]) -> BufferSlice<Self::BufferHandle> {
-        // acquire mapped buffer range for current frame if not already done
-        // write data at current pointer
-        // flush
-        let mut inner = self.inner.lock().unwrap();
-        let offset = inner
-            .upload_range
-            .write(data, self.impl_params.uniform_buffer_alignment)
-            .expect("unable to upload data");
-        inner.upload_range.flush(); // XXX not necessary to make it visible already
-        unimplemented!()
-        /*BufferSlice {
-            buffer: inner.upload_range.buffer(),
-            offset,
-            size: data.len()
-        }*/
-    }*/
-
-    //----------------------------------------------------------------------------------------------
-    /*fn destroy_image(&self, image: Self::ImageHandle) {
-        // delete the image right now, since OpenGL will handle the actual resource deletion
-        // once the resource is not used anymore.
-        let mut inner = self.inner.lock().unwrap();
-        inner.images.destroy(image, |_| {});
-    }*/
-
-    //----------------------------------------------------------------------------------------------
-    fn create_buffer<'a>(&self,
-                         arena: &'a Self::Arena,
-                         size: u64) -> &'a Self::Buffer
-    {
-        unimplemented!()
-    }
-
-
-    //----------------------------------------------------------------------------------------------
-    fn submit_frame(&self, frame: SubmitFrame<Self>) {
-        //
-        let mut inner = self.inner.lock().unwrap();
-
-        // execute commands
-        {
-            let mut execute_context =
-                ExecuteContext::new(inner.deref_mut(), &self.window, &self.impl_params);
-            for cmd in frame.commands.iter() {
-                execute_context.execute_command(cmd);
-            }
-        }
-
-        let idx = inner.frame_idx;
-        inner.timeline.signal(idx);
-
-        // wait for previous frames before starting a new one
-        // if max_frames_in_flight is zero, then will wait on the previously signalled point.
-        if idx > u64::from(self.max_frames_in_flight) {
-            let timeout = !inner.timeline.client_sync(
-                idx - u64::from(self.max_frames_in_flight),
-                Timeout::Nanoseconds(1_000_000),
-            );
-            if timeout {
-                panic!("timeout waiting for frame to finish")
-            }
-        }
-
-        inner.frame_idx += 1;
-        // update default framebuffer size
-        inner.target_size = self.window.get_inner_size().unwrap().into();
-    }
-
     //----------------------------------------------------------------------------------------------
     fn create_graphics_pipeline<'a>(
         &self,
         arena: &'a Self::Arena,
-        create_info: &GraphicsPipelineCreateInfo<'a, Self>,
+        create_info: &GraphicsPipelineCreateInfo<'_, 'a, Self>,
     ) -> &'a Self::GraphicsPipeline {
-        self.create_graphics_pipeline_internal(create_info)
+        create_graphics_pipeline_internal(arena, create_info)
     }
 
     //----------------------------------------------------------------------------------------------
     fn create_descriptor_set_layout<'a>(
         &self,
         arena: &'a Self::Arena,
-        bindings: &[LayoutBinding],
+        bindings: &[DescriptorSetLayoutBinding],
     ) -> &'a Self::DescriptorSetLayout {
         assert_ne!(bindings.len(), 0, "descriptor set layout has no bindings");
-        let mut inner = self.inner.lock().unwrap();
-
-        inner.descriptor_set_layouts.insert(DescriptorSetLayout {
-            bindings: bindings.to_vec(),
+        arena.descriptor_set_layouts.alloc(DescriptorSetLayout {
+            bindings: bindings.iter().map(|b| b.clone().into()).collect(),
         })
     }
 
@@ -534,214 +399,51 @@ impl RendererBackend for OpenGlBackend {
     fn create_descriptor_set<'a>(
         &self,
         arena: &'a Self::Arena,
-        layout: Self::DescriptorSetLayoutHandle,
+        layout: &Self::DescriptorSetLayout,
         descriptors: &[Descriptor<Self>],
     ) -> &'a Self::DescriptorSet {
-        // convert the descriptor set to a set of uniform and textures
-        let mut inner = self.inner.lock().unwrap();
-        let layout = &inner.descriptor_set_layouts[layout];
-        let mut ds = DescriptorSet::new();
-
-        for (i, d) in descriptors.iter().enumerate() {
-            let layout_entry = layout.bindings[i];
-
-            match layout_entry.descriptor_type {
-                DescriptorType::SampledImage => {
-                    if let &Descriptor::SampledImage { img, sampler } = d {
-
-                    } else {
-                        // wrong type
-                        warn!("descriptor #{} does not match corresponding layout entry (expected: SampledImage)", i);
-                    }
-                }
-                DescriptorType::UniformBuffer => {}
-                DescriptorType::StorageImage => {}
-                _ => unimplemented!(),
-            }
-        }
-
-        unimplemented!()
+        let mut sampler_cache = self.sampler_cache.lock().unwrap();
+        let descriptor_set =
+            DescriptorSet::from_descriptors_and_layout(descriptors, layout, &mut sampler_cache);
+        arena.descriptor_sets.alloc(descriptor_set)
     }
 
-    fn drop_arena(&self, arena: <Self as RendererBackend>::Arena) where Self: Sized {
-        unimplemented!()
-    }
+    //----------------------------------------------------------------------------------------------
+    fn submit_frame<'a>(&self, frame: &[Command<'a, Self>]) {
+        let mut resources = self.resources.lock().unwrap();
+        let mut state_cache = self.state_cache.lock().unwrap();
 
-    /*fn create_attachment_layout(&self, attachments: &[AttachmentDescription]) -> Self::AttachmentLayoutHandle {
-        let mut inner = self.inner.lock().unwrap();
-        inner.attachment_layouts.insert(AttachmentLayout { attachments: attachments.to_vec() })
-    }*/
-}
-
-struct ExecuteContext<'a> {
-    backend: &'a mut OpenGlBackendInner,
-    window: &'a GlWindow,
-    impl_details: &'a ImplementationParameters,
-}
-
-impl<'a> ExecuteContext<'a> {
-    fn new(
-        backend: &'a mut OpenGlBackendInner,
-        window: &'a GlWindow,
-        impl_details: &'a ImplementationParameters,
-    ) -> ExecuteContext<'a> {
-        ExecuteContext {
-            backend,
-            window,
-            impl_details,
-        }
-    }
-
-    fn cmd_clear_image_float(&mut self, image: ImageHandle, color: &[f32; 4]) {
-        let img = &self.backend.images.get(image).unwrap();
-        let obj = img.obj;
-        if img.target == gl::RENDERBUFFER {
-            // create temporary framebuffer
-            let mut tmpfb = 0;
-            unsafe {
-                gl::CreateFramebuffers(1, &mut tmpfb);
-                gl::NamedFramebufferRenderbuffer(
-                    tmpfb,
-                    gl::COLOR_ATTACHMENT0,
-                    gl::RENDERBUFFER,
-                    img.obj,
-                );
-                gl::NamedFramebufferDrawBuffers(tmpfb, 1, (&[gl::COLOR_ATTACHMENT0]).as_ptr());
-                gl::ClearNamedFramebufferfv(tmpfb, gl::COLOR, 0, color.as_ptr());
-                gl::DeleteFramebuffers(1, &tmpfb);
-            }
-        } else {
-            // TODO specify which level to clear in command
-            unsafe {
-                gl::ClearTexImage(obj, 0, gl::RGBA, gl::FLOAT, color.as_ptr() as *const _);
-            }
-        }
-    }
-
-    fn cmd_clear_depth_stencil_image(
-        &mut self,
-        image: ImageHandle,
-        depth: f32,
-        stencil: Option<u8>,
-    ) {
-        let img = &self.backend.images.get(image).unwrap();
-        let obj = img.obj;
-        if img.target == gl::RENDERBUFFER {
-            // create temporary framebuffer
-            let mut tmpfb = 0;
-            unsafe {
-                gl::CreateFramebuffers(1, &mut tmpfb);
-                gl::NamedFramebufferRenderbuffer(
-                    tmpfb,
-                    gl::DEPTH_ATTACHMENT,
-                    gl::RENDERBUFFER,
-                    img.obj,
-                );
-                if let Some(stencil) = stencil {
-                    unimplemented!()
-                } else {
-                    gl::ClearNamedFramebufferfv(tmpfb, gl::DEPTH, 0, &depth);
-                }
-                gl::DeleteFramebuffers(1, &tmpfb);
-            }
-        } else {
-            // TODO specify which level to clear in command
-            unsafe {
-                if let Some(stencil) = stencil {
-                    unimplemented!()
-                } else {
-                    gl::ClearTexImage(
-                        obj,
-                        0,
-                        gl::DEPTH_COMPONENT,
-                        gl::FLOAT,
-                        &depth as *const f32 as *const _,
-                    );
-                }
-            }
-        }
-    }
-
-    fn cmd_present(
-        &mut self,
-        image: ImageHandle,
-        swapchain: <OpenGlBackend as RendererBackend>::SwapchainHandle,
-    ) {
-        // only handle default swapchain for now
-        assert_eq!(swapchain, 0, "invalid swapchain handle");
-        // make a framebuffer and bind the image to it
-
-        unsafe {
-            let mut tmpfb = 0;
-            gl::CreateFramebuffers(1, &mut tmpfb);
-            // bind image to it
-            let img = self.backend.images.get(image).unwrap();
-            if img.target == gl::RENDERBUFFER {
-                gl::NamedFramebufferRenderbuffer(
-                    tmpfb,
-                    gl::COLOR_ATTACHMENT0,
-                    gl::RENDERBUFFER,
-                    img.obj,
-                );
-            } else {
-                // TODO other levels / layers?
-                gl::NamedFramebufferTexture(tmpfb, gl::COLOR_ATTACHMENT0, img.obj, 0);
-            }
-            // blit to default framebuffer
-            //gl::BindFramebuffer(gl::READ_FRAMEBUFFER, tmpfb);
-            let (w, h) = self.backend.target_size;
-
-            gl::BlitNamedFramebuffer(
-                tmpfb,
-                0,
-                0,        // srcX0
-                0,        // srcY0
-                w as i32, // srcX1,
-                h as i32, // srcY1,
-                0,        // dstX0,
-                0,        // dstY0,
-                w as i32, // dstX1
-                h as i32, // dstY1
-                gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT,
-                gl::NEAREST,
+        // execute commands
+        {
+            let mut execute_context = ExecuteContext::new(
+                &mut resources,
+                &mut state_cache,
+                &self.window,
+                &self.impl_params,
             );
-
-            // destroy temp framebuffer
-            gl::DeleteFramebuffers(1, &tmpfb);
-        }
-
-        // swap buffers
-        self.window.swap_buffers().expect("swap_buffers error")
-    }
-
-    fn execute_command(&mut self, command: &Command<OpenGlBackend>) {
-        match command.cmd {
-            CommandInner::PipelineBarrier {} => {
-                // no-op on GL
-            }
-            CommandInner::AllocImage { image } => unimplemented!(),
-            CommandInner::AllocBuffer { buffer } => unimplemented!(),
-            CommandInner::DropImage { image } => unimplemented!(),
-            CommandInner::DropBuffer { buffer } => unimplemented!(),
-            CommandInner::SwapImages { a, b } => unimplemented!(),
-            CommandInner::SwapBuffers { a, b } => unimplemented!(),
-            CommandInner::ClearImageFloat { image, color } => {
-                self.cmd_clear_image_float(image, &color);
-            }
-            CommandInner::ClearDepthStencilImage {
-                image,
-                depth,
-                stencil,
-            } => {
-                self.cmd_clear_depth_stencil_image(image, depth, stencil);
-            }
-            CommandInner::Draw {} => unimplemented!(),
-            CommandInner::Present { image, swapchain } => {
-                self.cmd_present(image, swapchain);
+            for cmd in frame.iter() {
+                execute_context.execute_command(cmd);
             }
         }
+
+        let mut frame_number = self.frame_number.lock().unwrap();
+        let mut timeline = self.timeline.lock().unwrap();
+        timeline.signal(*frame_number);
+
+        // wait for previous frames before starting a new one
+        // if max_frames_in_flight is zero, then will wait on the previously signalled point.
+        if *frame_number > u64::from(self.max_frames_in_flight) {
+            let timeout = !timeline.client_sync(
+                *frame_number - u64::from(self.max_frames_in_flight),
+                Timeout::Nanoseconds(1_000_000),
+            );
+            if timeout {
+                panic!("timeout waiting for frame to finish")
+            }
+        }
+
+        *frame_number += 1;
+        // update default framebuffer size
+        *self.default_swapchain.size.lock().unwrap() = self.window.get_inner_size().unwrap().into();
     }
 }
-
-
-

@@ -8,10 +8,13 @@ use crate::renderer::backend::gl::api::types::*;
 
 /// Copy + Clone to bypass a restriction of slotmap on stable rust.
 #[derive(Copy, Clone, Debug)]
-pub struct Buffer {
+pub struct RawBuffer {
     pub obj: GLuint,
-    pub shared: bool,
-    pub offset: usize,
+    pub size: usize,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct BufferDescription {
     pub size: usize,
 }
 

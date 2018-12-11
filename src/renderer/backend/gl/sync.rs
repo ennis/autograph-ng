@@ -3,6 +3,73 @@ use std::collections::vec_deque::VecDeque;
 use crate::renderer::backend::gl::api as gl;
 use crate::renderer::backend::gl::api::types::*;
 
+pub struct GpuSyncObject<T> {
+    sync: GLsync,
+    obj: T,
+}
+
+unsafe impl<T> Send for GpuSyncObject<T> {}
+
+pub enum GpuSyncError {
+    Timeout,
+    Unspecified,
+}
+
+impl<T> GpuSyncObject<T> {
+    pub fn new(obj: T) -> GpuSyncObject<T> {
+        let sync = unsafe { gl::FenceSync(gl::SYNC_GPU_COMMANDS_COMPLETE, 0) };
+        GpuSyncObject { sync, obj }
+    }
+
+    pub fn wait_into_inner(self) -> Result<T, (GpuSyncError, Self)> {
+        self.wait_into_inner_timeout(FENCE_CLIENT_WAIT_TIMEOUT)
+    }
+
+    pub fn try_wait_into_inner(self) -> Result<T, (GpuSyncError, Self)> {
+        self.wait_into_inner_timeout(0)
+    }
+
+    pub fn wait(&self) -> Result<(), GpuSyncError> {
+        self.wait_timeout(FENCE_CLIENT_WAIT_TIMEOUT)
+    }
+
+    pub fn try_wait(&self) -> Result<(), GpuSyncError> {
+        self.wait_timeout(0)
+    }
+
+    pub unsafe fn into_inner_unsynchronized(self) -> T {
+        gl::DeleteSync(self.sync);
+        self.obj
+    }
+
+    //---------------------------------------
+    fn wait_into_inner_timeout(self, timeout: u64) -> Result<T, (GpuSyncError, Self)> {
+        match self.wait_timeout(timeout) {
+            Ok(()) => {
+                unsafe {
+                    gl::DeleteSync(self.sync);
+                }
+                Ok(self.obj)
+            }
+            Err(e) => Err((e, self)),
+        }
+    }
+
+    fn wait_timeout(&self, timeout: u64) -> Result<(), GpuSyncError> {
+        let wait_result =
+            unsafe { gl::ClientWaitSync(self.sync, gl::SYNC_FLUSH_COMMANDS_BIT, timeout) };
+
+        if wait_result == gl::CONDITION_SATISFIED || wait_result == gl::ALREADY_SIGNALED {
+            Ok(())
+        } else if wait_result == gl::WAIT_FAILED {
+            Err(GpuSyncError::Unspecified)
+        } else {
+            // Timeout
+            Err(GpuSyncError::Timeout)
+        }
+    }
+}
+
 struct SyncPoint {
     sync: GLsync,
     value: u64,

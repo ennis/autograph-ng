@@ -271,9 +271,7 @@ impl StateCache {
             let mut states = vec![None; self.max_draw_buffers as usize];
             states[index as usize] = Some(*state);
             self.blend = Some(ColorBlendCache { all: false, states });
-            unsafe {
-                bind_separate(index, state);
-            }
+            bind_separate(index, state);
         }
     }
 
@@ -385,6 +383,85 @@ impl StateCache {
             StencilTest::Enabled { front, back } => {
                 self.set_stencil_test_enabled(true);
                 self.set_stencil_op(front, back);
+            }
+        }
+    }
+
+    pub fn set_uniform_buffers(
+        &mut self,
+        buffers: &[GLuint],
+        buffer_offsets: &[GLintptr],
+        buffer_sizes: &[GLintptr],
+    ) {
+        // passthrough, for now
+        // may do a comparison, or a quick diff in the future
+        unsafe {
+            let count = buffers.len();
+            if count != 0 {
+                gl::BindBuffersRange(
+                    gl::UNIFORM_BUFFER,
+                    0,
+                    count as i32,
+                    buffers.as_ptr(),
+                    buffer_offsets.as_ptr(),
+                    buffer_sizes.as_ptr(),
+                );
+            }
+        }
+    }
+
+    pub fn set_shader_storage_buffers(
+        &mut self,
+        buffers: &[GLuint],
+        buffer_offsets: &[GLintptr],
+        buffer_sizes: &[GLintptr],
+    ) {
+        // passthrough, for now
+        // may do a comparison, or a quick diff in the future
+        unsafe {
+            let count = buffers.len();
+            if count != 0 {
+                gl::BindBuffersRange(
+                    gl::SHADER_STORAGE_BUFFER,
+                    0,
+                    count as i32,
+                    buffers.as_ptr(),
+                    buffer_offsets.as_ptr(),
+                    buffer_sizes.as_ptr(),
+                );
+            }
+        }
+    }
+
+    pub fn set_samplers(&mut self, samplers: &[GLuint]) {
+        // passthrough, for now
+        // may do a comparison, or a quick diff in the future
+        unsafe { gl::BindSamplers(0, samplers.len() as i32, samplers.as_ptr()) }
+    }
+
+    pub fn set_textures(&mut self, textures: &[GLuint]) {
+        // passthrough, for now
+        // may do a comparison, or a quick diff in the future
+        unsafe { gl::BindTextures(0, textures.len() as i32, textures.as_ptr()) }
+    }
+
+    pub fn set_vertex_buffers(&mut self,
+                              buffers: &[GLuint],
+                              buffer_offsets: &[GLintptr],
+                              buffer_strides: &[GLsizei])
+    {
+        // passthrough, for now
+        // may do a comparison, or a quick diff in the future
+        unsafe {
+            let count = buffers.len();
+            if count != 0 {
+                gl::BindVertexBuffers(
+                    0,
+                    count as i32,
+                    buffers.as_ptr(),
+                    buffer_offsets.as_ptr(),
+                    buffer_strides.as_ptr(),
+                )
             }
         }
     }

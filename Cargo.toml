@@ -27,9 +27,9 @@ glutin = "*"
 pretty_env_logger = "*"
 log = "*"
 slotmap = { version = "*", features = ["unstable"] }
-serde = "*"
-serde_derive = "*"
-downcast-rs = "*"
+#serde = "*"
+#serde_derive = "*"
+#downcast-rs = "*"
 time = "*"
 sid_vec = "*"
 regex="*"
@@ -39,6 +39,7 @@ shaderc = "*"
 ordered-float = "*"
 unreachable = "*"
 typed-arena = "*"
+fxhash = "*"
 
 #[target.'cfg(windows)'.dependencies]
 #winapi = { version = "*", features = ["windef", "winuser"] }

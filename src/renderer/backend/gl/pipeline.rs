@@ -3,13 +3,23 @@ use std::error::Error;
 use std::fmt;
 use unreachable::UncheckedOptionExt;
 
-use crate::renderer::backend::gl::api as gl;
-use crate::renderer::backend::gl::api::types::*;
-use crate::renderer::backend::gl::format::GlFormatInfo;
-use crate::renderer::backend::gl::shader::ShaderModule;
-use crate::renderer::backend::gl::state::StateCache;
-use crate::renderer::backend::gl::*;
-use crate::renderer::*;
+use crate::renderer::backend::gl::{
+    api as gl,
+    api::types::*,
+    format::GlFormatInfo,
+    shader::{create_specialized_spirv_shader, ShaderCreationError, ShaderModule},
+    state::StateCache,
+    Arena, OpenGlBackend,
+};
+use crate::renderer::{
+    GraphicsPipelineCreateInfo, GraphicsPipelineShaderStages, LogicOp,
+    PipelineColorBlendAttachmentState, PipelineColorBlendAttachments,
+    PipelineColorBlendStateCreateInfo, PipelineDepthStencilStateCreateInfo,
+    PipelineInputAssemblyStateCreateInfo, PipelineLayoutCreateInfo,
+    PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo, PipelineScissors,
+    SamplerDescription, ShaderStageFlags, VertexInputAttributeDescription,
+    VertexInputBindingDescription,
+};
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -19,14 +29,32 @@ pub enum BindingSpace {
     AtomicCounterBuffer,
     Texture,
     Image,
+    Empty,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct DescriptorMapEntry {
-    pub target_binding_space: BindingSpace,
-    pub target_binding_range: (u32, u32),
-    pub set: u32,
-    pub binding_base: u32,
+pub struct BindingLocation {
+    pub space: BindingSpace,
+    pub location: u32,
+}
+
+#[derive(Clone, Debug)]
+pub struct DescriptorMap {
+    pub sets: Vec<Vec<BindingLocation>>,
+}
+
+impl DescriptorMap {
+    pub fn get_binding_location(&self, set: u32, binding: u32) -> Option<BindingLocation> {
+        self.sets.get(set as usize).and_then(|set| {
+            set.get(binding as usize).and_then(|loc| {
+                if loc.space == BindingSpace::Empty {
+                    None
+                } else {
+                    Some(*loc)
+                }
+            })
+        })
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -35,12 +63,12 @@ pub struct StaticSamplerEntry {
     pub description: SamplerDescription,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug)]
 pub struct GraphicsPipelineCreateInfoAdditional {
     // these two members should really be slices instead of owned data
     // but that's impossible until rust supports generic associated types
     // https://github.com/rust-lang/rust/issues/44265
-    pub descriptor_map: Vec<DescriptorMapEntry>,
+    pub descriptor_map: DescriptorMap,
     pub static_samplers: Vec<StaticSamplerEntry>,
 }
 
@@ -261,80 +289,78 @@ pub struct GraphicsPipeline {
     input_assembly_state: PipelineInputAssemblyStateCreateInfo,
     vertex_input_bindings: Vec<VertexInputBindingDescription>,
     color_blend_state: PipelineColorBlendStateOwned,
-    descriptor_map: Vec<DescriptorMapEntry>,
+    descriptor_map: DescriptorMap,
     static_samplers: Vec<StaticSamplerEntry>,
     program: GLuint,
     vao: GLuint,
 }
 
-impl OpenGlBackend {
-    pub fn create_graphics_pipeline_internal(
-        &self,
-        create_info: &GraphicsPipelineCreateInfo<OpenGlBackend>,
-    ) -> GraphicsPipelineHandle {
-        let program = {
-            let mut inner = self.inner.lock().unwrap();
-            let vs = &inner.shader_modules[create_info.shader_stages.vertex];
-            let fs = create_info
-                .shader_stages
-                .fragment
-                .map(|h| &inner.shader_modules[h]);
-            let gs = create_info
-                .shader_stages
-                .geometry
-                .map(|h| &inner.shader_modules[h]);
-            let tcs = create_info
-                .shader_stages
-                .tess_control
-                .map(|h| &inner.shader_modules[h]);
-            let tes = create_info
-                .shader_stages
-                .tess_eval
-                .map(|h| &inner.shader_modules[h]);
-            create_graphics_program(vs, fs, gs, tcs, tes).expect("failed to create program")
-        };
-
-        //assert_eq!(vertex_shader.stage, ShaderStageFlags::VERTEX);
-        let vao = create_vertex_array_object(create_info.vertex_input_state.attributes);
-
-        let color_blend_state = PipelineColorBlendStateOwned {
-            logic_op: create_info.color_blend_state.logic_op,
-            attachments: match create_info.color_blend_state.attachments {
-                PipelineColorBlendAttachments::All(a) => {
-                    PipelineColorBlendAttachmentsOwned::All(*a)
-                }
-                PipelineColorBlendAttachments::Separate(a) => {
-                    PipelineColorBlendAttachmentsOwned::Separate(a.to_vec())
-                }
-            },
-            blend_constants: create_info.color_blend_state.blend_constants,
-        };
-
-        let g = GraphicsPipeline {
-            rasterization_state: *create_info.rasterization_state,
-            depth_stencil_state: *create_info.depth_stencil_state,
-            multisample_state: *create_info.multisample_state,
-            input_assembly_state: *create_info.input_assembly_state,
-            vertex_input_bindings: create_info.vertex_input_state.bindings.to_vec(),
-            program,
-            vao,
-            descriptor_map: create_info.additional.descriptor_map.clone(),
-            static_samplers: create_info.additional.static_samplers.clone(),
-            color_blend_state,
-        };
-
-        let mut inner = self.inner.lock().unwrap();
-        inner.graphics_pipelines.insert(g)
+impl GraphicsPipeline {
+    pub fn descriptor_map(&self) -> &DescriptorMap {
+        &self.descriptor_map
     }
+
+    pub fn static_samplers(&self) -> &[StaticSamplerEntry] {
+        &self.static_samplers
+    }
+
+    pub fn vertex_input_bindings(&self) -> &[VertexInputBindingDescription] {
+        &self.vertex_input_bindings
+    }
+}
+
+pub fn create_graphics_pipeline_internal<'a>(
+    arena: &'a Arena,
+    create_info: &GraphicsPipelineCreateInfo<OpenGlBackend>,
+) -> &'a GraphicsPipeline {
+    let program = {
+        let vs = create_info.shader_stages.vertex;
+        let fs = create_info.shader_stages.fragment;
+        let gs = create_info.shader_stages.geometry;
+        let tcs = create_info.shader_stages.tess_control;
+        let tes = create_info.shader_stages.tess_eval;
+        create_graphics_program(vs, fs, gs, tcs, tes).expect("failed to create program")
+    };
+
+    //assert_eq!(vertex_shader.stage, ShaderStageFlags::VERTEX);
+    let vao = create_vertex_array_object(create_info.vertex_input_state.attributes);
+
+    let color_blend_state = PipelineColorBlendStateOwned {
+        logic_op: create_info.color_blend_state.logic_op,
+        attachments: match create_info.color_blend_state.attachments {
+            PipelineColorBlendAttachments::All(a) => PipelineColorBlendAttachmentsOwned::All(*a),
+            PipelineColorBlendAttachments::Separate(a) => {
+                PipelineColorBlendAttachmentsOwned::Separate(a.to_vec())
+            }
+        },
+        blend_constants: create_info.color_blend_state.blend_constants,
+    };
+
+    debug!("descriptor map: {:#?}", create_info.additional.descriptor_map);
+
+    let g = GraphicsPipeline {
+        rasterization_state: *create_info.rasterization_state,
+        depth_stencil_state: *create_info.depth_stencil_state,
+        multisample_state: *create_info.multisample_state,
+        input_assembly_state: *create_info.input_assembly_state,
+        vertex_input_bindings: create_info.vertex_input_state.bindings.to_vec(),
+        program,
+        vao,
+        descriptor_map: create_info.additional.descriptor_map.clone(),
+        static_samplers: create_info.additional.static_samplers.clone(),
+        color_blend_state,
+    };
+
+    arena.graphics_pipelines.alloc(g)
 }
 
 impl GraphicsPipeline {
     pub fn bind(&self, state_cache: &mut StateCache) {
+        /*state_cache.set_program(self.program);
+        state_cache.set_vertex_array(self.vao);
         state_cache.set_cull_mode(self.rasterization_state.cull_mode);
         state_cache.set_polygon_mode(self.rasterization_state.polygon_mode);
         state_cache.set_stencil_test(&self.depth_stencil_state.stencil_test);
-        state_cache.set_vertex_array(self.vao);
-        state_cache.set_program(self.program);
         match self.color_blend_state.attachments {
             PipelineColorBlendAttachmentsOwned::All(ref state) => state_cache.set_all_blend(state),
             PipelineColorBlendAttachmentsOwned::Separate(ref states) => {
@@ -342,6 +368,6 @@ impl GraphicsPipeline {
                     state_cache.set_blend_separate(i as u32, s);
                 }
             }
-        }
+        }*/
     }
 }

@@ -9,7 +9,7 @@ use std::cmp::*;
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct ImageCreateInfo {
+pub struct ImageDescription {
     pub format: Format,
     pub dimensions: Dimensions,
     pub mipcount: u32,
@@ -17,14 +17,14 @@ pub struct ImageCreateInfo {
     pub usage: ImageUsageFlags,
 }
 
-impl ImageCreateInfo {
+impl ImageDescription {
     pub fn new(
         format: Format,
         dimensions: Dimensions,
         mipmaps_count: MipmapsCount,
         samples: u32,
         usage: ImageUsageFlags,
-    ) -> ImageCreateInfo {
+    ) -> ImageDescription {
         let (w, h, d) = dimensions.width_height_depth();
         let mipcount = match mipmaps_count {
             // TODO mipcount for 3D textures?
@@ -38,7 +38,7 @@ impl ImageCreateInfo {
             }
             MipmapsCount::One => 1,
         };
-        ImageCreateInfo {
+        ImageDescription {
             format,
             dimensions,
             mipcount,
@@ -124,21 +124,20 @@ bitflags! {
 //--------------------------------------------------------------------------------------------------
 
 /// Wrapper for OpenGL textures and renderbuffers.
-/// Copy + Clone to bypass a restriction of slotmap on stable rust.
 #[derive(Copy, Clone, Debug)]
-pub struct Image {
+pub struct RawImage {
     pub obj: GLuint,
     pub target: GLenum,
     //pub format: Format,
 }
 
-impl Image {
+impl RawImage {
     pub fn new_texture(
         format: Format,
         dimensions: &Dimensions,
         mipmaps: MipmapsCount,
         samples: u32,
-    ) -> Image {
+    ) -> RawImage {
         let et = ExtentsAndType::from_dimensions(&dimensions);
         let glfmt = GlFormatInfo::from_format(format);
 
@@ -206,14 +205,14 @@ impl Image {
             gl::TextureParameteri(obj, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
         }
 
-        Image {
+        RawImage {
             obj,
             target: et.target,
             //format
         }
     }
 
-    pub fn new_renderbuffer(format: Format, dimensions: &Dimensions, samples: u32) -> Image {
+    pub fn new_renderbuffer(format: Format, dimensions: &Dimensions, samples: u32) -> RawImage {
         let et = ExtentsAndType::from_dimensions(&dimensions);
         let glfmt = GlFormatInfo::from_format(format);
 
@@ -240,7 +239,7 @@ impl Image {
             }
         }
 
-        Image {
+        RawImage {
             obj,
             target: gl::RENDERBUFFER,
             //format

@@ -61,9 +61,7 @@
 use ordered_float::NotNan;
 use std::cmp::Eq;
 use std::fmt::Debug;
-use std::hash::Hash;
 use std::mem;
-use std::ops::DerefMut;
 use std::sync::Mutex;
 
 pub mod backend;
@@ -87,7 +85,7 @@ define_sort_key! {
 
 sequence_id!{ opaque, layer=group_id, depth=d, pass_immediate=0 }*/
 
-pub use self::command_buffer::{sort_command_buffers, Command, CommandBuffer};
+pub use self::command_buffer::{sort_command_buffers, Command, CommandBuffer, CommandInner};
 pub use self::format::*;
 pub use self::image::*;
 pub use self::sampler::*;
@@ -147,11 +145,12 @@ pub enum PrimitiveTopology {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct LayoutBinding {
+pub struct DescriptorSetLayoutBinding<'tcx> {
     pub binding: u32,
     pub descriptor_type: DescriptorType,
     pub stage_flags: ShaderStageFlags,
     pub count: usize,
+    pub tydesc: Option<&'tcx TypeDesc<'tcx>>,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -164,16 +163,18 @@ pub enum DescriptorType {
     InputAttachment,
 }
 
-pub enum Descriptor<R: RendererBackend> {
+pub enum Descriptor<'a, R: RendererBackend> {
     SampledImage {
-        img: R::ImageHandle,
+        img: &'a R::Image,
         sampler: SamplerDescription,
     },
     Image {
-        img: R::ImageHandle,
+        img: &'a R::Image,
     },
     Buffer {
-        buffer: BufferSlice<R::BufferHandle>,
+        buffer: &'a R::Buffer,
+        offset: usize,
+        size: usize,
     },
     Empty,
 }
@@ -184,18 +185,18 @@ pub enum ShaderFormat {
     BackendSpecific,
 }
 
-#[derive(Debug, Hash, PartialEq, Eq)]
-pub struct GraphicsPipelineShaderStages<'a, R: RendererBackend> {
+#[derive(Debug)]
+pub struct GraphicsPipelineShaderStages<'rcx, R: RendererBackend> {
     //pub format: ShaderFormat,
-    pub vertex: &'a R::ShaderModule,
-    pub geometry: Option<&'a R::ShaderModule>,
-    pub fragment: Option<&'a R::ShaderModule>,
-    pub tess_eval: Option<&'a R::ShaderModule>,
-    pub tess_control: Option<&'a R::ShaderModule>,
+    pub vertex: &'rcx R::ShaderModule,
+    pub geometry: Option<&'rcx R::ShaderModule>,
+    pub fragment: Option<&'rcx R::ShaderModule>,
+    pub tess_eval: Option<&'rcx R::ShaderModule>,
+    pub tess_control: Option<&'rcx R::ShaderModule>,
 }
 
 // rust issue #26925
-impl<R: RendererBackend> Clone for GraphicsPipelineShaderStages<R> {
+impl<'a, R: RendererBackend> Clone for GraphicsPipelineShaderStages<'a, R> {
     fn clone(&self) -> Self {
         // safe because TODO
         unsafe { mem::transmute_copy(self) }
@@ -289,6 +290,19 @@ pub struct Viewport {
     pub max_depth: NotNan<f32>,
 }
 
+impl From<(u32, u32)> for Viewport {
+    fn from((w, h): (u32, u32)) -> Self {
+        Viewport {
+            x: 0.0.into(),
+            y: 0.0.into(),
+            width: (w as f32).into(),
+            height: (h as f32).into(),
+            min_depth: 0.0.into(),
+            max_depth: 1.0.into(),
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ScissorRect {
     pub x: i32,
@@ -375,9 +389,9 @@ pub struct PipelineVertexInputStateCreateInfo<'a> {
     pub attributes: &'a [VertexInputAttributeDescription],
 }
 
-#[derive(Debug, Eq, PartialEq, Hash)]
-pub struct PipelineLayoutCreateInfo<'a, R: RendererBackend> {
-    pub descriptor_set_layouts: &'a [R::DescriptorSetLayoutHandle],
+#[derive(Debug)]
+pub struct PipelineLayoutCreateInfo<'a, 'rcx, R: RendererBackend> {
+    pub descriptor_set_layouts: &'a [&'rcx R::DescriptorSetLayout],
     //pub push_constants: &'a [PushConstant]
 }
 
@@ -580,9 +594,9 @@ pub struct PipelineColorBlendStateCreateInfo<'a> {
     pub blend_constants: [NotNan<f32>; 4],
 }
 
-#[derive(Debug, Eq, PartialEq, Hash)]
-pub struct GraphicsPipelineCreateInfo<'a, R: RendererBackend> {
-    pub shader_stages: &'a GraphicsPipelineShaderStages<'a, R>,
+#[derive(Debug)]
+pub struct GraphicsPipelineCreateInfo<'a, 'rcx, R: RendererBackend> {
+    pub shader_stages: &'a GraphicsPipelineShaderStages<'rcx, R>,
     pub vertex_input_state: &'a PipelineVertexInputStateCreateInfo<'a>,
     pub viewport_state: &'a PipelineViewportStateCreateInfo<'a>,
     pub rasterization_state: &'a PipelineRasterizationStateCreateInfo,
@@ -591,13 +605,13 @@ pub struct GraphicsPipelineCreateInfo<'a, R: RendererBackend> {
     pub input_assembly_state: &'a PipelineInputAssemblyStateCreateInfo,
     pub color_blend_state: &'a PipelineColorBlendStateCreateInfo<'a>,
     pub dynamic_state: DynamicStateFlags,
-    pub pipeline_layout: &'a PipelineLayoutCreateInfo<'a, R>,
+    pub pipeline_layout: &'a PipelineLayoutCreateInfo<'a, 'rcx, R>,
     pub attachment_layout: &'a AttachmentLayoutCreateInfo<'a>,
     pub additional: &'a R::GraphicsPipelineCreateInfoAdditional,
 }
 
 // rust issue #26925
-impl<'a, R: RendererBackend> Clone for GraphicsPipelineCreateInfo<'a, R> {
+impl<'a, 'rcx, R: RendererBackend> Clone for GraphicsPipelineCreateInfo<'a, 'rcx, R> {
     fn clone(&self) -> Self {
         // safe because TODO
         // has no dynamically allocated components or mutable refs
@@ -605,385 +619,60 @@ impl<'a, R: RendererBackend> Clone for GraphicsPipelineCreateInfo<'a, R> {
     }
 }
 
-pub struct BufferSlice<Handle> {
-    pub buffer: Handle,
+pub struct BufferSlice<'a, R: RendererBackend> {
+    pub buffer: &'a R::Buffer,
     pub offset: usize,
     pub size: usize,
 }
 
+/*
 pub struct SubmitFrame<R: RendererBackend> {
     pub commands: Vec<Command<R>>,
-}
+}*/
 
-#[derive(Copy, Clone, Debug)]
-pub struct Scope {
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct AliasScope {
     pub value: u64,
     pub mask: u64,
 }
 
-impl Scope {
-    pub fn global() -> Scope {
-        Scope { value: 0, mask: 0 }
+impl AliasScope {
+    pub fn no_alias() -> AliasScope {
+        AliasScope { value: 0, mask: 0 }
     }
 
-    pub fn overlaps(&self, other: &Scope) -> bool {
+    pub fn overlaps(&self, other: &AliasScope) -> bool {
         let m = self.mask & other.mask;
         (self.value & m) == (other.value & m)
     }
 }
 
 //--------------------------------------------------------------------------------------------------
-/*
-#[derive(Copy,Clone,Debug,Eq,PartialEq,Hash)]
-pub enum ColorBlendAttachments {
-    All(PipelineColorBlendAttachmentState),
-    Separate(Vec<PipelineColorBlendAttachmentState>)
+pub trait Swapchain: Debug {
+    fn size(&self) -> (u32, u32);
 }
+pub trait Buffer: Debug {}
+pub trait Image: Debug {}
+pub trait Framebuffer: Debug {}
+pub trait DescriptorSetLayout: Debug {}
+pub trait ShaderModule: Debug {}
+pub trait GraphicsPipeline: Debug {}
 
-pub struct GraphicsPipelineBuilder<R: RendererBackend>
-{
-    pub vertex_shader: Option<R::ShaderModuleHandle>,
-    pub geometry_shader: Option<R::ShaderModuleHandle>,
-    pub fragment_shader: Option<R::ShaderModuleHandle>,
-    pub tess_eval_shader: Option<R::ShaderModuleHandle>,
-    pub tess_control_shader: Option<R::ShaderModuleHandle>,
-    pub vertex_bindings: Vec<VertexInputBindingDescription>,
-    pub vertex_attributes: Vec<VertexInputAttributeDescription>,
-    pub viewports_scissors: Vec<(Viewport, ScissorRect)>,
-    pub rasterization_state: PipelineRasterizationStateCreateInfo,
-    pub multisample_state: PipelineMultisampleStateCreateInfo,
-    pub depth_stencil_state: PipelineDepthStencilStateCreateInfo,
-    pub input_assembly_state: PipelineInputAssemblyStateCreateInfo,
-    pub blend_logic_op: Option<LogicOp>,
-    pub blend_attachments: ColorBlendAttachments,
-    pub blend_constants: [NotNan<f32>; 4],
-    pub dynamic_state: DynamicStateFlags,
-    pub descriptor_set_layouts: Vec<R::DescriptorSetLayoutHandle>,
-    pub input_attachments: Vec<AttachmentDescription>,
-    pub depth_attachment: Option<AttachmentDescription>,
-    pub color_attachments: Vec<AttachmentDescription>,
-    pub additional: R::GraphicsPipelineCreateInfoAdditional
-}
-
-impl<R: RendererBackend> Clone for GraphicsPipelineBuilder<R> {
-    fn clone(&self) -> Self {
-        GraphicsPipelineBuilder {
-            vertex_shader: self.vertex_shader.clone(),
-            geometry_shader: self.geometry_shader.clone(),
-            fragment_shader: self.fragment_shader.clone(),
-            tess_eval_shader: self.tess_eval_shader.clone(),
-            tess_control_shader: self.tess_control_shader.clone(),
-            vertex_bindings: self.vertex_bindings.clone(),
-            vertex_attributes: self.vertex_attributes.clone(),
-            viewports_scissors: self.viewports_scissors.clone(),
-            rasterization_state: self.rasterization_state.clone(),
-            multisample_state: self.multisample_state.clone(),
-            depth_stencil_state: self.depth_stencil_state.clone(),
-            input_assembly_state: self.input_assembly_state.clone(),
-            blend_logic_op: self.blend_logic_op.clone(),
-            blend_attachments: self.blend_attachments.clone(),
-            blend_constants: self.blend_constants.clone(),
-            dynamic_state: self.dynamic_state.clone(),
-            descriptor_set_layouts: self.descriptor_set_layouts.clone(),
-            input_attachments: self.input_attachments.clone(),
-            depth_attachment: self.depth_attachment.clone(),
-            color_attachments: self.color_attachments.clone(),
-            additional: self.additional.clone(),
-        }
-    }
-}
-
-impl Default for GraphicsPipelineBuilder {
-    fn default() -> Self {
-        unimplemented!()
-    }
-}*/
-
-//--------------------------------------------------------------------------------------------------
-/*
-pub trait RendererBackend: Sync {
-    type SwapchainHandle: Copy + Debug + Eq + Hash + 'static;
-    type BufferHandle: Copy + Debug + Eq + Hash + 'static;
-    type ImageHandle: Copy + Debug + Eq + Hash + 'static;
-    type DescriptorSetHandle: Copy + Debug + Eq + Hash + 'static;
-    type DescriptorSetLayoutHandle: Copy + Debug + Eq + Hash + 'static;
-    type ShaderModuleHandle: Copy + Debug + Eq + Hash + 'static;
-    type GraphicsPipelineHandle: Copy + Debug + Eq + Hash + 'static;
-    type GraphicsPipelineCreateInfoAdditional: Clone + Debug + Eq + Hash + 'static;
-
-    fn create_swapchain(&self) -> Self::SwapchainHandle;
-
-    fn default_swapchain(&self) -> Option<Self::SwapchainHandle>;
-
-    fn swapchain_dimensions(&self, swapchain: Self::SwapchainHandle) -> (u32, u32);
-
-    fn create_image(
-        &self,
-        format: Format,
-        dimensions: Dimensions,
-        mipcount: MipmapsCount,
-        samples: u32,
-        usage: ImageUsageFlags,
-        initial_data: Option<&[u8]>,
-    ) -> Self::ImageHandle;
-
-    fn create_scoped_image(
-        &self,
-        scope: Scope,
-        format: Format,
-        dimensions: Dimensions,
-        mipcount: MipmapsCount,
-        samples: u32,
-        usage: ImageUsageFlags,
-    ) -> Self::ImageHandle;
-
-    fn create_shader_module(
-        &self,
-        data: &[u8],
-        stage: ShaderStageFlags,
-    ) -> Self::ShaderModuleHandle;
-    fn destroy_shader_module(&self, module: Self::ShaderModuleHandle);
-
-    fn upload_transient(&self, data: &[u8]) -> BufferSlice<Self::BufferHandle>;
-
-    fn destroy_image(&self, image: Self::ImageHandle);
-
-    fn create_buffer(&self, size: u64) -> Self::BufferHandle;
-
-    fn destroy_buffer(&self, buffer: Self::BufferHandle);
-
-    //fn map_buffer(&self, buffer: Self::BufferHandle, offset: usize, size: usize) -> MappedBufferRange;
-
-    fn submit_frame(&self, frame: SubmitFrame<Self>)
-    where
-        Self: Sized;
-
-    fn create_graphics_pipeline(
-        &self,
-        create_info: &GraphicsPipelineCreateInfo<Self>,
-    ) -> Self::GraphicsPipelineHandle
-    where
-        Self: Sized;
-
-    fn create_descriptor_set_layout(
-        &self,
-        bindings: &[LayoutBinding],
-    ) -> Self::DescriptorSetLayoutHandle;
-
-    fn create_descriptor_set(
-        &self,
-        layout: Self::DescriptorSetLayoutHandle,
-        resources: &[Descriptor<Self>],
-    ) -> Self::DescriptorSetHandle
-    where
-        Self: Sized;
-}*/
-
-pub struct Renderer<R: RendererBackend> {
-    backend: R,
-    cmdbufs: Mutex<Vec<CommandBuffer<R>>>,
-}
-
-impl<R: RendererBackend> Renderer<R> {
-    pub fn new(backend: R) -> Renderer<R> {
-        Renderer {
-            backend,
-            cmdbufs: Mutex::new(Vec::new()),
-        }
-    }
-
-    /// Creates a swapchain.
-    pub fn create_swapchain(&self) -> R::SwapchainHandle {
-        self.backend.create_swapchain()
-    }
-
-    /// Returns the default swapchain handle, if any.
-    pub fn default_swapchain(&self) -> Option<R::SwapchainHandle> {
-        self.backend.default_swapchain()
-    }
-
-    /// Get swapchain dimensions.
-    pub fn swapchain_dimensions(&self, swapchain: R::SwapchainHandle) -> (u32, u32) {
-        self.backend.swapchain_dimensions(swapchain)
-    }
-
-    /// Creates a shader module.
-    fn create_shader_module(&self, data: &[u8], stage: ShaderStageFlags) -> R::ShaderModuleHandle {
-        self.backend.create_shader_module(data, stage)
-    }
-
-    /// Destroys a shader module
-    fn destroy_shader_module(&self, module: R::ShaderModuleHandle) {
-        self.backend.destroy_shader_module(module)
-    }
-
-    /// Creates a command buffer.
-    pub fn create_command_buffer(&self) -> CommandBuffer<R> {
-        CommandBuffer::new()
-    }
-
-    /// Creates a graphics pipeline.
-    /// Pipeline = all shaders + input layout + output layout (expected buffers)
-    /// Creation process?
-    pub fn create_graphics_pipeline(
-        &self,
-        create_info: &GraphicsPipelineCreateInfo<R>,
-    ) -> R::GraphicsPipelineHandle {
-        self.backend.create_graphics_pipeline(create_info)
-    }
-
-    /// Creates an image.
-    /// Initial data is uploaded to the image memory, and will be visible to all operations
-    /// from the current frame and after.
-    /// (the first operation that depends on the image will block on transfer complete)
-    pub fn create_image(
-        &self,
-        format: Format,
-        dimensions: Dimensions,
-        mipcount: MipmapsCount,
-        samples: u32,
-        usage: ImageUsageFlags,
-        initial_data: Option<&[u8]>,
-    ) -> R::ImageHandle {
-        self.backend
-            .create_image(format, dimensions, mipcount, samples, usage, initial_data)
-    }
-
-    /// Creates a scoped image.
-    /// TODO document this stuff.
-    pub fn create_scoped_image(
-        &self,
-        scope: Scope,
-        format: Format,
-        dimensions: Dimensions,
-        mipcount: MipmapsCount,
-        samples: u32,
-        usage: ImageUsageFlags,
-    ) -> R::ImageHandle {
-        self.backend
-            .create_scoped_image(scope, format, dimensions, mipcount, samples, usage)
-    }
-
-    /// Uploads data to a transient pool.
-    /// The buffer becomes invalid as soon as out of the current frame.
-    /// The buffer can be used as uniform input to pipelines.
-    pub fn upload_transient(&self, data: &[u8]) -> BufferSlice<R::BufferHandle> {
-        self.backend.upload_transient(data)
-    }
-
-    /// Destroys an image handle. The actual image is destroyed when
-    /// it is not in use anymore by the GPU.
-    pub fn destroy_image(&self, image: R::ImageHandle) {
-        self.backend.destroy_image(image)
-    }
-
-    /// Creates a GPU (device local) buffer.
-    /// This function only creates a handle (name) and description of the buffer.
-    /// For the memory to be allocated, it has to be initialized by a command in a command buffer.
-    /// This function is thread-safe.
-    pub fn create_buffer(&self, size: u64) -> R::BufferHandle {
-        self.backend.create_buffer(size)
-    }
-
-    /// Destroys a GPU buffer. The actual buffer is destroyed when
-    /// it is not in use anymore by the GPU.
-    /// TODO: do it in a command buffer?
-    pub fn destroy_buffer(&self, buffer: R::BufferHandle) {
-        self.backend.destroy_buffer(buffer)
-    }
-
-    pub fn create_descriptor_set_layout(
-        &self,
-        bindings: &[LayoutBinding],
-    ) -> R::DescriptorSetLayoutHandle {
-        self.backend.create_descriptor_set_layout(bindings)
-    }
-
-    /// Submits a command buffer.
-    pub fn submit_command_buffer(&self, cmdbuf: CommandBuffer<R>) {
-        self.cmdbufs.lock().unwrap().push(cmdbuf);
-    }
-
-    /// Signals the end of the current frame, and starts another.
-    pub fn end_frame(&self) {
-        let mut cmdbufs = self.cmdbufs.lock().unwrap();
-        let mut cmdbufs = mem::replace(cmdbufs.deref_mut(), Vec::new());
-        let commands = sort_command_buffers(cmdbufs);
-        self.backend.submit_frame(SubmitFrame { commands })
-    }
-}
-
-
-//--------------------------------------------------------------------------------------------------
-
-pub trait Swapchain
-{
-    fn size(&self) -> (u32,u32);
-}
-
-pub trait Buffer
-{}
-
-pub trait Image
-{}
-
-pub trait DescriptorSet
-{}
-
-pub trait DescriptorSetLayout
-{}
-
-pub trait ShaderModule
-{}
-
-pub trait GraphicsPipeline
-{}
-
-/// Crucially, this should not borrow the renderer, and allow leaking of data.
-/// Issue: arena is limited to the types below: what if the backend wants to store more stuff inside?
-/// In any case, won't be able to store objects that borrow each other (self-referential borrow)
-/// Must use Rc's in this case, or handles.
-///
-/// Issue: caches
-/// - objects in cache have a dynamic lifetime by design
-///
-/// Q: where to put the mutex?
-/// - require backend to be sync? => Arena must be Sync
-/// - put mutex in
-///
-/// Individual VS common mutex for arena?
-/// - individual (although the benefits are unclear)
-///
-/// Need a Sync arena
-/// - possibly untyped
-/// - can iterate over elements?
-///
-
-/*
-pub struct Arena<R: RendererBackend2>
-{
-    pub swapchains: Mutex<typed_arena::Arena<R::Swapchain>>,
-    pub buffers: Mutex<typed_arena::Arena<R::Buffer>>,
-    pub images: Mutex<typed_arena::Arena<R::Image>>,
-    pub descriptor_sets: Mutex<typed_arena::Arena<R::DescriptorSet>>,
-    pub descriptor_set_layouts: Mutex<typed_arena::Arena<R::DescriptorSetLayout>>,
-    pub shader_modules: Mutex<typed_arena::Arena<R::ShaderModule>>,
-    pub graphics_pipelines: Mutex<typed_arena::Arena<R::GraphicsPipeline>>
-}*/
-
-pub enum CommandInner2<'a, R: RendererBackend>
-{
-    ClearImageFloat { image: &'a R::Image },
-    Present { image: &'a R::Image, swapchain: &'a R::Swapchain }
+pub struct DescriptorSet<'a, R: RendererBackend> {
+    inner: &'a R::DescriptorSet,
 }
 
 /// V2 API
-pub trait RendererBackend: Sync
-{
+/// Some associated backend types (such as Framebuffers, or DescriptorSets) conceptually "borrow"
+/// the referenced resources, and as such should have an associated lifetime parameter.
+/// However, this cannot be expressed right now because of the lack of generic associated types
+/// (a.k.a. associated type constructors, or ATCs).
+pub trait RendererBackend: Sync {
     type Swapchain: Swapchain;
+    type Framebuffer: Framebuffer;
     type Buffer: Buffer;
     type Image: Image;
-    type DescriptorSet: DescriptorSet;
+    type DescriptorSet;
     type DescriptorSetLayout: DescriptorSetLayout;
     type ShaderModule: ShaderModule;
     type GraphicsPipeline: GraphicsPipeline;
@@ -995,70 +684,296 @@ pub trait RendererBackend: Sync
     fn create_arena(&self) -> Self::Arena;
 
     /// Drops a group of resources in the arena.
-    fn drop_arena(&self, arena: Self::Arena) where Self: Sized;
+    fn drop_arena(&self, arena: Self::Arena)
+    where
+        Self: Sized;
 
-    fn create_swapchain<'a>(&self, arena: &'a Self::Arena) -> &'a Self::Swapchain where Self: Sized;
+    fn create_swapchain<'a>(&self, arena: &'a Self::Arena) -> &'a Self::Swapchain
+    where
+        Self: Sized;
     fn default_swapchain<'rcx>(&'rcx self) -> Option<&'rcx Self::Swapchain>;
 
+    /// Creates an immutable image that cannot be modified by any operation (render, transfer, swaps or otherwise).
+    /// Useful for long-lived texture data.
+    fn create_immutable_image<'a>(
+        &self,
+        arena: &'a Self::Arena,
+        format: Format,
+        dimensions: Dimensions,
+        mipcount: MipmapsCount,
+        samples: u32,
+        usage: ImageUsageFlags,
+        initial_data: &[u8],
+    ) -> &'a Self::Image
+    where
+        Self: Sized;
+
+    /// Creates an image containing uninitialized data.
     fn create_image<'a>(
         &self,
         arena: &'a Self::Arena,
+        scope: AliasScope,
         format: Format,
         dimensions: Dimensions,
         mipcount: MipmapsCount,
         samples: u32,
         usage: ImageUsageFlags,
-        initial_data: Option<&[u8]>,
-    ) -> &'a Self::Image where Self: Sized;
+    ) -> &'a Self::Image
+    where
+        Self: Sized;
 
-    fn create_buffer<'a>(&self,
-                     arena: &'a Self::Arena,
-                     size: u64) -> &'a Self::Buffer where Self: Sized;
-
-    fn create_scoped_image<'a>(
+    /// Creates a framebuffer.
+    fn create_framebuffer<'a>(
         &self,
         arena: &'a Self::Arena,
-        scope: Scope,
-        format: Format,
-        dimensions: Dimensions,
-        mipcount: MipmapsCount,
-        samples: u32,
-        usage: ImageUsageFlags,
-    ) -> &'a Self::Image where Self: Sized;
+        color_attachments: &[&'a Self::Image],
+        depth_stencil_attachment: Option<&'a Self::Image>,
+    ) -> &'a Self::Framebuffer
+    where
+        Self: Sized;
+
+    /// Creates an immutable buffer.
+    fn create_immutable_buffer<'a>(
+        &self,
+        arena: &'a Self::Arena,
+        size: u64,
+        data: &[u8],
+    ) -> &'a Self::Buffer
+    where
+        Self: Sized;
+
+    /// Creates a buffer containing uninitialized data.
+    fn create_buffer<'a>(&self, arena: &'a Self::Arena, size: u64) -> &'a Self::Buffer
+    where
+        Self: Sized;
 
     fn create_shader_module<'a>(
         &self,
         arena: &'a Self::Arena,
         data: &[u8],
         stage: ShaderStageFlags,
-    ) -> &'a Self::ShaderModule where Self: Sized;
+    ) -> &'a Self::ShaderModule
+    where
+        Self: Sized;
 
     fn create_graphics_pipeline<'a>(
         &self,
         arena: &'a Self::Arena,
-        create_info: &GraphicsPipelineCreateInfo<Self>,
+        create_info: &GraphicsPipelineCreateInfo<'_, 'a, Self>,
     ) -> &'a Self::GraphicsPipeline
-        where
-            Self: Sized;
+    where
+        Self: Sized;
 
     fn create_descriptor_set_layout<'a>(
         &self,
         arena: &'a Self::Arena,
-        bindings: &[LayoutBinding],
+        bindings: &[DescriptorSetLayoutBinding<'_>],
     ) -> &'a Self::DescriptorSetLayout
-        where
-            Self: Sized;
+    where
+        Self: Sized;
 
+    /// Creates a new descriptor set. See trait documentation for explanation of unsafety.
     fn create_descriptor_set<'a>(
         &self,
         arena: &'a Self::Arena,
-        layout: Self::DescriptorSetLayoutHandle,
-        resources: &[Descriptor<Self>],
+        layout: &Self::DescriptorSetLayout,
+        descriptors: &[Descriptor<'a, Self>],
     ) -> &'a Self::DescriptorSet
-        where
-            Self: Sized;
+    where
+        Self: Sized;
 
-    fn submit_frame(&self, frame: SubmitFrame<Self>)
-        where
-            Self: Sized;
+    fn submit_frame<'a>(&self, commands: &[Command<'a, Self>])
+    where
+        Self: Sized;
+}
+
+//--------------------------------------------------------------------------------------------------
+pub struct Arena<'rcx, R: RendererBackend> {
+    backend: &'rcx R,
+    inner_arena: Option<R::Arena>,
+}
+
+impl<'rcx, R: RendererBackend> Drop for Arena<'rcx, R> {
+    fn drop(&mut self) {
+        self.backend.drop_arena(self.inner_arena.take().unwrap())
+    }
+}
+
+impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
+    pub fn inner_arena(&self) -> &R::Arena {
+        self.inner_arena.as_ref().unwrap()
+    }
+
+    /// Creates a swapchain.
+    #[inline]
+    pub fn create_swapchain(&self) -> &R::Swapchain {
+        self.backend.create_swapchain(self.inner_arena())
+    }
+
+    /// Creates a framebuffer.
+    #[inline]
+    pub fn create_framebuffer<'a>(
+        &'a self,
+        color_attachments: &[&'a R::Image],
+        depth_stencil_attachment: Option<&'a R::Image>,
+    ) -> &'a R::Framebuffer {
+        self.backend.create_framebuffer(
+            self.inner_arena(),
+            color_attachments,
+            depth_stencil_attachment,
+        )
+    }
+
+    /// Creates a shader module.
+    #[inline]
+    pub fn create_shader_module(&self, data: &[u8], stage: ShaderStageFlags) -> &R::ShaderModule {
+        self.backend
+            .create_shader_module(self.inner_arena(), data, stage)
+    }
+
+    /// Creates a graphics pipeline.
+    /// Pipeline = all shaders + input layout + output layout (expected buffers)
+    /// Creation process?
+    #[inline]
+    pub fn create_graphics_pipeline<'a>(
+        &'a self,
+        create_info: &GraphicsPipelineCreateInfo<'_, 'a, R>,
+    ) -> &'a R::GraphicsPipeline {
+        self.backend
+            .create_graphics_pipeline(self.inner_arena(), create_info)
+    }
+
+    /// Creates an image.
+    /// Initial data is uploaded to the image memory, and will be visible to all operations
+    /// from the current frame and after.
+    /// (the first operation that depends on the image will block on transfer complete)
+    #[inline]
+    pub fn create_immutable_image(
+        &self,
+        format: Format,
+        dimensions: Dimensions,
+        mipcount: MipmapsCount,
+        samples: u32,
+        usage: ImageUsageFlags,
+        initial_data: &[u8],
+    ) -> &R::Image {
+        self.backend.create_immutable_image(
+            self.inner_arena(),
+            format,
+            dimensions,
+            mipcount,
+            samples,
+            usage,
+            initial_data,
+        )
+    }
+
+    /// Creates a scoped image.
+    /// TODO document this stuff.
+    #[inline]
+    pub fn create_image(
+        &self,
+        scope: AliasScope,
+        format: Format,
+        dimensions: Dimensions,
+        mipcount: MipmapsCount,
+        samples: u32,
+        usage: ImageUsageFlags,
+    ) -> &R::Image {
+        self.backend.create_image(
+            self.inner_arena(),
+            scope,
+            format,
+            dimensions,
+            mipcount,
+            samples,
+            usage,
+        )
+    }
+
+    /// Creates a GPU (device local) buffer.
+    #[inline]
+    pub fn create_buffer(&self, size: u64) -> &R::Buffer {
+        self.backend.create_buffer(self.inner_arena(), size)
+    }
+
+    /// Creates a GPU (device local) buffer.
+    #[inline]
+    pub fn create_immutable_buffer(&self, size: u64, data: &[u8]) -> &R::Buffer {
+        self.backend
+            .create_immutable_buffer(self.inner_arena(), size, data)
+    }
+
+    #[inline]
+    pub fn create_descriptor_set_layout<'a>(
+        &'a self,
+        bindings: &[DescriptorSetLayoutBinding],
+    ) -> &'a R::DescriptorSetLayout {
+        self.backend
+            .create_descriptor_set_layout(self.inner_arena(), bindings)
+    }
+
+    pub fn create_descriptor_set<'a>(
+        &'a self,
+        layout: &R::DescriptorSetLayout,
+        interface: impl DescriptorSetInterface<'a, R>,
+    ) -> &'a R::DescriptorSet {
+        struct Visitor<'a, R: RendererBackend> {
+            descriptors: Vec<Descriptor<'a, R>>,
+        }
+
+        impl<'a, R: RendererBackend> DescriptorSetInterfaceVisitor<'a, R> for Visitor<'a, R> {
+            fn visit_buffer(&mut self, binding: u32, buffer: &'a R::Buffer) {
+                warn!("buffer {} {:?}", binding, buffer);
+                self.descriptors.push(Descriptor::Buffer {
+                    buffer,
+                    offset: 0,
+                    size: 0,
+                })
+            }
+        }
+
+        let mut visitor = Visitor {
+            descriptors: Vec::new(),
+        };
+
+        interface.do_visit(&mut visitor);
+
+        self.backend
+            .create_descriptor_set(self.inner_arena(), layout, &visitor.descriptors)
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+pub struct Renderer<R: RendererBackend> {
+    backend: R,
+}
+
+impl<R: RendererBackend> Renderer<R> {
+    pub fn new(backend: R) -> Renderer<R> {
+        Renderer { backend }
+    }
+
+    pub fn create_arena<'r>(&'r self) -> Arena<'r, R> {
+        Arena {
+            backend: &self.backend,
+            inner_arena: Some(self.backend.create_arena()),
+        }
+    }
+
+    /// Returns the default swapchain handle, if any.
+    pub fn default_swapchain<'rcx>(&'rcx self) -> Option<&'rcx R::Swapchain> {
+        self.backend.default_swapchain()
+    }
+
+    /// Creates a command buffer.
+    pub fn create_command_buffer<'cmd>(&self) -> CommandBuffer<'cmd, R> {
+        CommandBuffer::new()
+    }
+
+    /// Signals the end of the current frame, and starts another.
+    pub fn submit_frame<'cmd>(&self, command_buffers: Vec<CommandBuffer<'cmd, R>>) {
+        let commands = sort_command_buffers(command_buffers);
+        self.backend.submit_frame(&commands)
+    }
 }

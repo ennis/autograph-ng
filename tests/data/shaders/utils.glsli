@@ -1,0 +1,62 @@
+
+vec3 cosPalette(  float t,  vec3 a,  vec3 b,  vec3 c, vec3 d )
+{
+    return a + b*cos( 6.28318*(c*t+d) );
+}
+
+vec4 packNormal(vec3 N)
+{
+	return vec4(N / 2.0 + vec3(0.5), 1.0);
+}
+
+vec3 unpackNormal(vec4 packedNormal)
+{
+	return normalize(2.0 * (packedNormal.xyz - vec3(0.5)));
+}
+
+vec2 encodeNormalRG16F (vec3 n)
+{
+    float f = sqrt(8*n.z+8);
+    return n.xy / f + 0.5;
+}
+
+vec3 decodeNormalRG16F (vec2 enc)
+{
+    vec2 fenc = enc*4-2;
+    float f = dot(fenc,fenc);
+    float g = sqrt(1-f/4);
+    vec3 n;
+    n.xy = fenc*g;
+    n.z = 1-f/2;
+    return n;
+}
+
+// VS position from depth buffer
+/*float3 VSPositionFromDepth(vec2 texcoord, mat4 invProj)
+{
+    // Get the depth value for this pixel
+    float z = texture(DepthSampler, texcoord);  
+    // Get x/w and y/w from the viewport position
+    float x = texcoord.x * 2 - 1;
+    float y = (1 - texcoord.y) * 2 - 1;
+    vec4 vProjectedPos = vec4(x, y, z, 1.0f);
+    // Transform by the inverse projection matrix
+    vec4 vPositionVS = mul(vProjectedPos, g_matInvProjection);  
+    // Divide by w to get the view-space position
+    return vPositionVS.xyz / vPositionVS.w;  
+}*/
+
+float checker(vec2 uv, float repeats) {
+  float cx = floor(repeats * uv.x);
+  float cy = floor(repeats * uv.y); 
+  float result = mod(cx + cy, 2.0);
+  return sign(result);
+}
+
+vec3 remap(float min, float max, vec3 x) {
+  return (x - vec3(min)) / vec3(max - min);
+}
+
+vec4 remap(float min, float max, vec4 x) {
+  return (x - vec4(min)) / vec4(max - min);
+}

@@ -49,20 +49,22 @@ pub const TYPE_MAT3: TypeDesc = TypeDesc::Matrix(PrimitiveType::Float, 3, 3);
 pub const TYPE_MAT4: TypeDesc = TypeDesc::Matrix(PrimitiveType::Float, 4, 4);
 
 #[derive(Copy, Clone, Debug)]
-pub struct DescriptorInfo<'tcx> {
-    pub type_: DescriptorType,
-    pub binding: u32,
-    pub type_desc: &'tcx TypeDesc<'tcx>,
-    pub stages: ShaderStageFlags,
-}
-
-#[derive(Copy, Clone, Debug)]
 pub struct DescriptorSetDescription<'tcx> {
-    pub descriptors: &'tcx [DescriptorInfo<'tcx>],
+    pub descriptors: &'tcx [DescriptorSetLayoutBinding<'tcx>],
 }
 
-pub trait DescriptorSetInterface {
+pub trait DescriptorSetInterfaceVisitor<'a, R: RendererBackend> {
+    fn visit_buffer(&mut self, binding: u32, buffer: &'a R::Buffer);
+    //fn visit_sampled_image(&self, binding: u32, image: ImageHandle, sampler: SamplerDescriptor);
+    //fn visit_vertex_input<'a>(&self, buffer: &'a R::Buffer);
+    //fn visit_fragment_output<'a>(&self, image: &'a R::Image);
+    //fn visit_data(&self, binding: u32, data: &[u8]);
+}
+
+pub trait DescriptorSetInterface<'a, R: RendererBackend> {
     const INTERFACE: DescriptorSetDescription<'static>;
+
+    fn do_visit(&self, visitor: &mut impl DescriptorSetInterfaceVisitor<'a, R>);
 }
 
 /// Description of a vertex attribute.
@@ -296,65 +298,43 @@ unsafe impl BufferInterface for gfx::BufferSliceAny {
     }
 }*/
 
-pub trait PipelineInterfaceVisitor<R: RendererBackend> {
-    fn visit_descriptor_set(&self, descriptor_set: R::DescriptorSetHandle);
-    //fn visit_sampled_image(&self, binding: u32, image: ImageHandle, sampler: SamplerDescriptor);
-    fn visit_vertex_input(&self, buffer: R::BufferHandle);
-    fn visit_fragment_output(&self, image: R::ImageHandle);
+pub trait PipelineInterfaceVisitor<'a, R: RendererBackend> {
+    /// `#[descriptor_set]`
+    fn visit_descriptor_sets(&mut self, descriptor_sets: &[&'a R::DescriptorSet]);
+    /// `#[vertex_input(index)]`
+    fn visit_vertex_buffers(&mut self, buffer: &[&'a R::Buffer]);
+    /// `#[index_buffer]`
+    fn visit_index_buffer(&mut self, buffer: &'a R::Buffer);
+    /// `#[fragment_output]`
+    fn visit_framebuffer(&mut self, framebuffer: &'a R::Framebuffer);
+
+    /// `#[viewports]`
+    fn visit_dynamic_viewports(&mut self, first: u32, viewports: &[Viewport]);
+    /// `#[viewport]`
+    fn visit_dynamic_viewport_all(&mut self, viewport: &Viewport);
+    /// `#[scissors]`
+    fn visit_dynamic_scissors(&mut self, first: u32, scissors: &[ScissorRect]);
+    /// `#[scissor]`
+    fn visit_dynamic_scissor_all(&mut self, scissor: &ScissorRect);
+
     //fn visit_data(&self, binding: u32, data: &[u8]);
 }
 
 /// 'static bound for getting the typeid
-pub trait PipelineInterface<R: RendererBackend>: 'static {
+pub trait PipelineInterface<'a, R: RendererBackend> {
     const VERTEX_INPUT_INTERFACE: &'static [VertexInputBufferDescription<'static>];
     const FRAGMENT_OUTPUT_INTERFACE: &'static [FragmentOutputDescription];
     const DESCRIPTOR_SET_INTERFACE: &'static [DescriptorSetDescription<'static>];
-    // TODO push constant interface
 
-    fn do_visit(&self, visitor: &mut PipelineInterfaceVisitor<R>);
+    fn do_visit(&self, visitor: &mut PipelineInterfaceVisitor<'a, R>);
 
     // Use this interface when rust supports impl Trait in Traits
-
-    // fn vertex_inputs<'a>(&'a self) -> impl Iterator<Item=R::BufferHandle> + 'a;
-    // fn fragment_outputs<'a>(&'a self) -> impl Iterator<Item=R::ImageHandle> + 'a;
-    // fn descriptor_sets<'a>(&'a self) -> impl Iterator<Item=R::DescriptorSetHandle> + 'a;
-    // fn index_buffer(&self) -> Option<R::BufferHandle>;
+    /*fn vertex_inputs<'a,'rcx>(&'a self) -> impl Iterator<Item=&'rcx R::Buffer> + 'a;
+    fn fragment_outputs<'a,'rcx>(&'a self) -> impl Iterator<Item=&'rcx R::Image> + 'a;
+    fn descriptor_sets<'a,'rcx>(&'a self) -> impl Iterator<Item=&'rcx R::DescriptorSet> + 'a;
+    fn index_buffer(&self) -> Option<R::BufferHandle>;*/
 
     // misc. render states
     // fn viewports<'a>(&'a self) -> Option<impl Iterator<Item=&'a Viewport> + 'a>;
     // fn scissor_rects<'a>(&'a self) -> Option<impl Iterator<Item=&'a ScissorRect> + 'a>;
 }
-
-/*
-/// Descriptions of shader interfaces.
-///
-/// This trait is a facade to recover information about the bindings defined in a shader interface.
-/// It is meant to be derived automatically with `#[derive(ShaderInterface)]`, but you can implement it by hand.
-///
-/// TODO replace it with a simple struct?
-/// TODO reduce the number of members
-pub trait ShaderInterfaceDescriptor: Sync + 'static {
-    /// Returns the list of shader resources
-    fn shader_resources(&self) -> &[ShaderResourceDescriptor];
-    /// Returns the list of render target items (`#[render_target(...)]`)
-    fn render_targets(&self) -> &[RenderTargetDescriptor];
-    /// Returns the list of vertex buffer items (`#[vertex_buffer(index=...)]`)
-    fn vertex_buffers(&self) -> &[VertexBufferDescriptor];
-    /// Returns the index buffer item, if any (`#[index_buffer]`)
-    fn index_buffer(&self) -> Option<&IndexBufferDescriptor>;
-}*/
-
-/*
-pub trait ShaderInterfaceVisitor<R: RendererBackend>
-{
-    fn visit_image(&self, binding: u32, image: ImageHandle);
-    //fn visit_sampled_image(&self, binding: u32, image: ImageHandle, sampler: SamplerDescriptor);
-    fn visit_buffer(&self, binding: u32, buffer: BufferHandle);
-    fn visit_data(&self, binding: u32, data: &[u8]);
-}
-
-pub trait ShaderInterface
-{
-    fn descriptor() -> &'static ShaderInterfaceDescriptor;
-    fn do_visit(&self, visitor: &ShaderInterfaceVisitor) where Self: Sized;
-}*/

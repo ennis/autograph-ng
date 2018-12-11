@@ -6,9 +6,14 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use crate::renderer::backend::gl::shader::preprocessor::*;
-use crate::renderer::backend::gl::OpenGlBackend;
-use crate::renderer::backend::gl::ShaderModuleHandle;
-use crate::renderer::*;
+use crate::renderer::backend::gl::{
+    pipeline::{BindingLocation, BindingSpace, DescriptorMap},
+    shader::ShaderModule,
+    OpenGlBackend,
+};
+use crate::renderer::{
+    Arena, Renderer, RendererBackend, ShaderStageFlags, VertexInputBindingDescription,
+};
 
 //--------------------------------------------------------------------------------------------------
 struct ShaderSources {
@@ -147,29 +152,62 @@ fn as_bytes(buf: &[u32]) -> &[u8] {
 }
 
 //--------------------------------------------------------------------------------------------------
-pub struct ShaderModules {
-    pub vs: Option<ShaderModuleHandle>,
-    pub fs: Option<ShaderModuleHandle>,
-    pub gs: Option<ShaderModuleHandle>,
-    pub tes: Option<ShaderModuleHandle>,
-    pub tcs: Option<ShaderModuleHandle>,
-    pub cs: Option<ShaderModuleHandle>,
+pub struct ShaderModules<'rcx> {
+    pub vs: Option<&'rcx ShaderModule>,
+    pub fs: Option<&'rcx ShaderModule>,
+    pub gs: Option<&'rcx ShaderModule>,
+    pub tes: Option<&'rcx ShaderModule>,
+    pub tcs: Option<&'rcx ShaderModule>,
+    pub cs: Option<&'rcx ShaderModule>,
 }
 
-pub struct PipelineDescriptionFile {
+pub struct PipelineDescriptionFile<'rcx> {
     pub source: String,
     pub path: Option<PathBuf>,
     pub preprocessed: PreprocessResult,
+    pub descriptor_map: DescriptorMap,
     pub separate_sources: SeparateShaderSources,
-    pub modules: ShaderModules,
+    pub modules: ShaderModules<'rcx>,
     pub vertex_input_bindings: Vec<VertexInputBindingDescription>,
 }
 
-impl PipelineDescriptionFile {
+fn mappings_to_descriptor_map(mappings: &[ParsedDescriptorMapping]) -> DescriptorMap {
+    let mut sets = Vec::new();
+
+    for m in mappings {
+        let set = m.set as usize;
+        if set >= sets.len() {
+            sets.resize(set + 1, Vec::new());
+        }
+        let set = &mut sets[set];
+        let max_binding_rel = (m.gl_binding_range.1 - m.gl_binding_range.0) as usize;
+        let max_binding = m.binding_base as usize + max_binding_rel;
+        if max_binding >= set.len() {
+            set.resize(
+                max_binding + 1,
+                BindingLocation {
+                    space: BindingSpace::Empty,
+                    location: 0,
+                },
+            );
+        }
+        for i in 0..=max_binding_rel {
+            let ii = m.gl_binding_range.0 + i as u32;
+            set[m.binding_base as usize + i] = BindingLocation {
+                space: m.gl_binding_space,
+                location: ii,
+            };
+        }
+    }
+
+    DescriptorMap { sets }
+}
+
+impl<'rcx> PipelineDescriptionFile<'rcx> {
     pub fn load<P: AsRef<Path>>(
+        arena: &'rcx Arena<OpenGlBackend>,
         file_path: P,
-        renderer: &Renderer<OpenGlBackend>,
-    ) -> Result<PipelineDescriptionFile, Box<Error>> {
+    ) -> Result<PipelineDescriptionFile<'rcx>, Box<Error>> {
         let mut source = String::new();
         File::open(file_path.as_ref())?.read_to_string(&mut source)?;
 
@@ -188,6 +226,8 @@ impl PipelineDescriptionFile {
             preprocessed.stages,
             &[],
         );
+
+        let descriptor_map = mappings_to_descriptor_map(&preprocessed.descriptor_map);
 
         let modules = {
             let file_path_str = file_path.as_ref().to_str().unwrap();
@@ -215,19 +255,19 @@ impl PipelineDescriptionFile {
             // create shaders
             ShaderModules {
                 vs: spirv.vs.as_ref().map(|data| {
-                    renderer.create_shader_module(as_bytes(data), ShaderStageFlags::VERTEX)
+                    arena.create_shader_module(as_bytes(data), ShaderStageFlags::VERTEX)
                 }),
                 fs: spirv.fs.as_ref().map(|data| {
-                    renderer.create_shader_module(as_bytes(data), ShaderStageFlags::FRAGMENT)
+                    arena.create_shader_module(as_bytes(data), ShaderStageFlags::FRAGMENT)
                 }),
                 gs: spirv.gs.as_ref().map(|data| {
-                    renderer.create_shader_module(as_bytes(data), ShaderStageFlags::GEOMETRY)
+                    arena.create_shader_module(as_bytes(data), ShaderStageFlags::GEOMETRY)
                 }),
                 tcs: spirv.tcs.as_ref().map(|data| {
-                    renderer.create_shader_module(as_bytes(data), ShaderStageFlags::TESS_CONTROL)
+                    arena.create_shader_module(as_bytes(data), ShaderStageFlags::TESS_CONTROL)
                 }),
                 tes: spirv.tes.as_ref().map(|data| {
-                    renderer.create_shader_module(as_bytes(data), ShaderStageFlags::TESS_EVAL)
+                    arena.create_shader_module(as_bytes(data), ShaderStageFlags::TESS_EVAL)
                 }),
                 cs: None,
             }
@@ -238,6 +278,7 @@ impl PipelineDescriptionFile {
             path: Some(file_path.as_ref().to_path_buf()),
             preprocessed,
             separate_sources,
+            descriptor_map,
             modules,
             vertex_input_bindings: Vec::new(),
         })

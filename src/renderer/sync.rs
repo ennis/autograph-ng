@@ -67,14 +67,14 @@ bitflags! {
 }
 
 #[derive(Clone, Debug)]
-pub enum MemoryBarrier<R: RendererBackend> {
+pub enum MemoryBarrier<'a, R: RendererBackend> {
     Image {
-        handle: R::ImageHandle,
+        handle: &'a R::Image,
         src_access_mask: AccessFlags,
         dst_access_mask: AccessFlags,
     },
     Buffer {
-        handle: R::BufferHandle,
+        handle: &'a R::Buffer,
         src_access_mask: AccessFlags,
         dst_access_mask: AccessFlags,
     },

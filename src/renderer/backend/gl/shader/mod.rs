@@ -11,9 +11,10 @@ pub mod preprocessor;
 pub use self::preprocessor::*;
 use crate::renderer::backend::gl::api as gl;
 use crate::renderer::backend::gl::api::types::*;
-use crate::renderer::*;
+use crate::renderer::ShaderStageFlags;
 
 //--------------------------------------------------------------------------------------------------
+#[derive(Debug)]
 pub struct ShaderModule {
     pub obj: GLuint,
     pub stage: ShaderStageFlags,
