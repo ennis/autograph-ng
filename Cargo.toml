@@ -40,6 +40,7 @@ ordered-float = "*"
 unreachable = "*"
 typed-arena = "*"
 fxhash = "*"
+derivative = "*"
 
 #[target.'cfg(windows)'.dependencies]
 #winapi = { version = "*", features = ["windef", "winuser"] }

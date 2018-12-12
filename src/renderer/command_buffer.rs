@@ -4,7 +4,8 @@ use std::ops::Range;
 use crate::renderer::sync::*;
 use crate::renderer::{
     shader_interface::{PipelineInterface, PipelineInterfaceVisitor},
-    RendererBackend, ScissorRect, Viewport,
+    Buffer, BufferTypeless, DescriptorSet, DescriptorSetLayout, Framebuffer, GraphicsPipeline,
+    Image, IndexType, RendererBackend, ScissorRect, Swapchain, Viewport,
 };
 
 pub struct Command<'a, R: RendererBackend> {
@@ -30,6 +31,7 @@ pub struct CmdSetVertexBuffers<'a, R: RendererBackend> {
 
 // command header(with sort key), followed by subcommands (state-change commands)
 
+#[derive(Copy, Clone, Debug)]
 pub enum DrawCommand {
     DrawArrays {
         first: u32,
@@ -46,60 +48,117 @@ pub enum CommandInner<'a, R: RendererBackend> {
     // MAIN COMMANDS -------------------------------------------------------------------------------
     PipelineBarrier {},
     ClearImageFloat {
-        image: &'a R::Image,
+        image: Image<'a, R>,
         color: [f32; 4],
     },
     ClearDepthStencilImage {
-        image: &'a R::Image,
+        image: Image<'a, R>,
         depth: f32,
         stencil: Option<u8>,
     },
     Present {
-        image: &'a R::Image,
-        swapchain: &'a R::Swapchain,
+        image: Image<'a, R>,
+        swapchain: Swapchain<'a, R>,
     },
     DrawHeader {
-        pipeline: &'a R::GraphicsPipeline,
+        pipeline: GraphicsPipeline<'a, R>,
     },
 
     // STATE CHANGE COMMANDS -----------------------------------------------------------------------
     SetDescriptorSets {
-        descriptor_sets: Vec<&'a R::DescriptorSet>,
+        descriptor_sets: Vec<DescriptorSet<'a, R>>,
     },
     SetFramebuffer {
-        framebuffer: &'a R::Framebuffer,
+        framebuffer: Framebuffer<'a, R>,
     },
     SetVertexBuffers {
-        vertex_buffers: Vec<&'a R::Buffer>,
+        vertex_buffers: Vec<BufferTypeless<'a, R>>,
     },
     SetIndexBuffer {
-        index_buffer: Option<&'a R::Buffer>,
+        index_buffer: BufferTypeless<'a, R>,
+        offset: usize,
+        ty: IndexType,
     },
     SetScissors {
-        first: u32,
+        //first: u32,
         scissors: Vec<ScissorRect>,
     },
-    SetAllScissors {
-        scissor: ScissorRect,
-    },
+    //SetAllScissors {
+    //    scissor: ScissorRect,
+    //},
     SetViewports {
-        first: u32,
+        //first: u32,
         viewports: Vec<Viewport>,
     },
-    SetAllViewports {
-        viewport: Viewport,
-    },
+    //SetAllViewports {
+    //    viewport: Viewport,
+    //},
     Draw {
         draw: DrawCommand,
     },
 }
 
-
 // Explicit clone impl because of #26925
 impl<'a, R: RendererBackend> Clone for CommandInner<'a, R> {
     fn clone(&self) -> Self {
         // I really don't want to match all variants just to copy bits around.
-        unsafe { mem::transmute_copy(self) }
+        // unsafe { mem::transmute_copy(self) }
+        // yeah, let's not do that after all...
+        // I inadvertantly put a member with a destructor in a variant and chased a use-after-free
+        // for hours.
+        match *self {
+            CommandInner::PipelineBarrier {} => CommandInner::PipelineBarrier {},
+            CommandInner::ClearImageFloat { image, color } => {
+                CommandInner::ClearImageFloat { image, color }
+            }
+            CommandInner::ClearDepthStencilImage {
+                image,
+                depth,
+                stencil,
+            } => CommandInner::ClearDepthStencilImage {
+                image,
+                depth,
+                stencil,
+            },
+            CommandInner::Present { image, swapchain } => {
+                CommandInner::Present { image, swapchain }
+            }
+            CommandInner::DrawHeader { pipeline } => CommandInner::DrawHeader { pipeline },
+
+            CommandInner::SetDescriptorSets {
+                ref descriptor_sets,
+            } => CommandInner::SetDescriptorSets {
+                descriptor_sets: descriptor_sets.clone(),
+            },
+            CommandInner::SetFramebuffer { framebuffer } => {
+                CommandInner::SetFramebuffer { framebuffer }
+            }
+            CommandInner::SetVertexBuffers { ref vertex_buffers } => {
+                CommandInner::SetVertexBuffers {
+                    vertex_buffers: vertex_buffers.clone(),
+                }
+            }
+            CommandInner::SetIndexBuffer {
+                index_buffer,
+                offset,
+                ty,
+            } => CommandInner::SetIndexBuffer {
+                index_buffer,
+                offset,
+                ty,
+            },
+            CommandInner::SetScissors { ref scissors } => CommandInner::SetScissors {
+                scissors: scissors.clone(),
+            },
+            //CommandInner::SetAllScissors { scissor } => CommandInner::SetAllScissors { scissor },
+            CommandInner::SetViewports { ref viewports } => CommandInner::SetViewports {
+                viewports: viewports.clone(),
+            },
+            // CommandInner::SetAllViewports { viewport } => {
+            //    CommandInner::SetAllViewports { viewport }
+            //}
+            CommandInner::Draw { draw } => CommandInner::Draw { draw },
+        }
     }
 }
 
@@ -144,16 +203,6 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
     //----------------------------------------------------------------------------------------------
     // Allocate
 
-    /// Allocates or gets a temporary image to be used in this frame.
-    /// (alloc_img <params>)
-    pub fn alloc_image(&mut self, sort_key: u64, image: &'a R::Image) {
-        unimplemented!()
-    }
-
-    pub fn alloc_buffer(&mut self, sort_key: u64, buffer: &'a R::Buffer) {
-        unimplemented!()
-    }
-
     /*/// Uploads data to a temporary buffer.
     pub fn upload(&mut self, name: Option<&str>, data: &[u8]) -> &'a R::Buffer {
         unimplemented!()
@@ -183,29 +232,14 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
     }*/
 
     //----------------------------------------------------------------------------------------------
-    // Swap
-
-    /// Swaps two resources.
-    /// (swap_img <image1> <image2>)
-    pub fn swap_images(&mut self, sort_key: u64, img_a: &'a R::Image, img_b: &'a R::Image) {
-        unimplemented!()
-    }
-
-    /// Swaps two resources.
-    /// (swap_buf <buf1> <buf2>)
-    pub fn swap_buffers(&mut self, sort_key: u64, buf_a: &'a R::Buffer, buf_b: &'a R::Buffer) {
-        unimplemented!()
-    }
-
-    //----------------------------------------------------------------------------------------------
     // Copy
 
     /// Copy data between buffers.
     pub fn copy_buffer(
         &mut self,
         sort_key: u64,
-        src: &'a R::Buffer,
-        dst: &'a R::Buffer,
+        src: BufferTypeless<'a, R>,
+        dst: BufferTypeless<'a, R>,
         src_range: Range<u64>,
         dst_range: Range<u64>,
     ) {
@@ -216,7 +250,7 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
     // Clear
 
     /// Clears an image.
-    pub fn clear_image(&mut self, sort_key: u64, image: &'a R::Image, color: &[f32; 4]) {
+    pub fn clear_image(&mut self, sort_key: u64, image: Image<'a, R>, color: &[f32; 4]) {
         self.push_command(
             sort_key,
             CommandInner::ClearImageFloat {
@@ -230,7 +264,7 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
     pub fn clear_depth_stencil_image(
         &mut self,
         sort_key: u64,
-        image: &'a R::Image,
+        image: Image<'a, R>,
         depth: f32,
         stencil: Option<u8>,
     ) {
@@ -247,7 +281,7 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
     //----------------------------------------------------------------------------------------------
     // Draw
 
-    fn set_descriptor_sets(&mut self, sort_key: u64, descriptor_sets: &[&'a R::DescriptorSet]) {
+    fn set_descriptor_sets(&mut self, sort_key: u64, descriptor_sets: &[DescriptorSet<'a, R>]) {
         self.push_command(
             sort_key,
             CommandInner::SetDescriptorSets {
@@ -256,11 +290,11 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
         )
     }
 
-    fn set_framebuffer(&mut self, sort_key: u64, framebuffer: &'a R::Framebuffer) {
+    fn set_framebuffer(&mut self, sort_key: u64, framebuffer: Framebuffer<'a, R>) {
         self.push_command(sort_key, CommandInner::SetFramebuffer { framebuffer })
     }
 
-    fn set_vertex_buffers(&mut self, sort_key: u64, vertex_buffers: &[&'a R::Buffer]) {
+    fn set_vertex_buffers(&mut self, sort_key: u64, vertex_buffers: &[BufferTypeless<'a, R>]) {
         self.push_command(
             sort_key,
             CommandInner::SetVertexBuffers {
@@ -269,48 +303,58 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
         )
     }
 
-    fn set_index_buffer(&mut self, sort_key: u64, index_buffer: Option<&'a R::Buffer>) {
-        self.push_command(sort_key, CommandInner::SetIndexBuffer { index_buffer })
+    fn set_index_buffer(
+        &mut self,
+        sort_key: u64,
+        index_buffer: BufferTypeless<'a, R>,
+        offset: usize,
+        ty: IndexType,
+    ) {
+        self.push_command(
+            sort_key,
+            CommandInner::SetIndexBuffer {
+                index_buffer,
+                offset,
+                ty,
+            },
+        )
     }
 
-    fn set_viewports(&mut self, sort_key: u64, first: u32, viewports: &[Viewport]) {
+    fn set_viewports(&mut self, sort_key: u64, viewports: &[Viewport]) {
         self.push_command(
             sort_key,
             CommandInner::SetViewports {
-                first,
                 viewports: viewports.to_vec(),
             },
         )
     }
 
-    fn set_all_viewports(&mut self, sort_key: u64, viewport: &Viewport) {
+    /*fn set_all_viewports(&mut self, sort_key: u64, viewport: &Viewport) {
         self.push_command(
             sort_key,
             CommandInner::SetAllViewports {
                 viewport: *viewport,
             },
         )
-    }
+    }*/
 
-    fn set_scissors(&mut self, sort_key: u64, first: u32, scissors: &[ScissorRect]) {
+    fn set_scissors(&mut self, sort_key: u64, scissors: &[ScissorRect]) {
         self.push_command(
             sort_key,
             CommandInner::SetScissors {
-                first,
                 scissors: scissors.to_vec(),
             },
         )
     }
 
-    fn set_all_scissors(&mut self, sort_key: u64, scissor: &ScissorRect) {
+    /* fn set_all_scissors(&mut self, sort_key: u64, scissor: &ScissorRect) {
         self.push_command(sort_key, CommandInner::SetAllScissors { scissor: *scissor })
-    }
+    }*/
 
-    // need:
     pub fn draw<PI: PipelineInterface<'a, R>>(
         &mut self,
         sort_key: u64,
-        pipeline: &'a R::GraphicsPipeline,
+        pipeline: GraphicsPipeline<'a, R>,
         interface: &PI,
     ) {
         self.push_command(sort_key, CommandInner::DrawHeader { pipeline });
@@ -321,40 +365,45 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
         }
 
         impl<'a, 'b, R: RendererBackend> PipelineInterfaceVisitor<'a, R> for Visitor<'a, 'b, R> {
-            fn visit_descriptor_sets(&mut self, descriptor_sets: &[&'a R::DescriptorSet]) {
+            fn visit_descriptor_sets(&mut self, descriptor_sets: &[DescriptorSet<'a, R>]) {
                 self.cmdbuf
                     .set_descriptor_sets(self.sort_key, descriptor_sets);
             }
 
-            fn visit_vertex_buffers(&mut self, vertex_buffers: &[&'a R::Buffer]) {
+            fn visit_vertex_buffers(&mut self, vertex_buffers: &[BufferTypeless<'a, R>]) {
                 self.cmdbuf
                     .set_vertex_buffers(self.sort_key, vertex_buffers);
             }
 
-            fn visit_index_buffer(&mut self, index_buffer: &'a R::Buffer) {
+            fn visit_index_buffer(
+                &mut self,
+                index_buffer: BufferTypeless<'a, R>,
+                offset: usize,
+                ty: IndexType,
+            ) {
                 self.cmdbuf
-                    .set_index_buffer(self.sort_key, Some(index_buffer));
+                    .set_index_buffer(self.sort_key, index_buffer, offset, ty);
             }
 
-            fn visit_framebuffer(&mut self, framebuffer: &'a R::Framebuffer) {
+            fn visit_framebuffer(&mut self, framebuffer: Framebuffer<'a, R>) {
                 self.cmdbuf.set_framebuffer(self.sort_key, framebuffer);
             }
 
-            fn visit_dynamic_viewports(&mut self, first: u32, viewports: &[Viewport]) {
-                self.cmdbuf.set_viewports(self.sort_key, first, viewports);
+            fn visit_dynamic_viewports(&mut self, viewports: &[Viewport]) {
+                self.cmdbuf.set_viewports(self.sort_key, viewports);
             }
 
-            fn visit_dynamic_viewport_all(&mut self, viewport: &Viewport) {
+            /*fn visit_dynamic_viewport_all(&mut self, viewport: &Viewport) {
                 self.cmdbuf.set_all_viewports(self.sort_key, viewport);
+            }*/
+
+            fn visit_dynamic_scissors(&mut self, scissors: &[ScissorRect]) {
+                self.cmdbuf.set_scissors(self.sort_key, scissors);
             }
 
-            fn visit_dynamic_scissors(&mut self, first: u32, scissors: &[ScissorRect]) {
-                self.cmdbuf.set_scissors(self.sort_key, first, scissors);
-            }
-
-            fn visit_dynamic_scissor_all(&mut self, scissor: &ScissorRect) {
+            /*fn visit_dynamic_scissor_all(&mut self, scissor: &ScissorRect) {
                 self.cmdbuf.set_all_scissors(self.sort_key, scissor);
-            }
+            }*/
         }
 
         let mut v = Visitor {
@@ -370,7 +419,7 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
 
     /// Presents the specified image to the swapchain.
     /// Might incur a copy / blit or format conversion if necessary.
-    pub fn present(&mut self, sort_key: u64, image: &'a R::Image, swapchain: &'a R::Swapchain) {
+    pub fn present(&mut self, sort_key: u64, image: Image<'a, R>, swapchain: Swapchain<'a, R>) {
         self.push_command(sort_key, CommandInner::Present { image, swapchain })
     }
 }

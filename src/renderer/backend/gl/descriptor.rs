@@ -7,6 +7,7 @@ use super::{
     resource::{Buffer, Image, SamplerCache},
     OpenGlBackend,
 };
+use crate::renderer;
 use crate::renderer::{Descriptor, DescriptorSetLayoutBinding, DescriptorType, ShaderStageFlags};
 
 const MAX_INLINE_SHADER_RESOURCE_BINDINGS: usize = 16;
@@ -23,7 +24,6 @@ pub struct ShaderResourceBindings {
         smallvec::SmallVec<[GLintptr; MAX_INLINE_SHADER_RESOURCE_BINDINGS]>,
     pub shader_storage_buffer_offsets:
         smallvec::SmallVec<[GLintptr; MAX_INLINE_SHADER_RESOURCE_BINDINGS]>,*/
-
     pub textures: Vec<GLuint>,
     pub samplers: Vec<GLuint>,
     pub images: Vec<GLuint>,
@@ -55,7 +55,7 @@ impl ShaderResourceBindings {
             uniform_buffer_offsets: Vec::new(),
             shader_storage_buffers: Vec::new(),
             shader_storage_buffer_sizes: Vec::new(),
-            shader_storage_buffer_offsets: Vec::new()
+            shader_storage_buffer_offsets: Vec::new(),
         }
     }
 }
@@ -113,6 +113,8 @@ pub struct DescriptorSet {
     pub descriptors: Vec<RawDescriptor>,
 }
 
+impl renderer::DescriptorSetBackend for DescriptorSet {}
+
 impl DescriptorSet {
     pub fn from_descriptors_and_layout(
         descriptors: &[Descriptor<OpenGlBackend>],
@@ -127,14 +129,14 @@ impl DescriptorSet {
                     Descriptor::SampledImage { img, sampler } => {
                         match layout.bindings[i].descriptor_type {
                             DescriptorType::SampledImage => RawDescriptor::Texture {
-                                image: img.obj,
+                                image: img.0.obj,
                                 sampler: sampler_cache.get_sampler(sampler),
                             },
                             _ => panic!("unexpected descriptor type"),
                         }
                     }
                     Descriptor::Image { img } => match layout.bindings[i].descriptor_type {
-                        DescriptorType::StorageImage => RawDescriptor::Image { image: img.obj },
+                        DescriptorType::StorageImage => RawDescriptor::Image { image: img.0.obj },
                         _ => panic!("unexpected descriptor type"),
                     },
                     Descriptor::Buffer {
@@ -143,13 +145,13 @@ impl DescriptorSet {
                         size,
                     } => match layout.bindings[i].descriptor_type {
                         DescriptorType::StorageBuffer => RawDescriptor::StorageBuffer {
-                            buffer: buffer.obj,
-                            offset: buffer.offset + *offset,
+                            buffer: buffer.0.obj,
+                            offset: buffer.0.offset + *offset,
                             size: *size,
                         },
                         DescriptorType::UniformBuffer => RawDescriptor::UniformBuffer {
-                            buffer: buffer.obj,
-                            offset: buffer.offset + *offset,
+                            buffer: buffer.0.obj,
+                            offset: buffer.0.offset + *offset,
                             size: *size,
                         },
                         _ => panic!("unexpected descriptor type"),
@@ -180,12 +182,8 @@ impl DescriptorSet {
             v[index] = item;
         }*/
 
-        fn bind<T>(
-            v: &mut Vec<T>,
-            index: usize,
-            item: T,
-            default: T,
-        ) where
+        fn bind<T>(v: &mut Vec<T>, index: usize, item: T, default: T)
+        where
             T: Copy,
         {
             if index >= v.len() {
@@ -222,7 +220,12 @@ impl DescriptorSet {
                         *offset as isize,
                         0,
                     );
-                    bind(&mut sr.uniform_buffer_sizes, loc.location as usize, *size as isize, 0);
+                    bind(
+                        &mut sr.uniform_buffer_sizes,
+                        loc.location as usize,
+                        *size as isize,
+                        1, // not zero so that the driver doesn't complain about one of the sizes being zero (although the associated buffer is null)
+                    );
                 }
                 RawDescriptor::StorageBuffer {
                     buffer,
@@ -246,7 +249,7 @@ impl DescriptorSet {
                         &mut sr.shader_storage_buffer_sizes,
                         loc.location as usize,
                         *size as isize,
-                        0,
+                        1, // not zero so that the driver doesn't complain about one of the sizes being zero (although the associated buffer is null)
                     );
                 }
                 RawDescriptor::Texture { image, sampler } => {

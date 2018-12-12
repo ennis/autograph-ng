@@ -314,11 +314,11 @@ pub fn create_graphics_pipeline_internal<'a>(
     create_info: &GraphicsPipelineCreateInfo<OpenGlBackend>,
 ) -> &'a GraphicsPipeline {
     let program = {
-        let vs = create_info.shader_stages.vertex;
-        let fs = create_info.shader_stages.fragment;
-        let gs = create_info.shader_stages.geometry;
-        let tcs = create_info.shader_stages.tess_control;
-        let tes = create_info.shader_stages.tess_eval;
+        let vs = create_info.shader_stages.vertex.0;
+        let fs = create_info.shader_stages.fragment.map(|s| s.0);
+        let gs = create_info.shader_stages.geometry.map(|s| s.0);
+        let tcs = create_info.shader_stages.tess_control.map(|s| s.0);
+        let tes = create_info.shader_stages.tess_eval.map(|s| s.0);
         create_graphics_program(vs, fs, gs, tcs, tes).expect("failed to create program")
     };
 
@@ -336,7 +336,10 @@ pub fn create_graphics_pipeline_internal<'a>(
         blend_constants: create_info.color_blend_state.blend_constants,
     };
 
-    debug!("descriptor map: {:#?}", create_info.additional.descriptor_map);
+    debug!(
+        "descriptor map: {:#?}",
+        create_info.additional.descriptor_map
+    );
 
     let g = GraphicsPipeline {
         rasterization_state: *create_info.rasterization_state,

@@ -1,6 +1,9 @@
 use super::api as gl;
 use super::api::types::*;
 use super::resource::Image;
+use super::OpenGlBackend as R;
+
+use crate::renderer;
 
 #[derive(Debug)]
 pub struct Framebuffer {
@@ -9,8 +12,8 @@ pub struct Framebuffer {
 
 impl Framebuffer {
     pub fn new(
-        color_attachments: &[&Image],
-        depth_stencil_attachment: Option<&Image>,
+        color_attachments: &[renderer::Image<R>],
+        depth_stencil_attachment: Option<renderer::Image<R>>,
     ) -> Result<Framebuffer, GLenum> {
         let mut obj = 0;
         unsafe {
@@ -19,20 +22,20 @@ impl Framebuffer {
             // color attachments
             for (index, img) in color_attachments.iter().enumerate() {
                 let index = index as u32;
-                match img.target {
+                match img.0.target {
                     gl::RENDERBUFFER => unsafe {
                         gl::NamedFramebufferRenderbuffer(
                             obj,
                             gl::COLOR_ATTACHMENT0 + index,
                             gl::RENDERBUFFER,
-                            img.obj,
+                            img.0.obj,
                         );
                     },
                     _ => unsafe {
                         gl::NamedFramebufferTexture(
                             obj,
                             gl::COLOR_ATTACHMENT0 + index,
-                            img.obj,
+                            img.0.obj,
                             0, // TODO
                         );
                     },
@@ -41,20 +44,20 @@ impl Framebuffer {
 
             // depth-stencil attachment
             if let Some(img) = depth_stencil_attachment {
-                match img.target {
+                match img.0.target {
                     gl::RENDERBUFFER => unsafe {
                         gl::NamedFramebufferRenderbuffer(
                             obj,
                             gl::DEPTH_ATTACHMENT,
                             gl::RENDERBUFFER,
-                            img.obj,
+                            img.0.obj,
                         );
                     },
                     _ => unsafe {
                         gl::NamedFramebufferTexture(
                             obj,
                             gl::DEPTH_ATTACHMENT,
-                            img.obj,
+                            img.0.obj,
                             0, // TODO
                         );
                     },

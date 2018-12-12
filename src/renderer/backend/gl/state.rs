@@ -2,6 +2,12 @@ use crate::renderer::backend::gl::api as gl;
 use crate::renderer::backend::gl::api::types::*;
 use crate::renderer::backend::gl::{GraphicsPipeline, ImplementationParameters};
 use crate::renderer::*;
+use ordered_float::NotNan;
+
+pub struct ViewportState {
+    all: bool,
+    viewports: Vec<Option<Viewport>>,
+}
 
 pub struct ColorBlendCache {
     all: bool,
@@ -11,6 +17,7 @@ pub struct ColorBlendCache {
 pub struct StateCache {
     max_draw_buffers: u32,
     max_color_attachments: u32,
+    max_viewports: u32,
 
     cull_enable: Option<bool>,
     cull_mode: Option<CullModeFlags>,
@@ -29,6 +36,10 @@ pub struct StateCache {
     depth_bounds_test: Option<DepthBoundTest>,
 
     blend: Option<ColorBlendCache>,
+    viewports: Option<(Vec<ViewportEntry>, Vec<DepthRangeEntry>)>,
+    index_buffer: Option<GLuint>,
+    index_buffer_offset: Option<usize>,
+    index_buffer_type: Option<GLenum>,
 
     textures: Option<Vec<GLuint>>,
     samplers: Option<Vec<GLuint>>,
@@ -114,11 +125,35 @@ impl<T: Eq> CacheOptionExt<T> for Option<T> {
     }
 }
 
+pub struct IndexBuffer {
+    pub buffer: GLuint,
+    pub offset: usize,
+    pub ty: IndexType,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+struct ViewportEntry {
+    // OK to use NotNan because it's repr(transparent) for f32
+    x: NotNan<f32>,
+    y: NotNan<f32>,
+    width: NotNan<f32>,
+    height: NotNan<f32>,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+struct DepthRangeEntry {
+    min: NotNan<f32>,
+    max: NotNan<f32>,
+}
+
 impl StateCache {
     pub fn new(params: &ImplementationParameters) -> StateCache {
         StateCache {
             max_draw_buffers: params.max_draw_buffers,
             max_color_attachments: params.max_color_attachments,
+            max_viewports: params.max_viewports,
             cull_enable: None,
             cull_mode: None,
             polygon_mode: None,
@@ -133,6 +168,10 @@ impl StateCache {
             depth_compare_op: None,
             depth_bounds_test: None,
             blend: None,
+            viewports: None,
+            index_buffer: None,
+            index_buffer_offset: None,
+            index_buffer_type: None,
             textures: None,
             samplers: None,
             images: None,
@@ -149,6 +188,7 @@ impl StateCache {
         *self = StateCache {
             max_draw_buffers: self.max_draw_buffers,
             max_color_attachments: self.max_color_attachments,
+            max_viewports: self.max_viewports,
             cull_enable: None,
             cull_mode: None,
             polygon_mode: None,
@@ -163,6 +203,10 @@ impl StateCache {
             depth_compare_op: None,
             depth_bounds_test: None,
             blend: None,
+            viewports: None,
+            index_buffer: None,
+            index_buffer_offset: None,
+            index_buffer_type: None,
             textures: None,
             samplers: None,
             images: None,
@@ -272,6 +316,84 @@ impl StateCache {
             states[index as usize] = Some(*state);
             self.blend = Some(ColorBlendCache { all: false, states });
             bind_separate(index, state);
+        }
+    }
+
+    pub fn set_viewports(&mut self, viewports: &[Viewport]) {
+        let mut should_update_viewports = false;
+        let mut should_update_depth_ranges = false;
+
+        if let Some((ref mut cur_viewports, ref mut cur_depth_ranges)) = self.viewports {
+            for (i, &vp) in viewports.iter().enumerate() {
+                if cur_viewports[i].x != vp.x
+                    || cur_viewports[i].y != vp.y
+                    || cur_viewports[i].width != vp.width
+                    || cur_viewports[i].height != vp.height
+                {
+                    should_update_viewports = true;
+                    cur_viewports[i].x = vp.x;
+                    cur_viewports[i].y = vp.y;
+                    cur_viewports[i].width = vp.width;
+                    cur_viewports[i].height = vp.height;
+                }
+
+                if cur_depth_ranges[i].min != vp.min_depth
+                    || cur_depth_ranges[i].max != vp.max_depth
+                {
+                    should_update_depth_ranges = true;
+                    cur_depth_ranges[i].min = vp.min_depth;
+                    cur_depth_ranges[i].max = vp.max_depth;
+                }
+            }
+        } else {
+            let mut new_viewports = vec![
+                ViewportEntry {
+                    x: 0.0.into(),
+                    y: 0.0.into(),
+                    width: 0.0.into(),
+                    height: 0.0.into()
+                };
+                self.max_viewports as usize
+            ];
+            let mut new_depth_ranges = vec![
+                DepthRangeEntry {
+                    min: 0.0.into(),
+                    max: 1.0.into()
+                };
+                self.max_viewports as usize
+            ];
+            for (i, &vp) in viewports.iter().enumerate() {
+                new_viewports[i] = ViewportEntry {
+                    x: vp.x.into(),
+                    y: vp.y.into(),
+                    width: vp.width.into(),
+                    height: vp.height.into(),
+                };
+                new_depth_ranges[i] = DepthRangeEntry {
+                    min: vp.min_depth.into(),
+                    max: vp.max_depth.into(),
+                };
+            }
+            self.viewports = Some((new_viewports, new_depth_ranges));
+            should_update_viewports = true;
+            should_update_depth_ranges = true;
+        }
+
+        // viewports cannot be None by then
+        let &(ref viewports, ref depth_ranges) = &self.viewports.as_ref().unwrap();
+
+        unsafe {
+            if should_update_viewports {
+                gl::ViewportArrayv(0, self.max_viewports as i32, viewports.as_ptr() as *const _);
+            }
+
+            if should_update_depth_ranges {
+                gl::DepthRangeArrayv(
+                    0,
+                    self.max_viewports as i32,
+                    depth_ranges.as_ptr() as *const _,
+                );
+            }
         }
     }
 
@@ -445,11 +567,12 @@ impl StateCache {
         unsafe { gl::BindTextures(0, textures.len() as i32, textures.as_ptr()) }
     }
 
-    pub fn set_vertex_buffers(&mut self,
-                              buffers: &[GLuint],
-                              buffer_offsets: &[GLintptr],
-                              buffer_strides: &[GLsizei])
-    {
+    pub fn set_vertex_buffers(
+        &mut self,
+        buffers: &[GLuint],
+        buffer_offsets: &[GLintptr],
+        buffer_strides: &[GLsizei],
+    ) {
         // passthrough, for now
         // may do a comparison, or a quick diff in the future
         unsafe {
@@ -464,6 +587,18 @@ impl StateCache {
                 )
             }
         }
+    }
+
+    pub fn set_index_buffer(&mut self, buffer: GLuint, offset: usize, ty: IndexType) {
+        self.index_buffer.update_cached(buffer, || unsafe {
+            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, buffer);
+        });
+
+        self.index_buffer_offset = Some(offset);
+        self.index_buffer_type = Some(match ty {
+            IndexType::U16 => gl::UNSIGNED_SHORT,
+            IndexType::U32 => gl::UNSIGNED_INT,
+        });
     }
 
     //pub fn set_blend_mode(&mut self)

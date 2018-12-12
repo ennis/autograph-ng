@@ -1,6 +1,6 @@
 use super::{
-    api::types::*,
     api as gl,
+    api::types::*,
     buffer::RawBuffer,
     descriptor::{DescriptorSet, DescriptorSetLayout},
     framebuffer::Framebuffer,
@@ -18,7 +18,7 @@ use crate::renderer::{
 };
 use fxhash::FxHashMap;
 use slotmap;
-use std::collections::{VecDeque, HashMap};
+use std::collections::{HashMap, VecDeque};
 use std::marker::PhantomData;
 
 //--------------------------------------------------------------------------------------------------
@@ -97,9 +97,21 @@ impl SamplerCache {
                 gl::TEXTURE_MAG_FILTER,
                 mag_filter_to_glenum(desc.mag_filter) as i32,
             );
-            gl::SamplerParameteri(obj, gl::TEXTURE_WRAP_R, address_mode_to_glenum(desc.addr_u) as i32);
-            gl::SamplerParameteri(obj, gl::TEXTURE_WRAP_S, address_mode_to_glenum(desc.addr_v) as i32);
-            gl::SamplerParameteri(obj, gl::TEXTURE_WRAP_T, address_mode_to_glenum(desc.addr_w) as i32);
+            gl::SamplerParameteri(
+                obj,
+                gl::TEXTURE_WRAP_R,
+                address_mode_to_glenum(desc.addr_u) as i32,
+            );
+            gl::SamplerParameteri(
+                obj,
+                gl::TEXTURE_WRAP_S,
+                address_mode_to_glenum(desc.addr_v) as i32,
+            );
+            gl::SamplerParameteri(
+                obj,
+                gl::TEXTURE_WRAP_T,
+                address_mode_to_glenum(desc.addr_w) as i32,
+            );
             obj
         })
     }

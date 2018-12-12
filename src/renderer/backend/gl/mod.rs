@@ -81,7 +81,7 @@ extern "system" fn debug_callback(
     _source: GLenum,
     _ty: GLenum,
     _id: GLuint,
-    _severity: GLenum,
+    severity: GLenum,
     length: GLsizei,
     msg: *const GLchar,
     _data: *mut GLvoid,
@@ -89,7 +89,14 @@ extern "system" fn debug_callback(
     let str = unsafe {
         str::from_utf8(slice::from_raw_parts(msg as *const u8, length as usize)).unwrap()
     };
-    debug!("(GL) {}", str);
+    let level = match severity {
+        gl::DEBUG_SEVERITY_HIGH => log::Level::Error,
+        gl::DEBUG_SEVERITY_MEDIUM => log::Level::Warn,
+        gl::DEBUG_SEVERITY_LOW => log::Level::Info,
+        gl::DEBUG_SEVERITY_NOTIFICATION => log::Level::Debug,
+        _ => log::Level::Debug,
+    };
+    log!(level, "(GL) {}", str);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -97,6 +104,7 @@ pub struct ImplementationParameters {
     pub uniform_buffer_alignment: usize,
     pub max_draw_buffers: u32,
     pub max_color_attachments: u32,
+    pub max_viewports: u32,
 }
 
 impl ImplementationParameters {
@@ -111,6 +119,7 @@ impl ImplementationParameters {
             uniform_buffer_alignment: getint(gl::UNIFORM_BUFFER_OFFSET_ALIGNMENT) as usize,
             max_draw_buffers: getint(gl::MAX_DRAW_BUFFERS) as u32,
             max_color_attachments: getint(gl::MAX_COLOR_ATTACHMENTS) as u32,
+            max_viewports: getint(gl::MAX_VIEWPORTS) as u32,
         }
     }
 }
@@ -121,7 +130,7 @@ pub struct Swapchain {
     size: Mutex<(u32, u32)>,
 }
 
-impl renderer::Swapchain for Swapchain {
+impl renderer::SwapchainBackend for Swapchain {
     fn size(&self) -> (u32, u32) {
         *self.size.lock().unwrap()
     }
@@ -205,12 +214,12 @@ impl OpenGlBackend {
 const SPIRV_MAGIC: u32 = 0x0723_0203;
 const UPLOAD_DEDICATED_THRESHOLD: usize = 65536;
 
-impl renderer::GraphicsPipeline for GraphicsPipeline {}
-impl renderer::ShaderModule for ShaderModule {}
-impl renderer::DescriptorSetLayout for DescriptorSetLayout {}
-impl renderer::Buffer for Buffer {}
-impl renderer::Image for Image {}
-impl renderer::Framebuffer for Framebuffer {}
+impl renderer::GraphicsPipelineBackend for GraphicsPipeline {}
+impl renderer::ShaderModuleBackend for ShaderModule {}
+impl renderer::DescriptorSetLayoutBackend for DescriptorSetLayout {}
+impl renderer::BufferBackend for Buffer {}
+impl renderer::ImageBackend for Image {}
+impl renderer::FramebufferBackend for Framebuffer {}
 //impl renderer::DescriptorSet for DescriptorSet {}
 
 impl RendererBackend for OpenGlBackend {
@@ -257,7 +266,7 @@ impl RendererBackend for OpenGlBackend {
         // initial data specified, allocate a texture
         let raw = RawImage::new_texture(format, &dimensions, mipcount, samples);
 
-        unsafe {
+        /*unsafe {
             upload_image_region(
                 raw.target,
                 raw.obj,
@@ -267,7 +276,7 @@ impl RendererBackend for OpenGlBackend {
                 dimensions.width_height_depth(),
                 data,
             );
-        }
+        }*/
 
         arena.images.alloc(Image {
             should_destroy: true,
@@ -300,8 +309,8 @@ impl RendererBackend for OpenGlBackend {
     fn create_framebuffer<'a>(
         &self,
         arena: &'a Self::Arena,
-        color_attachments: &[&'a Self::Image],
-        depth_stencil_attachment: Option<&'a Self::Image>,
+        color_attachments: &[renderer::Image<'a, Self>],
+        depth_stencil_attachment: Option<renderer::Image<'a, Self>>,
     ) -> &'a Self::Framebuffer {
         arena
             .framebuffers
@@ -317,7 +326,7 @@ impl RendererBackend for OpenGlBackend {
     ) -> &'a Self::Buffer {
         if size < UPLOAD_DEDICATED_THRESHOLD as u64 {
             // if the buffer is small enough, allocate through the upload buffer
-            let (obj, offset) = arena.upload_buffer.write(data, 64).unwrap();
+            let (obj, offset) = arena.upload_buffer.write(data, self.impl_params.uniform_buffer_alignment).unwrap();
             arena.buffers.alloc(Buffer {
                 obj,
                 offset,
@@ -399,7 +408,7 @@ impl RendererBackend for OpenGlBackend {
     fn create_descriptor_set<'a>(
         &self,
         arena: &'a Self::Arena,
-        layout: &Self::DescriptorSetLayout,
+        layout: &DescriptorSetLayout,
         descriptors: &[Descriptor<Self>],
     ) -> &'a Self::DescriptorSet {
         let mut sampler_cache = self.sampler_cache.lock().unwrap();

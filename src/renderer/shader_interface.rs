@@ -54,8 +54,15 @@ pub struct DescriptorSetDescription<'tcx> {
 }
 
 pub trait DescriptorSetInterfaceVisitor<'a, R: RendererBackend> {
-    fn visit_buffer(&mut self, binding: u32, buffer: &'a R::Buffer);
-    //fn visit_sampled_image(&self, binding: u32, image: ImageHandle, sampler: SamplerDescriptor);
+    fn visit_buffer(
+        &mut self,
+        binding: u32,
+        buffer: BufferTypeless<'a, R>,
+        offset: usize,
+        size: usize,
+    );
+    fn visit_sampled_image(&self, binding: u32, image: Image<'a, R>, sampler: &SamplerDescription);
+
     //fn visit_vertex_input<'a>(&self, buffer: &'a R::Buffer);
     //fn visit_fragment_output<'a>(&self, image: &'a R::Image);
     //fn visit_data(&self, binding: u32, data: &[u8]);
@@ -300,22 +307,22 @@ unsafe impl BufferInterface for gfx::BufferSliceAny {
 
 pub trait PipelineInterfaceVisitor<'a, R: RendererBackend> {
     /// `#[descriptor_set]`
-    fn visit_descriptor_sets(&mut self, descriptor_sets: &[&'a R::DescriptorSet]);
+    fn visit_descriptor_sets(&mut self, descriptor_sets: &[DescriptorSet<'a, R>]);
     /// `#[vertex_input(index)]`
-    fn visit_vertex_buffers(&mut self, buffer: &[&'a R::Buffer]);
+    fn visit_vertex_buffers(&mut self, buffer: &[BufferTypeless<'a, R>]);
     /// `#[index_buffer]`
-    fn visit_index_buffer(&mut self, buffer: &'a R::Buffer);
+    fn visit_index_buffer(&mut self, buffer: BufferTypeless<'a, R>, offset: usize, ty: IndexType);
     /// `#[fragment_output]`
-    fn visit_framebuffer(&mut self, framebuffer: &'a R::Framebuffer);
+    fn visit_framebuffer(&mut self, framebuffer: Framebuffer<'a, R>);
 
     /// `#[viewports]`
-    fn visit_dynamic_viewports(&mut self, first: u32, viewports: &[Viewport]);
-    /// `#[viewport]`
-    fn visit_dynamic_viewport_all(&mut self, viewport: &Viewport);
+    fn visit_dynamic_viewports(&mut self, viewports: &[Viewport]);
+    /*/// `#[viewport]`
+    fn visit_dynamic_viewport_all(&mut self, viewport: &Viewport);*/
     /// `#[scissors]`
-    fn visit_dynamic_scissors(&mut self, first: u32, scissors: &[ScissorRect]);
-    /// `#[scissor]`
-    fn visit_dynamic_scissor_all(&mut self, scissor: &ScissorRect);
+    fn visit_dynamic_scissors(&mut self, scissors: &[ScissorRect]);
+    /*/// `#[scissor]`
+    fn visit_dynamic_scissor_all(&mut self, scissor: &ScissorRect);*/
 
     //fn visit_data(&self, binding: u32, data: &[u8]);
 }

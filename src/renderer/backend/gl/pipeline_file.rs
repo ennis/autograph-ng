@@ -11,6 +11,7 @@ use crate::renderer::backend::gl::{
     shader::ShaderModule,
     OpenGlBackend,
 };
+use crate::renderer;
 use crate::renderer::{
     Arena, Renderer, RendererBackend, ShaderStageFlags, VertexInputBindingDescription,
 };
@@ -153,12 +154,12 @@ fn as_bytes(buf: &[u32]) -> &[u8] {
 
 //--------------------------------------------------------------------------------------------------
 pub struct ShaderModules<'rcx> {
-    pub vs: Option<&'rcx ShaderModule>,
-    pub fs: Option<&'rcx ShaderModule>,
-    pub gs: Option<&'rcx ShaderModule>,
-    pub tes: Option<&'rcx ShaderModule>,
-    pub tcs: Option<&'rcx ShaderModule>,
-    pub cs: Option<&'rcx ShaderModule>,
+    pub vs: Option<renderer::ShaderModule<'rcx, OpenGlBackend>>,
+    pub fs: Option<renderer::ShaderModule<'rcx, OpenGlBackend>>,
+    pub gs: Option<renderer::ShaderModule<'rcx, OpenGlBackend>>,
+    pub tes: Option<renderer::ShaderModule<'rcx, OpenGlBackend>>,
+    pub tcs: Option<renderer::ShaderModule<'rcx, OpenGlBackend>>,
+    pub cs: Option<renderer::ShaderModule<'rcx, OpenGlBackend>>,
 }
 
 pub struct PipelineDescriptionFile<'rcx> {

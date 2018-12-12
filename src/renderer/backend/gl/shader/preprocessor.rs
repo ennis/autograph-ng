@@ -12,8 +12,6 @@ use crate::renderer::{
     ShaderStageFlags, VertexInputAttributeDescription,
 };
 
-// TODO Descriptor maps are defined the wrong way
-// must be a map (set,binding) -> (space, range)
 #[derive(Copy, Clone, Debug)]
 pub struct ParsedDescriptorMapping {
     pub gl_binding_space: BindingSpace,

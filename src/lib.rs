@@ -23,11 +23,13 @@ extern crate winit;
 extern crate log;
 #[macro_use]
 extern crate slotmap;
+extern crate fxhash;
 extern crate ordered_float;
 extern crate shaderc;
 extern crate smallvec;
 extern crate time;
-extern crate fxhash;
+#[macro_use]
+extern crate derivative;
 
 pub mod app;
 pub mod renderer;

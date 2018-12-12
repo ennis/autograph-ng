@@ -27,3 +27,43 @@ pub struct SamplerDescription {
     pub mag_filter: Filter,
     pub mipmap_mode: SamplerMipmapMode,
 }
+
+impl SamplerDescription
+{
+    pub const LINEAR_MIPMAP_LINEAR: &SamplerDescription = &SamplerDescription {
+        addr_u: SamplerAddressMode::Clamp,
+        addr_v: SamplerAddressMode::Clamp,
+        addr_w: SamplerAddressMode::Clamp,
+        mag_filter: Filter::Linear,
+        min_filter: Filter::Linear,
+        mipmap_mode: SamplerMipmapMode::Linear,
+    };
+
+    pub const LINEAR_MIPMAP_NEAREST: &SamplerDescription = &SamplerDescription {
+        addr_u: SamplerAddressMode::Clamp,
+        addr_v: SamplerAddressMode::Clamp,
+        addr_w: SamplerAddressMode::Clamp,
+        mag_filter: Filter::Linear,
+        min_filter: Filter::Linear,
+        mipmap_mode: SamplerMipmapMode::Nearest,
+    };
+
+    pub const NEAREST_MIPMAP_LINEAR: &SamplerDescription = &SamplerDescription {
+        addr_u: SamplerAddressMode::Clamp,
+        addr_v: SamplerAddressMode::Clamp,
+        addr_w: SamplerAddressMode::Clamp,
+        mag_filter: Filter::Nearest,
+        min_filter: Filter::Nearest,
+        mipmap_mode: SamplerMipmapMode::Linear,
+    };
+
+    pub const NEAREST_MIPMAP_NEAREST: &SamplerDescription = &SamplerDescription {
+        addr_u: SamplerAddressMode::Clamp,
+        addr_v: SamplerAddressMode::Clamp,
+        addr_w: SamplerAddressMode::Clamp,
+        mag_filter: Filter::Nearest,
+        min_filter: Filter::Nearest,
+        mipmap_mode: SamplerMipmapMode::Nearest,
+    };
+
+}

@@ -61,8 +61,10 @@
 use ordered_float::NotNan;
 use std::cmp::Eq;
 use std::fmt::Debug;
+use std::marker::PhantomData;
 use std::mem;
 use std::sync::Mutex;
+use std::ops::Deref;
 
 pub mod backend;
 mod buffer;
@@ -116,6 +118,12 @@ pub enum Queue {
     Transfer,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum IndexType {
+    U16,
+    U32,
+}
+
 bitflags! {
     #[derive(Default)]
     pub struct ShaderStageFlags: u32 {
@@ -163,16 +171,19 @@ pub enum DescriptorType {
     InputAttachment,
 }
 
+//--------------------------------------------------------------------------------------------------
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""), Copy(bound = ""))]
 pub enum Descriptor<'a, R: RendererBackend> {
     SampledImage {
-        img: &'a R::Image,
+        img: Image<'a, R>,
         sampler: SamplerDescription,
     },
     Image {
-        img: &'a R::Image,
+        img: Image<'a, R>,
     },
     Buffer {
-        buffer: &'a R::Buffer,
+        buffer: BufferTypeless<'a, R>,
         offset: usize,
         size: usize,
     },
@@ -185,22 +196,15 @@ pub enum ShaderFormat {
     BackendSpecific,
 }
 
-#[derive(Debug)]
-pub struct GraphicsPipelineShaderStages<'rcx, R: RendererBackend> {
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""), Copy(bound = ""), Debug(bound = ""))]
+pub struct GraphicsPipelineShaderStages<'a, R: RendererBackend> {
     //pub format: ShaderFormat,
-    pub vertex: &'rcx R::ShaderModule,
-    pub geometry: Option<&'rcx R::ShaderModule>,
-    pub fragment: Option<&'rcx R::ShaderModule>,
-    pub tess_eval: Option<&'rcx R::ShaderModule>,
-    pub tess_control: Option<&'rcx R::ShaderModule>,
-}
-
-// rust issue #26925
-impl<'a, R: RendererBackend> Clone for GraphicsPipelineShaderStages<'a, R> {
-    fn clone(&self) -> Self {
-        // safe because TODO
-        unsafe { mem::transmute_copy(self) }
-    }
+    pub vertex: ShaderModule<'a, R>,
+    pub geometry: Option<ShaderModule<'a, R>>,
+    pub fragment: Option<ShaderModule<'a, R>>,
+    pub tess_eval: Option<ShaderModule<'a, R>>,
+    pub tess_control: Option<ShaderModule<'a, R>>,
 }
 
 bitflags! {
@@ -389,9 +393,10 @@ pub struct PipelineVertexInputStateCreateInfo<'a> {
     pub attributes: &'a [VertexInputAttributeDescription],
 }
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""), Copy(bound = ""), Debug(bound = ""))]
 pub struct PipelineLayoutCreateInfo<'a, 'rcx, R: RendererBackend> {
-    pub descriptor_set_layouts: &'a [&'rcx R::DescriptorSetLayout],
+    pub descriptor_set_layouts: &'a [DescriptorSetLayout<'rcx, R>],
     //pub push_constants: &'a [PushConstant]
 }
 
@@ -594,7 +599,8 @@ pub struct PipelineColorBlendStateCreateInfo<'a> {
     pub blend_constants: [NotNan<f32>; 4],
 }
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""), Copy(bound = ""))]
 pub struct GraphicsPipelineCreateInfo<'a, 'rcx, R: RendererBackend> {
     pub shader_stages: &'a GraphicsPipelineShaderStages<'rcx, R>,
     pub vertex_input_state: &'a PipelineVertexInputStateCreateInfo<'a>,
@@ -610,26 +616,173 @@ pub struct GraphicsPipelineCreateInfo<'a, 'rcx, R: RendererBackend> {
     pub additional: &'a R::GraphicsPipelineCreateInfoAdditional,
 }
 
-// rust issue #26925
-impl<'a, 'rcx, R: RendererBackend> Clone for GraphicsPipelineCreateInfo<'a, 'rcx, R> {
-    fn clone(&self) -> Self {
-        // safe because TODO
-        // has no dynamically allocated components or mutable refs
-        unsafe { mem::transmute_copy(self) }
-    }
-}
-
 pub struct BufferSlice<'a, R: RendererBackend> {
     pub buffer: &'a R::Buffer,
     pub offset: usize,
     pub size: usize,
 }
 
-/*
-pub struct SubmitFrame<R: RendererBackend> {
-    pub commands: Vec<Command<R>>,
-}*/
+//--------------------------------------------------------------------------------------------------
+/// Marker trait for data that can be uploaded to a GPU buffer
+pub trait BufferData: 'static {
+    type Element;
+    fn len(&self) -> usize;
+}
 
+impl<T: Copy + 'static> BufferData for T {
+    type Element = T;
+    fn len(&self) -> usize {
+        1
+    }
+}
+
+impl<U: BufferData> BufferData for [U] {
+    type Element = U;
+    fn len(&self) -> usize {
+        (&self as &[U]).len()
+    }
+}
+
+
+//--------------------------------------------------------------------------------------------------
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""), Copy(bound = ""), Debug(bound = ""))]
+pub struct Buffer<'a, R: RendererBackend, T: BufferData + ?Sized>(pub &'a R::Buffer, PhantomData<T>);
+
+//--------------------------------------------------------------------------------------------------
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""), Copy(bound = ""), Debug(bound = ""))]
+pub struct BufferTypeless<'a, R: RendererBackend>(pub &'a R::Buffer);
+impl<'a, R: RendererBackend> From<&'a R::Buffer> for BufferTypeless<'a, R> {
+    fn from(a: &'a R::Buffer) -> Self {
+        BufferTypeless(a)
+    }
+}
+impl<'a, R: RendererBackend> Deref for BufferTypeless<'a,R> {
+    type Target = &'a R::Buffer;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl<'a, R: RendererBackend, T: BufferData + ?Sized> From<Buffer<'a,R,T>> for BufferTypeless<'a, R> {
+    fn from(from: Buffer<'a, R, T>) -> Self {
+        BufferTypeless(from.0)
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""), Copy(bound = ""), Debug(bound = ""))]
+pub struct Image<'a, R: RendererBackend>(pub &'a R::Image);
+impl<'a, R: RendererBackend> From<&'a R::Image> for Image<'a, R> {
+    fn from(a: &'a R::Image) -> Self {
+        Image(a)
+    }
+}
+impl<'a, R: RendererBackend> Deref for Image<'a,R> {
+    type Target = &'a R::Image;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""), Copy(bound = ""), Debug(bound = ""))]
+pub struct DescriptorSetLayout<'a, R: RendererBackend>(pub &'a R::DescriptorSetLayout);
+impl<'a, R: RendererBackend> From<&'a R::DescriptorSetLayout> for DescriptorSetLayout<'a, R> {
+    fn from(a: &'a R::DescriptorSetLayout) -> Self {
+        DescriptorSetLayout(a)
+    }
+}
+impl<'a, R: RendererBackend> Deref for DescriptorSetLayout<'a,R> {
+    type Target = &'a R::DescriptorSetLayout;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""), Copy(bound = ""), Debug(bound = ""))]
+pub struct DescriptorSet<'a, R: RendererBackend>(pub &'a R::DescriptorSet);
+impl<'a, R: RendererBackend> From<&'a R::DescriptorSet> for DescriptorSet<'a, R> {
+    fn from(a: &'a R::DescriptorSet) -> Self {
+        DescriptorSet(a)
+    }
+}
+impl<'a, R: RendererBackend> Deref for DescriptorSet<'a,R> {
+    type Target = &'a R::DescriptorSet;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""), Copy(bound = ""), Debug(bound = ""))]
+pub struct Framebuffer<'a, R: RendererBackend>(pub &'a R::Framebuffer);
+impl<'a, R: RendererBackend> From<&'a R::Framebuffer> for Framebuffer<'a, R> {
+    fn from(a: &'a R::Framebuffer) -> Self {
+        Framebuffer(a)
+    }
+}
+impl<'a, R: RendererBackend> Deref for Framebuffer<'a,R> {
+    type Target = &'a R::Framebuffer;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""), Copy(bound = ""), Debug(bound = ""))]
+pub struct ShaderModule<'a, R: RendererBackend>(pub &'a R::ShaderModule);
+impl<'a, R: RendererBackend> From<&'a R::ShaderModule> for ShaderModule<'a, R> {
+    fn from(a: &'a R::ShaderModule) -> Self {
+        ShaderModule(a)
+    }
+}
+impl<'a, R: RendererBackend> Deref for ShaderModule<'a,R> {
+    type Target = &'a R::ShaderModule;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""), Copy(bound = ""), Debug(bound = ""))]
+pub struct GraphicsPipeline<'a, R: RendererBackend>(pub &'a R::GraphicsPipeline);
+impl<'a, R: RendererBackend> From<&'a R::GraphicsPipeline> for GraphicsPipeline<'a, R> {
+    fn from(a: &'a R::GraphicsPipeline) -> Self {
+        GraphicsPipeline(a)
+    }
+}
+impl<'a, R: RendererBackend> Deref for GraphicsPipeline<'a,R> {
+    type Target = &'a R::GraphicsPipeline;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""), Copy(bound = ""), Debug(bound = ""))]
+pub struct Swapchain<'a, R: RendererBackend>(pub &'a R::Swapchain);
+impl<'a, R: RendererBackend> From<&'a R::Swapchain> for Swapchain<'a, R> {
+    fn from(a: &'a R::Swapchain) -> Self {
+        Swapchain(a)
+    }
+}
+impl<'a, R: RendererBackend> Deref for Swapchain<'a,R> {
+    type Target = &'a R::Swapchain;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct AliasScope {
     pub value: u64,
@@ -648,19 +801,16 @@ impl AliasScope {
 }
 
 //--------------------------------------------------------------------------------------------------
-pub trait Swapchain: Debug {
+pub trait SwapchainBackend: Debug {
     fn size(&self) -> (u32, u32);
 }
-pub trait Buffer: Debug {}
-pub trait Image: Debug {}
-pub trait Framebuffer: Debug {}
-pub trait DescriptorSetLayout: Debug {}
-pub trait ShaderModule: Debug {}
-pub trait GraphicsPipeline: Debug {}
-
-pub struct DescriptorSet<'a, R: RendererBackend> {
-    inner: &'a R::DescriptorSet,
-}
+pub trait BufferBackend: Debug {}
+pub trait ImageBackend: Debug {}
+pub trait FramebufferBackend: Debug {}
+pub trait DescriptorSetLayoutBackend: Debug {}
+pub trait ShaderModuleBackend: Debug {}
+pub trait GraphicsPipelineBackend: Debug {}
+pub trait DescriptorSetBackend: Debug {}
 
 /// V2 API
 /// Some associated backend types (such as Framebuffers, or DescriptorSets) conceptually "borrow"
@@ -668,14 +818,14 @@ pub struct DescriptorSet<'a, R: RendererBackend> {
 /// However, this cannot be expressed right now because of the lack of generic associated types
 /// (a.k.a. associated type constructors, or ATCs).
 pub trait RendererBackend: Sync {
-    type Swapchain: Swapchain;
-    type Framebuffer: Framebuffer;
-    type Buffer: Buffer;
-    type Image: Image;
-    type DescriptorSet;
-    type DescriptorSetLayout: DescriptorSetLayout;
-    type ShaderModule: ShaderModule;
-    type GraphicsPipeline: GraphicsPipeline;
+    type Swapchain: SwapchainBackend;
+    type Framebuffer: FramebufferBackend;
+    type Buffer: BufferBackend;
+    type Image: ImageBackend;
+    type DescriptorSet: DescriptorSetBackend;
+    type DescriptorSetLayout: DescriptorSetLayoutBackend;
+    type ShaderModule: ShaderModuleBackend;
+    type GraphicsPipeline: GraphicsPipelineBackend;
     type GraphicsPipelineCreateInfoAdditional;
 
     /// Contains resources.
@@ -726,8 +876,8 @@ pub trait RendererBackend: Sync {
     fn create_framebuffer<'a>(
         &self,
         arena: &'a Self::Arena,
-        color_attachments: &[&'a Self::Image],
-        depth_stencil_attachment: Option<&'a Self::Image>,
+        color_attachments: &[Image<'a, Self>],
+        depth_stencil_attachment: Option<Image<'a, Self>>,
     ) -> &'a Self::Framebuffer
     where
         Self: Sized;
@@ -806,29 +956,32 @@ impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
 
     /// Creates a swapchain.
     #[inline]
-    pub fn create_swapchain(&self) -> &R::Swapchain {
-        self.backend.create_swapchain(self.inner_arena())
+    pub fn create_swapchain(&self) -> Swapchain<R> {
+        self.backend.create_swapchain(self.inner_arena()).into()
     }
 
     /// Creates a framebuffer.
     #[inline]
     pub fn create_framebuffer<'a>(
         &'a self,
-        color_attachments: &[&'a R::Image],
-        depth_stencil_attachment: Option<&'a R::Image>,
-    ) -> &'a R::Framebuffer {
-        self.backend.create_framebuffer(
-            self.inner_arena(),
-            color_attachments,
-            depth_stencil_attachment,
-        )
+        color_attachments: &[Image<'a, R>],
+        depth_stencil_attachment: Option<Image<'a, R>>,
+    ) -> Framebuffer<'a, R> {
+        self.backend
+            .create_framebuffer(
+                self.inner_arena(),
+                color_attachments,
+                depth_stencil_attachment,
+            )
+            .into()
     }
 
     /// Creates a shader module.
     #[inline]
-    pub fn create_shader_module(&self, data: &[u8], stage: ShaderStageFlags) -> &R::ShaderModule {
+    pub fn create_shader_module(&self, data: &[u8], stage: ShaderStageFlags) -> ShaderModule<R> {
         self.backend
             .create_shader_module(self.inner_arena(), data, stage)
+            .into()
     }
 
     /// Creates a graphics pipeline.
@@ -838,9 +991,10 @@ impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
     pub fn create_graphics_pipeline<'a>(
         &'a self,
         create_info: &GraphicsPipelineCreateInfo<'_, 'a, R>,
-    ) -> &'a R::GraphicsPipeline {
+    ) -> GraphicsPipeline<'a, R> {
         self.backend
             .create_graphics_pipeline(self.inner_arena(), create_info)
+            .into()
     }
 
     /// Creates an image.
@@ -856,16 +1010,18 @@ impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
         samples: u32,
         usage: ImageUsageFlags,
         initial_data: &[u8],
-    ) -> &R::Image {
-        self.backend.create_immutable_image(
-            self.inner_arena(),
-            format,
-            dimensions,
-            mipcount,
-            samples,
-            usage,
-            initial_data,
-        )
+    ) -> Image<R> {
+        self.backend
+            .create_immutable_image(
+                self.inner_arena(),
+                format,
+                dimensions,
+                mipcount,
+                samples,
+                usage,
+                initial_data,
+            )
+            .into()
     }
 
     /// Creates a scoped image.
@@ -879,56 +1035,91 @@ impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
         mipcount: MipmapsCount,
         samples: u32,
         usage: ImageUsageFlags,
-    ) -> &R::Image {
-        self.backend.create_image(
-            self.inner_arena(),
-            scope,
-            format,
-            dimensions,
-            mipcount,
-            samples,
-            usage,
+    ) -> Image<R> {
+        self.backend
+            .create_image(
+                self.inner_arena(),
+                scope,
+                format,
+                dimensions,
+                mipcount,
+                samples,
+                usage,
+            )
+            .into()
+    }
+
+    /// Creates a GPU (device local) buffer.
+    #[inline]
+    pub fn create_buffer_typeless(&self, size: u64) -> BufferTypeless<R> {
+        self.backend.create_buffer(self.inner_arena(), size).into()
+    }
+
+    /// Creates a GPU (device local) buffer.
+    #[inline]
+    pub fn create_immutable_buffer_typeless(&self, size: u64, data: &[u8]) -> BufferTypeless<R> {
+        self.backend
+            .create_immutable_buffer(self.inner_arena(), size, data)
+            .into()
+    }
+
+    /// Creates a GPU (device local) buffer.
+    #[inline]
+    pub fn upload<T: Copy + 'static>(&self, data: &T) -> Buffer<R, T> {
+        let size = mem::size_of::<T>();
+        let bytes = unsafe { ::std::slice::from_raw_parts(data as *const T as *const u8, size) };
+
+        Buffer(
+            self.backend
+                .create_immutable_buffer(self.inner_arena(), size as u64, bytes),
+            PhantomData,
         )
     }
 
-    /// Creates a GPU (device local) buffer.
     #[inline]
-    pub fn create_buffer(&self, size: u64) -> &R::Buffer {
-        self.backend.create_buffer(self.inner_arena(), size)
-    }
+    pub fn upload_slice<T: Copy + 'static>(&self, data: &[T]) -> Buffer<R, [T]> {
+        let size = mem::size_of_val(data);
+        let bytes =
+            unsafe { ::std::slice::from_raw_parts(data.as_ptr() as *const u8, size) };
 
-    /// Creates a GPU (device local) buffer.
-    #[inline]
-    pub fn create_immutable_buffer(&self, size: u64, data: &[u8]) -> &R::Buffer {
-        self.backend
-            .create_immutable_buffer(self.inner_arena(), size, data)
+        Buffer(
+            self.backend
+                .create_immutable_buffer(self.inner_arena(), size as u64, bytes),
+            PhantomData,
+        )
     }
 
     #[inline]
     pub fn create_descriptor_set_layout<'a>(
         &'a self,
         bindings: &[DescriptorSetLayoutBinding],
-    ) -> &'a R::DescriptorSetLayout {
+    ) -> DescriptorSetLayout<'a, R> {
         self.backend
             .create_descriptor_set_layout(self.inner_arena(), bindings)
+            .into()
     }
 
     pub fn create_descriptor_set<'a>(
         &'a self,
-        layout: &R::DescriptorSetLayout,
+        layout: DescriptorSetLayout<'a,R>,
         interface: impl DescriptorSetInterface<'a, R>,
-    ) -> &'a R::DescriptorSet {
+    ) -> DescriptorSet<'a, R> {
         struct Visitor<'a, R: RendererBackend> {
             descriptors: Vec<Descriptor<'a, R>>,
         }
 
         impl<'a, R: RendererBackend> DescriptorSetInterfaceVisitor<'a, R> for Visitor<'a, R> {
-            fn visit_buffer(&mut self, binding: u32, buffer: &'a R::Buffer) {
-                warn!("buffer {} {:?}", binding, buffer);
+            fn visit_buffer(
+                &mut self,
+                binding: u32,
+                buffer: BufferTypeless<'a, R>,
+                offset: usize,
+                size: usize,
+            ) {
                 self.descriptors.push(Descriptor::Buffer {
                     buffer,
-                    offset: 0,
-                    size: 0,
+                    offset,
+                    size,
                 })
             }
         }
@@ -940,7 +1131,8 @@ impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
         interface.do_visit(&mut visitor);
 
         self.backend
-            .create_descriptor_set(self.inner_arena(), layout, &visitor.descriptors)
+            .create_descriptor_set(self.inner_arena(), layout.0, &visitor.descriptors)
+            .into()
     }
 }
 
@@ -962,8 +1154,8 @@ impl<R: RendererBackend> Renderer<R> {
     }
 
     /// Returns the default swapchain handle, if any.
-    pub fn default_swapchain<'rcx>(&'rcx self) -> Option<&'rcx R::Swapchain> {
-        self.backend.default_swapchain()
+    pub fn default_swapchain<'rcx>(&'rcx self) -> Option<Swapchain<'rcx, R>> {
+        self.backend.default_swapchain().map(|s| s.into())
     }
 
     /// Creates a command buffer.

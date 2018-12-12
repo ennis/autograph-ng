@@ -7,7 +7,8 @@ use crate::renderer::backend::gl::{
     state::StateCache,
     GraphicsPipeline, ImplementationParameters, OpenGlBackend, Swapchain,
 };
-use crate::renderer::{Command, CommandInner, RendererBackend};
+use crate::renderer;
+use crate::renderer::{Command, CommandInner, IndexType, RendererBackend, ScissorRect, Viewport, BufferTypeless};
 use glutin::GlWindow;
 
 // resources
@@ -110,18 +111,25 @@ impl<'a, 'rcx> ExecuteContext<'a, 'rcx> {
 
     //pub fn cmd_set_attachments(&mut self, color_attachments: &[R::])
 
-
-    pub fn cmd_set_descriptor_sets(&mut self, descriptor_sets: &[&DescriptorSet]) {
+    pub fn cmd_set_descriptor_sets(&mut self, descriptor_sets: &[renderer::DescriptorSet<'rcx, OpenGlBackend>]) {
         let pipeline = self.current_pipeline.unwrap();
         let descriptor_map = pipeline.descriptor_map();
         let mut sr = ShaderResourceBindings::new();
 
         for (i, &ds) in descriptor_sets.iter().enumerate() {
-            ds.collect(i as u32, descriptor_map, &mut sr);
+            ds.0.collect(i as u32, descriptor_map, &mut sr);
         }
 
-        self.state_cache.set_uniform_buffers(&sr.uniform_buffers, &sr.uniform_buffer_offsets, &sr.uniform_buffer_sizes);
-        self.state_cache.set_shader_storage_buffers(&sr.uniform_buffers, &sr.uniform_buffer_offsets, &sr.uniform_buffer_sizes);
+        self.state_cache.set_uniform_buffers(
+            &sr.uniform_buffers,
+            &sr.uniform_buffer_offsets,
+            &sr.uniform_buffer_sizes,
+        );
+        self.state_cache.set_shader_storage_buffers(
+            &sr.shader_storage_buffers,
+            &sr.shader_storage_buffer_offsets,
+            &sr.shader_storage_buffer_sizes,
+        );
     }
 
     pub fn cmd_present(&mut self, image: &Image, swapchain: &Swapchain) {
@@ -176,29 +184,33 @@ impl<'a, 'rcx> ExecuteContext<'a, 'rcx> {
         pipeline.bind(self.state_cache);
     }
 
-    fn cmd_set_vertex_buffers(&mut self, buffers: &[&Buffer]) {
-        let pipeline = self.current_pipeline.expect("cmd_set_vertex_buffers called with no pipeline bound");
+    fn cmd_set_vertex_buffers(&mut self, buffers: &[BufferTypeless<'rcx, OpenGlBackend>]) {
+        let pipeline = self
+            .current_pipeline
+            .expect("cmd_set_vertex_buffers called with no pipeline bound");
         let vertex_input_bindings = pipeline.vertex_input_bindings();
 
-        /*let mut objs = smallvec::SmallVec::<[GLuint; 8]>::new();
+        let mut objs = smallvec::SmallVec::<[GLuint; 8]>::new();
         let mut offsets = smallvec::SmallVec::<[GLintptr; 8]>::new();
-        let mut strides = smallvec::SmallVec::<[GLsizei; 8]>::new();*/
-        let mut objs = Vec::new();
-        let mut offsets = Vec::new();
-        let mut strides = Vec::new();
+        let mut strides = smallvec::SmallVec::<[GLsizei; 8]>::new();
 
-        for (i,&vb) in buffers.iter().enumerate() {
-            objs.push(vb.obj);
-            offsets.push(vb.offset as isize);
+        for (i, &vb) in buffers.iter().enumerate() {
+            objs.push(vb.0.obj);
+            offsets.push(vb.0.offset as isize);
             strides.push(vertex_input_bindings[i].stride as i32);
         }
 
-        self.state_cache.set_vertex_buffers(&objs, &offsets, &strides);
+        self.state_cache
+            .set_vertex_buffers(&objs, &offsets, &strides);
     }
 
-    fn cmd_set_index_buffer(&mut self, index_buffer: Option<&'rcx Buffer>) {
-        unimplemented!()
-        //self.state_cache.set_i
+    fn cmd_set_viewports(&mut self, viewports: &[Viewport]) {
+        self.state_cache.set_viewports(viewports);
+    }
+
+    fn cmd_set_index_buffer(&mut self, index_buffer: &'rcx Buffer, offset: usize, ty: IndexType) {
+        self.state_cache
+            .set_index_buffer(index_buffer.obj, offset, ty);
     }
 
     pub fn execute_command(&mut self, command: &Command<'rcx, OpenGlBackend>) {
@@ -207,14 +219,14 @@ impl<'a, 'rcx> ExecuteContext<'a, 'rcx> {
                 // no-op on GL
             }
             CommandInner::ClearImageFloat { image, color } => {
-                self.cmd_clear_image_float(image, &color);
+                self.cmd_clear_image_float(image.0, &color);
             }
             CommandInner::ClearDepthStencilImage {
                 image,
                 depth,
                 stencil,
             } => {
-                self.cmd_clear_depth_stencil_image(image, depth, stencil);
+                self.cmd_clear_depth_stencil_image(image.0, depth, stencil);
             }
             CommandInner::SetDescriptorSets {
                 ref descriptor_sets,
@@ -226,26 +238,24 @@ impl<'a, 'rcx> ExecuteContext<'a, 'rcx> {
             }
             CommandInner::SetIndexBuffer {
                 index_buffer,
+                offset,
+                ty,
             } => {
-                self.cmd_set_index_buffer(index_buffer);
-            },
+                self.cmd_set_index_buffer(index_buffer.0, offset, ty);
+            }
             CommandInner::DrawHeader { pipeline } => {
-                self.cmd_set_graphics_pipeline(pipeline);
+                self.cmd_set_graphics_pipeline(pipeline.0);
             }
             CommandInner::SetScissors { .. } => {}
-            CommandInner::SetAllScissors {
-                scissor,
-            } => {},
-            CommandInner::SetViewports { .. } => {}
-            CommandInner::SetAllViewports {
-                viewport,
-            } => {},
-            CommandInner::SetFramebuffer {
-                framebuffer,
-            } => {},
+            //CommandInner::SetAllScissors { scissor } => {}
+            CommandInner::SetViewports { ref viewports } => {
+                self.cmd_set_viewports(viewports);
+            }
+            //CommandInner::SetAllViewports { viewport } => {}
+            CommandInner::SetFramebuffer { framebuffer } => {}
             CommandInner::Draw { .. } => unimplemented!(),
             CommandInner::Present { image, swapchain } => {
-                self.cmd_present(image, swapchain);
+                self.cmd_present(image.0, swapchain.0);
             }
             _ => unimplemented!(),
         }
