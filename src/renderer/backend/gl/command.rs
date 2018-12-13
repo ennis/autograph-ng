@@ -1,3 +1,4 @@
+use crate::renderer;
 use crate::renderer::backend::gl::api as gl;
 use crate::renderer::backend::gl::api::types::*;
 use crate::renderer::backend::gl::{buffer::RawBuffer, image::RawImage};
@@ -7,8 +8,9 @@ use crate::renderer::backend::gl::{
     state::StateCache,
     GraphicsPipeline, ImplementationParameters, OpenGlBackend, Swapchain,
 };
-use crate::renderer;
-use crate::renderer::{Command, CommandInner, IndexType, RendererBackend, ScissorRect, Viewport, BufferTypeless};
+use crate::renderer::{
+    BufferTypeless, Command, CommandInner, IndexType, RendererBackend, ScissorRect, Viewport,
+};
 use glutin::GlWindow;
 
 // resources
@@ -111,7 +113,10 @@ impl<'a, 'rcx> ExecuteContext<'a, 'rcx> {
 
     //pub fn cmd_set_attachments(&mut self, color_attachments: &[R::])
 
-    pub fn cmd_set_descriptor_sets(&mut self, descriptor_sets: &[renderer::DescriptorSet<'rcx, OpenGlBackend>]) {
+    pub fn cmd_set_descriptor_sets(
+        &mut self,
+        descriptor_sets: &[renderer::DescriptorSet<'rcx, OpenGlBackend>],
+    ) {
         let pipeline = self.current_pipeline.unwrap();
         let descriptor_map = pipeline.descriptor_map();
         let mut sr = ShaderResourceBindings::new();

@@ -5,13 +5,13 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use crate::renderer;
 use crate::renderer::backend::gl::shader::preprocessor::*;
 use crate::renderer::backend::gl::{
     pipeline::{BindingLocation, BindingSpace, DescriptorMap},
     shader::ShaderModule,
     OpenGlBackend,
 };
-use crate::renderer;
 use crate::renderer::{
     Arena, Renderer, RendererBackend, ShaderStageFlags, VertexInputBindingDescription,
 };

@@ -217,7 +217,11 @@ const UPLOAD_DEDICATED_THRESHOLD: usize = 65536;
 impl renderer::GraphicsPipelineBackend for GraphicsPipeline {}
 impl renderer::ShaderModuleBackend for ShaderModule {}
 impl renderer::DescriptorSetLayoutBackend for DescriptorSetLayout {}
-impl renderer::BufferBackend for Buffer {}
+impl renderer::BufferBackend for Buffer {
+    fn size(&self) -> u64 {
+        self.size as u64
+    }
+}
 impl renderer::ImageBackend for Image {}
 impl renderer::FramebufferBackend for Framebuffer {}
 //impl renderer::DescriptorSet for DescriptorSet {}
@@ -326,7 +330,10 @@ impl RendererBackend for OpenGlBackend {
     ) -> &'a Self::Buffer {
         if size < UPLOAD_DEDICATED_THRESHOLD as u64 {
             // if the buffer is small enough, allocate through the upload buffer
-            let (obj, offset) = arena.upload_buffer.write(data, self.impl_params.uniform_buffer_alignment).unwrap();
+            let (obj, offset) = arena
+                .upload_buffer
+                .write(data, self.impl_params.uniform_buffer_alignment)
+                .unwrap();
             arena.buffers.alloc(Buffer {
                 obj,
                 offset,

@@ -63,8 +63,8 @@ use std::cmp::Eq;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::mem;
-use std::sync::Mutex;
 use std::ops::Deref;
+use std::sync::Mutex;
 
 pub mod backend;
 mod buffer;
@@ -643,11 +643,13 @@ impl<U: BufferData> BufferData for [U] {
     }
 }
 
-
 //--------------------------------------------------------------------------------------------------
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""), Copy(bound = ""), Debug(bound = ""))]
-pub struct Buffer<'a, R: RendererBackend, T: BufferData + ?Sized>(pub &'a R::Buffer, PhantomData<T>);
+pub struct Buffer<'a, R: RendererBackend, T: BufferData + ?Sized>(
+    pub &'a R::Buffer,
+    PhantomData<T>,
+);
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Derivative)]
@@ -658,13 +660,15 @@ impl<'a, R: RendererBackend> From<&'a R::Buffer> for BufferTypeless<'a, R> {
         BufferTypeless(a)
     }
 }
-impl<'a, R: RendererBackend> Deref for BufferTypeless<'a,R> {
+impl<'a, R: RendererBackend> Deref for BufferTypeless<'a, R> {
     type Target = &'a R::Buffer;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
-impl<'a, R: RendererBackend, T: BufferData + ?Sized> From<Buffer<'a,R,T>> for BufferTypeless<'a, R> {
+impl<'a, R: RendererBackend, T: BufferData + ?Sized> From<Buffer<'a, R, T>>
+    for BufferTypeless<'a, R>
+{
     fn from(from: Buffer<'a, R, T>) -> Self {
         BufferTypeless(from.0)
     }
@@ -679,7 +683,7 @@ impl<'a, R: RendererBackend> From<&'a R::Image> for Image<'a, R> {
         Image(a)
     }
 }
-impl<'a, R: RendererBackend> Deref for Image<'a,R> {
+impl<'a, R: RendererBackend> Deref for Image<'a, R> {
     type Target = &'a R::Image;
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -695,7 +699,7 @@ impl<'a, R: RendererBackend> From<&'a R::DescriptorSetLayout> for DescriptorSetL
         DescriptorSetLayout(a)
     }
 }
-impl<'a, R: RendererBackend> Deref for DescriptorSetLayout<'a,R> {
+impl<'a, R: RendererBackend> Deref for DescriptorSetLayout<'a, R> {
     type Target = &'a R::DescriptorSetLayout;
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -711,7 +715,7 @@ impl<'a, R: RendererBackend> From<&'a R::DescriptorSet> for DescriptorSet<'a, R>
         DescriptorSet(a)
     }
 }
-impl<'a, R: RendererBackend> Deref for DescriptorSet<'a,R> {
+impl<'a, R: RendererBackend> Deref for DescriptorSet<'a, R> {
     type Target = &'a R::DescriptorSet;
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -727,7 +731,7 @@ impl<'a, R: RendererBackend> From<&'a R::Framebuffer> for Framebuffer<'a, R> {
         Framebuffer(a)
     }
 }
-impl<'a, R: RendererBackend> Deref for Framebuffer<'a,R> {
+impl<'a, R: RendererBackend> Deref for Framebuffer<'a, R> {
     type Target = &'a R::Framebuffer;
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -743,7 +747,7 @@ impl<'a, R: RendererBackend> From<&'a R::ShaderModule> for ShaderModule<'a, R> {
         ShaderModule(a)
     }
 }
-impl<'a, R: RendererBackend> Deref for ShaderModule<'a,R> {
+impl<'a, R: RendererBackend> Deref for ShaderModule<'a, R> {
     type Target = &'a R::ShaderModule;
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -759,7 +763,7 @@ impl<'a, R: RendererBackend> From<&'a R::GraphicsPipeline> for GraphicsPipeline<
         GraphicsPipeline(a)
     }
 }
-impl<'a, R: RendererBackend> Deref for GraphicsPipeline<'a,R> {
+impl<'a, R: RendererBackend> Deref for GraphicsPipeline<'a, R> {
     type Target = &'a R::GraphicsPipeline;
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -775,7 +779,7 @@ impl<'a, R: RendererBackend> From<&'a R::Swapchain> for Swapchain<'a, R> {
         Swapchain(a)
     }
 }
-impl<'a, R: RendererBackend> Deref for Swapchain<'a,R> {
+impl<'a, R: RendererBackend> Deref for Swapchain<'a, R> {
     type Target = &'a R::Swapchain;
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -804,7 +808,9 @@ impl AliasScope {
 pub trait SwapchainBackend: Debug {
     fn size(&self) -> (u32, u32);
 }
-pub trait BufferBackend: Debug {}
+pub trait BufferBackend: Debug {
+    fn size(&self) -> u64;
+}
 pub trait ImageBackend: Debug {}
 pub trait FramebufferBackend: Debug {}
 pub trait DescriptorSetLayoutBackend: Debug {}
@@ -818,14 +824,18 @@ pub trait DescriptorSetBackend: Debug {}
 /// However, this cannot be expressed right now because of the lack of generic associated types
 /// (a.k.a. associated type constructors, or ATCs).
 pub trait RendererBackend: Sync {
-    type Swapchain: SwapchainBackend;
-    type Framebuffer: FramebufferBackend;
-    type Buffer: BufferBackend;
-    type Image: ImageBackend;
-    type DescriptorSet: DescriptorSetBackend;
-    type DescriptorSetLayout: DescriptorSetLayoutBackend;
-    type ShaderModule: ShaderModuleBackend;
-    type GraphicsPipeline: GraphicsPipelineBackend;
+    // XXX the 'static bounds may not be necessary: I put them to avoid specifying complex bounds
+    // in other areas of the library.
+    // That said, without ATCs, the associated types can't
+    // really be bounded by anything other than 'static.
+    type Swapchain: SwapchainBackend + 'static;
+    type Framebuffer: FramebufferBackend + 'static;
+    type Buffer: BufferBackend + 'static;
+    type Image: ImageBackend + 'static;
+    type DescriptorSet: DescriptorSetBackend + 'static;
+    type DescriptorSetLayout: DescriptorSetLayoutBackend + 'static;
+    type ShaderModule: ShaderModuleBackend + 'static;
+    type GraphicsPipeline: GraphicsPipelineBackend + 'static;
     type GraphicsPipelineCreateInfoAdditional;
 
     /// Contains resources.
@@ -1079,8 +1089,7 @@ impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
     #[inline]
     pub fn upload_slice<T: Copy + 'static>(&self, data: &[T]) -> Buffer<R, [T]> {
         let size = mem::size_of_val(data);
-        let bytes =
-            unsafe { ::std::slice::from_raw_parts(data.as_ptr() as *const u8, size) };
+        let bytes = unsafe { ::std::slice::from_raw_parts(data.as_ptr() as *const u8, size) };
 
         Buffer(
             self.backend
@@ -1101,7 +1110,7 @@ impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
 
     pub fn create_descriptor_set<'a>(
         &'a self,
-        layout: DescriptorSetLayout<'a,R>,
+        layout: DescriptorSetLayout<'a, R>,
         interface: impl DescriptorSetInterface<'a, R>,
     ) -> DescriptorSet<'a, R> {
         struct Visitor<'a, R: RendererBackend> {
@@ -1121,6 +1130,15 @@ impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
                     offset,
                     size,
                 })
+            }
+
+            fn visit_sampled_image(
+                &self,
+                binding: u32,
+                image: Image<'_, R>,
+                sampler: &SamplerDescription,
+            ) {
+                unimplemented!()
             }
         }
 

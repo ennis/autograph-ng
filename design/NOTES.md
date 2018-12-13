@@ -1,11 +1,13 @@
-Scheduler
+Renderer API notes
 ==================================
 
-### resource allocation:
+# Old design
+
+#### Resource allocation
 * separate for each queue
 * do not alias memory for now, but re-use
 
-### Graph
+#### Graph
 * Node = pass type (graphics or compute), callback function
 callback function parameters:
 * command buffer, within a subpass instance initialized with the correct attachments
@@ -127,8 +129,8 @@ Implicit dependencies between tasks with ordering
 -> ordering is defined implicitly by the submission order.
 -> benefits: less cluttered API
 
-Images
-====================================
+#### Images
+
 
 Creating persistent images
 High-level uses:
@@ -330,131 +332,132 @@ Q: expose Images through Arc<> or through naked objects?
             - if not, move object into deferred deletion list in device
         - need non-owning images
 
-Q: vkAcquireNextImageKHR should be called as late as possible. This raises an issue with the frame graph, which needs
-   to call it back when generating the buffers.
-   - Borrow the swapchain image
-        - ergonomics loss
-   - Turn the swapchain image into a generic "image reference"/"image proxy" that can be acquired at any moment in the future
-        - impl IntoImageProxy for SwapchainImage
-        - impl IntoImageProxy for GenericImage
-        - Must decouple borrow (the resources must live for the current frame) from GPU lock 
-            (wait for this semaphore before using the resource, signal this one when finished)
-        - ImageProxies are just another name for a borrow...
-        - Issue: cannot set some state into the borrowed resource during the frame
-            - Notably, cannot remember the layout that the image is into when exiting a frame
-            - Cannot remember anything across frames
-                - Layout is one thing, but then again the initial layout has no reason to change across frames
-                - anything else? except the data inside the image, can't think of anything
-            - Other solution: remove image and imageproxies, just use single trait image, with impl FrameSynchronizedObject for Arc<Image>, borrow with Arcs
-   
-   - Special-case swapchain images in ImageResource
-        - `fn swapchain(&self) -> Option<...>`
-        - calls underlying swapchainimageproxy
-        - remove ImageProxy trait (just query the image directly for non-swapchains)
+#### Q: vkAcquireNextImageKHR should be called as late as possible. 
+
+This raises an issue with the frame graph, which needs to call it back when generating the buffers.
+- Borrow the swapchain image
+    - ergonomics loss
+- Turn the swapchain image into a generic "image reference"/"image proxy" that can be acquired at any moment in the future
+    - impl IntoImageProxy for SwapchainImage
+    - impl IntoImageProxy for GenericImage
+    - Must decouple borrow (the resources must live for the current frame) from GPU lock 
+        (wait for this semaphore before using the resource, signal this one when finished)
+    - ImageProxies are just another name for a borrow...
+    - Issue: cannot set some state into the borrowed resource during the frame
+        - Notably, cannot remember the layout that the image is into when exiting a frame
+        - Cannot remember anything across frames
+            - Layout is one thing, but then again the initial layout has no reason to change across frames
+            - anything else? except the data inside the image, can't think of anything
+        - Other solution: remove image and imageproxies, just use single trait image, with impl FrameSynchronizedObject for Arc<Image>, borrow with Arcs
+
+- Special-case swapchain images in ImageResource
+    - `fn swapchain(&self) -> Option<...>`
+    - calls underlying swapchainimageproxy
+    - remove ImageProxy trait (just query the image directly for non-swapchains)
+    
+- (extreme) Build the command buffers on the fly
+    - a.k.a do not pursue the frame graph approach
         
-   - (extreme) Build the command buffers on the fly
-        - a.k.a do not pursue the frame graph approach
+#### Q: FrameGraphs vs on-the-fly command buffer generation?
+FrameGraphs: full knowledge of the structure and dependencies inside the frame. Can reorder and schedule.
+
+On-the-fly: 
+- No reordering possible. 
+- Must schedule explicitly or schedule with incomplete information.
+- Aliasing of resources is still possible. 
+- May be faster (no scheduling, no graph allocation, commands directly put into buffers)
+- Just-in-time synchronization
+- This is (mostly) an internal aspect, and should not change the API much: keep FrameGraph approach for now.
+    
         
-Q: FrameGraphs vs on-the-fly command buffer generation?
-   - FrameGraphs: full knowledge of the structure and dependencies inside the frame. Can reorder and schedule.
-   
-   - On-the-fly: 
-        - No reordering possible. 
-        - Must schedule explicitly or schedule with incomplete information.
-        - Aliasing of resources is still possible. 
-        - May be faster (no scheduling, no graph allocation, commands directly put into buffers)
-        - Just-in-time synchronization
-   
-   - This is (mostly) an internal aspect, and should not change the API much: keep FrameGraph approach for now.
-        
-        
-Q: Scheduling
-    - Scheduling now happens per-task: each task is responsible for scheduling itself
-    - A task may output a command into a command buffer, or a queue operation directly (e.g. vkQueuePresentKHR), or both
-        (e.g. layout transition + queue operation)
-    - all passes that belong to the same renderpass must be scheduled in the same command buffer
-    - guarantees when calling task::schedule
-        - all resources are properly synchronized
-    - tasks should signal the context that they expect
-        - renderpass(index)
-        - command buffer
-        - queue
-        - then tasks can get the context they want: queue(), command_buffer(), wait_semaphores() ...
-    - operations:
-        - TaskOperation::SubpassCommand()
-        - TaskOperation::Command
-        - TaskOperation::QueueSubmit(command buffer)
-        - TaskOperation::QueuePresentKHR(...)
-    - TaskContext:
-        - CommandBuffer(...)
-        - RenderPass(...)
-        - Queue(...)
-    - Expose a 'virtual queue' that makes no distinction between renderpass, command buffer, or queue ops
-        - issue: cannot perform *any* synchronization within a task, even manual ones
-            - is this OK?
-            - no: provide raw access to queues
+#### Q: Scheduling
+
+- Scheduling now happens per-task: each task is responsible for scheduling itself
+- A task may output a command into a command buffer, or a queue operation directly (e.g. vkQueuePresentKHR), or both
+    (e.g. layout transition + queue operation)
+- all passes that belong to the same renderpass must be scheduled in the same command buffer
+- guarantees when calling task::schedule
+    - all resources are properly synchronized
+- tasks should signal the context that they expect
+    - renderpass(index)
+    - command buffer
+    - queue
+    - then tasks can get the context they want: queue(), command_buffer(), wait_semaphores() ...
+- operations:
+    - TaskOperation::SubpassCommand()
+    - TaskOperation::Command
+    - TaskOperation::QueueSubmit(command buffer)
+    - TaskOperation::QueuePresentKHR(...)
+- TaskContext:
+    - CommandBuffer(...)
+    - RenderPass(...)
+    - Queue(...)
+- Expose a 'virtual queue' that makes no distinction between renderpass, command buffer, or queue ops
+    - issue: cannot perform *any* synchronization within a task, even manual ones
+        - is this OK?
+        - no: provide raw access to queues
             
-Q: texture uploads
-    - should happen outside frames
-    - problem: lifetime of staging buffer?
-        - staging buffer should be frame-bound
-        - but upload could happen outside a frame
-    - problem: uploading very large amounts of texture data in one go:
-        - upload blocks on frame finish, but the frame has not even started yet
-        - can still upload in a frame, one time
-    - solution: create "temporary" frame for upload
-        - frames do not need to correspond one-to-one with frames on the screen
-        - is that true?
-            - what about frames in flight?
-            - distinguish between visual frames & non-visual frames?
-    - submit command buffer for initial upload to transfer queue, then set initial semaphore
+#### Q: texture uploads
+- should happen outside frames
+- problem: lifetime of staging buffer?
+    - staging buffer should be frame-bound
+    - but upload could happen outside a frame
+- problem: uploading very large amounts of texture data in one go:
+    - upload blocks on frame finish, but the frame has not even started yet
+    - can still upload in a frame, one time
+- solution: create "temporary" frame for upload
+    - frames do not need to correspond one-to-one with frames on the screen
+    - is that true?
+        - what about frames in flight?
+        - distinguish between visual frames & non-visual frames?
+- submit command buffer for initial upload to transfer queue, then set initial semaphore
     
 Q: redesign image refs
     - more ergonomic: reference to image resource entry, with current state in the graph
         - issue: borrows the whole frame, must refcell everything
         - partial borrows would be nice
-        
-Target API:
-    - simple
-        - drop the need to store resource versions: use ordering of commands
-        - Read-after-write scenarios
-            - a task may call another task that modifies an input resource, and the calling task reads the new resource
-            as if it was not modified
-                - prevented by handle rename
-                - can be prevented by read-only handles, or &mut ref
-    - straightforward
-    - familiar
-    - concise
-    - prevents wrong usage
-    - use as few as possible rust-specific features
-    - importantly: does not interfere with data-driven scenarios
-        - e.g. create graph from a file
-    - should be relatively low-level
-        - higher level wrappers should be possible
+
+#### Target API
+- simple
+    - drop the need to store resource versions: use ordering of commands
+    - Read-after-write scenarios
+        - a task may call another task that modifies an input resource, and the calling task reads the new resource
+        as if it was not modified
+            - prevented by handle rename
+            - can be prevented by read-only handles, or &mut ref
+- straightforward
+- familiar
+- concise
+- prevents wrong usage
+- use as few as possible rust-specific features
+- importantly: does not interfere with data-driven scenarios
+    - e.g. create graph from a file
+- should be relatively low-level
+    - higher level wrappers should be possible
     
-Internal API for dependencies:
-    - should be able to specify one side of a dependency
-        - semaphores to wait for
-        - pipeline stage to wait for 
+#### Internal API for dependencies
+- should be able to specify one side of a dependency
+    - semaphores to wait for
+    - pipeline stage to wait for 
     
-Q: Expose render passes or not?
-    - should not, probably
-    - must have a grouping pass:
-        - separate pass on the graph, or during scheduling?
-            - schedule pass
-            - if same renderpass tag
-                - schedule as subpass
-            - if not: terminate renderpass, start new one
-            - next one: next tasks in topological order
-                - evaluate renderpass merge candidates (does not use any of the previous attachments as sampled or storage images)
-                - set renderpass index
-                - try to schedule from given score
+#### Q: Expose render passes or not?
+- should not, probably
+- must have a grouping pass:
+    - separate pass on the graph, or during scheduling?
+        - schedule pass
+        - if same renderpass tag
+            - schedule as subpass
+        - if not: terminate renderpass, start new one
+        - next one: next tasks in topological order
+            - evaluate renderpass merge candidates (does not use any of the previous attachments as sampled or storage images)
+            - set renderpass index
+            - try to schedule from given score
             
 
-Schedule state: 
+#### Schedule state: 
 - schedule stack (which ones to try next)
 
-API for graphics:
+#### API for graphics:
 - Variant A:
     ```
     fn set_color_attachment(index, image, load, store) -> ImageRef
@@ -528,12 +531,18 @@ API for graphics:
 - Variant Z: No API
     - use frame graph only for synchronization
     
-Global draw call sorting and ordering
+    
+    
+    
+
+    
+# Redesign
+    
+#### Global draw call sorting and ordering
 - Order by ID
 - ID takes into account queues, dependencies
 
-
-Redesign #3:
+#### Redesign #3:
 - three layers of functionality
     - synchronization (-> frame graph)
     - memory allocation (-> frame graph)
@@ -546,15 +555,14 @@ Redesign #3:
         - sync (frame graph, frame sync: API-agnostic)
         - submit (command buffer, state caching)
 - Lightweight object handles
- 
 
-Redesign #4: highly flexible pipeline
+#### Redesign #4: highly flexible pipeline
 - Goals: allow complex appearances that locally modify scheduling / need allocation of resources
 - a.k.a. efficient post-process materials
 - a.k.a. scatter rendering commands everywhere / gather at the end
 - add geometry dynamically based on GPU query results
 
-Scenario A (local post-proc):
+- Scenario A (local post-proc):
     - See mesh with a particular material / object group that has not been culled
     - Create (or get) temp image for this material / object group
     - Render stuff into image
@@ -581,25 +589,26 @@ Scenario A (local post-proc):
                     - implicit ordering
             - which barriers?
             
-Scenario A' (dynamically added post-procs):
+- Scenario A' (dynamically added post-procs):
     - See mesh with custom post-procs after culling
     - Schedule post-proc 
 
-Scenario B:
-- Get final image
-- Do post-processing on it
+- Scenario B:
+    - Get final image
+    - Do post-processing on it
 
-Scenario C:
+- Scenario C:
     - See a stroke mesh
     - Render strokes into acceleration grid
     - When all stroke meshes are finished
-
-Q: what does the graph looks like? how to order and synchronize operations correctly?
+    
+#### Q: what does the graph looks like? how to order and synchronize operations correctly?
 - Revision of resources determined by order and constraints
 - constraints on async: one-way data flow only
     - resources can only be written (produced) by ONE queue 
     
-Q: window system integration
+    
+#### Q: window system integration
 - just pass a target window to the renderer constructor
     - winit::Window
     - OR glwindow
@@ -607,7 +616,7 @@ Q: window system integration
 - the renderer is a unique system (only one for the whole program)
     - can render to multiple windows
     
-Q: Shaders & graphics pipeline configuration
+#### Q: Shaders & graphics pipeline configuration
 - type-safe, proc derive from struct
 - still need an interface to bind parameters from the generated derive
     - `ShaderInterface::visit(binder)`: need a standardized procedural interface for the binder.
@@ -616,8 +625,7 @@ Q: Shaders & graphics pipeline configuration
     - BindingGroup: equivalent to a descriptor set, binds a group of resources at a standard location
         - shader must match (each matching binding must have the correct type)
         - warn/error (?) when some variables in the shader are not set
-
-Q: (issue) multithreaded command submission in backend / command sorting
+#### Q: (issue) multithreaded command submission in backend / command sorting
 - must track resource usage across the command stream, cannot do that in parallel
 - possible solution: recover the dependency graph from the stream
     - costly...
@@ -630,8 +638,8 @@ Q: (issue) multithreaded command submission in backend / command sorting
             - mask + value (cover both write and use)
         - transient resources allocated for whole passes
         - can submit passes in parallel 
-
-Q: Shader interface checking
+        
+#### Q: Shader interface checking
 - Typed pipelines: GraphicsPipeline1<State,I0>, GraphicsPipelineN<State,I0,I1,...>
 - State = dynamic state & push constants & vertex inputs
 - I0..In = descriptor sets
@@ -639,7 +647,8 @@ Q: Shader interface checking
     - DescriptorSetLayout
     - PipelineLayout (descriptor set layouts + push constants)
     
-Q: Framebuffers and render targets
+    
+#### Q: Framebuffers and render targets
 - A graphics pipeline expects a particular number of render targets with particular formats
 - VK: a graphics pipeline expects even more: render targets + compatibility with render subpasses
 - should we expose framebuffers (as a collection of attachments)
@@ -659,8 +668,8 @@ Q: Framebuffers and render targets
         - subpasses are only useful with input attachments and tiled rendering
     - hints in scopes:
         - r.renderpass(scope, subpasses)
-
-Q: Pipeline creation
+        
+#### Q: Pipeline creation
  - Option A:
     Source -> ShaderModule
     ShaderModule + PipelineParameters -> Pipeline
@@ -675,43 +684,44 @@ Q: Pipeline creation
     Can load parts from files
     Issue: contains dynamically allocated vecs
     
-Q: Lack of statically-checked lifetimes is unfortunate
+    
+#### Q: Lack of statically-checked lifetimes is unfortunate: arena-based resources management
  - all queries must go through the backend
  - use-after-free is possible, albeit caught by the slotmap mechanism
-Proposal: Arena based management:
- - Long lived resources can use the arena of the renderer with lifetime `'rcx`
-    - Allocated once, never released
- - Use frame objects to limit the use of a resource to a frame `'fcx`
- - Custom arenas: level, file, session...
- - pointers instead of handles
- - no exclusive borrows (already OK)
- - can prevent deletion of objects before frame is finished
- - RenderResources::create_resource(&'a self) -> &'a R::Resource;
-    - trait RenderResources
-    - impl RenderResources for Renderer
-    - impl RenderResources for Frame
- - in backend, the lifetime of resources is extended 
- - slotmaps replaced by arena allocators
- - beware of associated types that need a lifetime (associated type in RendererBackend that borrows another?)
- - lifetimes will pollute a lot of things
-    - but it's only a few (renderer, session, and frame)
- - Issue: 
-    - arena + objects allocated from the arena in the same struct
-        - not possible: arena management cannot be 'wrapped around'
-        - EXCEPT if the arena does not borrow the main renderer
-            - i.e. arenas containing objects can 'leak' if not deleted manually
-            - this is OK!
-    - caching
+ - Proposal: Arena based management
+     - Long lived resources can use the arena of the renderer with lifetime `'rcx`
+        - Allocated once, never released
+     - Use frame objects to limit the use of a resource to a frame `'fcx`
+     - Custom arenas: level, file, session...
+     - pointers instead of handles
+     - no exclusive borrows (already OK)
+     - can prevent deletion of objects before frame is finished
+     - RenderResources::create_resource(&'a self) -> &'a R::Resource;
+        - trait RenderResources
+        - impl RenderResources for Renderer
+        - impl RenderResources for Frame
+     - in backend, the lifetime of resources is extended 
+     - slotmaps replaced by arena allocators
+     - beware of associated types that need a lifetime (associated type in RendererBackend that borrows another?)
+     - lifetimes will pollute a lot of things
+        - but it's only a few (renderer, session, and frame)
+     - Issue: 
+        - arena + objects allocated from the arena in the same struct
+            - not possible: arena management cannot be 'wrapped around'
+            - EXCEPT if the arena does not borrow the main renderer
+                - i.e. arenas containing objects can 'leak' if not deleted manually
+                - this is OK!
+        - caching
+        
+#### Q: Command buffers?
 
-Q: Command buffers?
-
-Q: Scoped/Persistent dichotomy
+#### Q: Scoped/Persistent dichotomy
 - wrong language: the difference is actually aliasable (within a frame, and thus transient) VS non-aliasable (and persistent)
     - you can have a non-aliasable resource that is still fully transient (assign different image from frame to frame)
-    - persistent ........ : memory contents are preserved across frames
-    - non-aliasable ..... : memory cannot be aliased (but does not imply persistent)
-    - aliasable ......... : share memory inside a frame, contents become undefined outside the noalias scope
-    - transient ......... : lifetime is for the frame only
+    - persistent : memory contents are preserved across frames
+    - non-aliasable : memory cannot be aliased (but does not imply persistent)
+    - aliasable : share memory inside a frame, contents become undefined outside the noalias scope
+    - transient : lifetime is for the frame only
 - single API for both? or separate
 - internals: all resources go through caches? or keep uncached resources?
     - first option results in simpler code
@@ -724,14 +734,16 @@ Q: Scoped/Persistent dichotomy
     - limitations on aliasables?
     - imposing no limitations may increase the complexity of the backend (indirections)
  
-Issue: cannot ensure that an arena will not live beyond the current frame
+ 
+#### Issue: cannot ensure that an arena will not live beyond the current frame
 This prevents frame-based synchronization (e.g. multibuffers)
+
 Alternative: arena-based GPU synchronization
 - one sync per arena: GPU fence signal when arena is dropped 
     - one sync for each queue that uses the resources
 - recycle arenas periodically
 
-Refactor: put resource management in a separate module
+#### Refactor: put resource management in a separate module
 - GlResources
     - upload buffers
     - available images
@@ -739,7 +751,7 @@ Refactor: put resource management in a separate module
     - CPU synchronized objects (upload buffers)
     - buffers
 
-Issue: resource swapping is somewhat problematic to implement (need an indirection)
+#### Issue: resource swapping is somewhat problematic to implement (need an indirection)
  - can we do without?
     - probably not, this is an useful pattern
  - the indirection is not needed if there is no aliasing
@@ -766,64 +778,65 @@ Issue: resource swapping is somewhat problematic to implement (need an indirecti
         - can still allocate and pre-fill in advance (for immutable resources)
         - but additional memory needed to keep 'virtual/unresolved' descriptors
  - conclusion: drawbacks outweigh advantages
-    -> remove swapping
+    - **remove swaps**
     - for the post-proc use case:
         - let the application handle it 
         - for instance: 
             - request a post-proc chain ID
             - if it's even, use the main buffer; if it's odd, use the other
 
-Q: draw states: what to put in blocks, what to bind separately?
-    - already a duplication between our command lists and native command buffers
-        - necessary for command reordering
-        - can't be avoided
-        - or could it? 'sequential' draw calls can be put into a native command buffer directly
+#### Q: draw states: what to put in blocks, what to bind separately?
+- already a duplication between our command lists and native command buffers
+    - necessary for command reordering
+    - can't be avoided
+    - or could it? 'sequential' draw calls can be put into a native command buffer directly
+        ```
+        cmd.secondary(sort_key, interface, |cmd| {
+            cmd.command(...) // encoded on-the-fly in a native command buffer
+        })       
+        ```     
+        - then sort with 'command buffer' granularity
+        - related to secondary command buffers for drawcall-heavy workloads
+            - then, indirect execution (possibly multiple times)
+    - make our command lists useful
+        - draw **calls** (plural): never a single draw call, always more than one         
+- frontend is stateless (non-negotiable)
+    - need a way to specify an array of draw calls without temporary allocation
+    - for pipeline in pipelines
+        - bind pipeline
+        - for vbos in vertex_buffers 
+            - bind vbo
+            - for submesh in submeshs
+                - bind submesh
+    - the state cache will eliminate redundant state changes, but this still consumes a lot of memory
+        - 'array' draw calls
+            - `draw_multi(interfaces, &[drawcalls])`   
+            - draw call: vertex buffer set index + draw call params
+        - partial pipeline interfaces
             ```
-            cmd.secondary(sort_key, interface, |cmd| {
-                cmd.command(...) // encoded on-the-fly in a native command buffer
-            })       
-            ```     
-            - then sort with 'command buffer' granularity
-            - related to secondary command buffers for drawcall-heavy workloads
-                - then, indirect execution (possibly multiple times)
-        - make our command lists useful
-            - draw **calls** (plural): never a single draw call, always more than one         
-    - frontend is stateless (non-negotiable)
-        - need a way to specify an array of draw calls without temporary allocation
-        - for pipeline in pipelines
-            - bind pipeline
-            - for vbos in vertex_buffers 
-                - bind vbo
-                - for submesh in submeshs
-                    - bind submesh
-        - the state cache will eliminate redundant state changes, but this still consumes a lot of memory
-            - 'array' draw calls
-                - `draw_multi(interfaces, &[drawcalls])`   
-                - draw call: vertex buffer set index + draw call params
-            - partial pipeline interfaces
-                ```
+            cmd.with_interface(interface, |cmd| {
                 cmd.with_interface(interface, |cmd| {
-                    cmd.with_interface(interface, |cmd| {
-                        cmd.draw(...);
-                    })
-                })       
-                ```              
-    - stakes: memory usage, data duplication
-    - use cases: same pipeline, different vertex buffers & draw commands
-    - render targets: block (framebuffer) or separate?
-    - individual dynamic states: Viewport, Scissors, Stencil, etc.
-        - StateBlock?
-        - SetXXX commands?
-    - vertex buffers:
-        - StateBlock?
-        - SetVertexBuffers?
-    - STATE BLOCK: render targets (framebuffers)
-    - others: state change commands
-    - command buffers should be more packed
-        - variable-size commands
-        - embrace indirect buffers
+                    cmd.draw(...);
+                })
+            })       
+            ```              
+- stakes: memory usage, data duplication
+- use cases: same pipeline, different vertex buffers & draw commands
+- render targets: block (framebuffer) or separate?
+- individual dynamic states: Viewport, Scissors, Stencil, etc.
+    - StateBlock?
+    - SetXXX commands?
+- vertex buffers:
+    - StateBlock?
+    - SetVertexBuffers?
+- STATE BLOCK: render targets (framebuffers)
+- others: state change commands
+- command buffers should be more packed
+    - variable-size commands
+    - embrace indirect buffers
         
-Q: Framebuffers
+
+#### Q: Framebuffers
  - useful as a group of attachments
  - if framebuffers are not exposed:
     - pass array of attachments every time
@@ -853,15 +866,19 @@ Q: Framebuffers
  - can use arenas to create a framebuffer inline
  - tile-based rendering?
 
-P: Alternative backend design
+#### P: Alternative backend design
  - Slotmaps and handles
     - handles are hashable
  - Arenas are not part of the renderer and just wrap handles in safe lifetimes
     - Con: adds a level of indirection
     - prefer generic associated types (GAT) when they are finally available
     
-Issue: window resize
+    
+#### Issue: window resize
  - must re-create textures and framebuffers
     - granularity: frame
     - must cache framebuffers!
  - OR: exit scope somehow when resizing
+ - final: use special scope (and arena) for swapchain-dependent resources
+ 
+ #### Split crates (renderer + backend + extras)

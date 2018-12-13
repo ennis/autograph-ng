@@ -1,6 +1,7 @@
 use crate::renderer::format::Format;
 use crate::renderer::*;
 
+//--------------------------------------------------------------------------------------------------
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum PrimitiveType {
     Int,
@@ -30,7 +31,7 @@ pub enum TypeDesc<'tcx> {
     /// Matrix type (ty,rows,cols), not all combinations of rows and cols are valid.
     Matrix(PrimitiveType, u8, u8),
     /// A structure type: (offset, typedesc)
-    Struct(&'tcx [(usize, TypeDesc<'tcx>)]),
+    Struct(&'tcx [(usize, &'tcx TypeDesc<'tcx>)]),
     /// An image type.
     Image(ImageDataType, Option<Format>),
     Unknown,
@@ -48,10 +49,40 @@ pub const TYPE_MAT2: TypeDesc = TypeDesc::Matrix(PrimitiveType::Float, 2, 2);
 pub const TYPE_MAT3: TypeDesc = TypeDesc::Matrix(PrimitiveType::Float, 3, 3);
 pub const TYPE_MAT4: TypeDesc = TypeDesc::Matrix(PrimitiveType::Float, 4, 4);
 
-#[derive(Copy, Clone, Debug)]
+//--------------------------------------------------------------------------------------------------
+/// Trait implemented by types that are layout-compatible with an specific
+/// to GLSL/SPIR-V type.
+/// An implementation is provided for most primitive types and arrays of primitive types.
+/// Structs can derive it automatically with `#[derive(BufferLayout)]`
+pub unsafe trait BufferLayout {
+    const TYPE: &'static TypeDesc<'static>;
+}
+
+macro_rules! impl_buffer_layout_type {
+    ($t:ty, $tydesc:expr) => {
+        unsafe impl BufferLayout for $t {
+            const TYPE: &'static TypeDesc<'static> = $tydesc;
+        }
+    };
+}
+
+impl_buffer_layout_type!(f32, &TypeDesc::Primitive(PrimitiveType::Float));
+impl_buffer_layout_type!([f32; 2], &TypeDesc::Vector(PrimitiveType::Float, 2));
+impl_buffer_layout_type!([f32; 3], &TypeDesc::Vector(PrimitiveType::Float, 3));
+impl_buffer_layout_type!([f32; 4], &TypeDesc::Vector(PrimitiveType::Float, 4));
+impl_buffer_layout_type!(i32, &TypeDesc::Primitive(PrimitiveType::Int));
+impl_buffer_layout_type!([i32; 2], &TypeDesc::Vector(PrimitiveType::Int, 2));
+impl_buffer_layout_type!([i32; 3], &TypeDesc::Vector(PrimitiveType::Int, 3));
+impl_buffer_layout_type!([i32; 4], &TypeDesc::Vector(PrimitiveType::Int, 4));
+impl_buffer_layout_type!([[f32; 2]; 2], &TypeDesc::Matrix(PrimitiveType::Float, 2, 2));
+impl_buffer_layout_type!([[f32; 3]; 3], &TypeDesc::Matrix(PrimitiveType::Float, 3, 3));
+impl_buffer_layout_type!([[f32; 4]; 4], &TypeDesc::Matrix(PrimitiveType::Float, 4, 4));
+
+//--------------------------------------------------------------------------------------------------
+/*#[derive(Copy, Clone, Debug)]
 pub struct DescriptorSetDescription<'tcx> {
     pub descriptors: &'tcx [DescriptorSetLayoutBinding<'tcx>],
-}
+}*/
 
 pub trait DescriptorSetInterfaceVisitor<'a, R: RendererBackend> {
     fn visit_buffer(
@@ -69,11 +100,55 @@ pub trait DescriptorSetInterfaceVisitor<'a, R: RendererBackend> {
 }
 
 pub trait DescriptorSetInterface<'a, R: RendererBackend> {
-    const INTERFACE: DescriptorSetDescription<'static>;
-
+    const INTERFACE: &'static [DescriptorSetLayoutBinding<'static>];
     fn do_visit(&self, visitor: &mut impl DescriptorSetInterfaceVisitor<'a, R>);
 }
 
+pub trait DescriptorInterface<'a, R: RendererBackend> {
+    const TYPE: Option<&'static TypeDesc<'static>>;
+    fn do_visit(&self, binding_index: u32, visitor: &mut impl DescriptorSetInterfaceVisitor<'a, R>);
+}
+
+impl<'a, R: RendererBackend> DescriptorInterface<'a, R> for BufferTypeless<'a, R> {
+    const TYPE: Option<&'static TypeDesc<'static>> = None;
+    fn do_visit(
+        &self,
+        binding_index: u32,
+        visitor: &mut impl DescriptorSetInterfaceVisitor<'a, R>,
+    ) {
+        visitor.visit_buffer(binding_index, *self, 0, self.0.size() as usize);
+    }
+}
+
+impl<'a, R: RendererBackend, T: BufferData + ?Sized + BufferLayout> DescriptorInterface<'a, R>
+    for Buffer<'a, R, T>
+{
+    const TYPE: Option<&'static TypeDesc<'static>> = Some(<T as BufferLayout>::TYPE);
+    fn do_visit(
+        &self,
+        binding_index: u32,
+        visitor: &mut impl DescriptorSetInterfaceVisitor<'a, R>,
+    ) {
+        visitor.visit_buffer(binding_index, (*self).into(), 0, self.0.size() as usize);
+    }
+}
+
+impl<'a, R: RendererBackend> DescriptorInterface<'a, R> for Image<'a, R> {
+    const TYPE: Option<&'static TypeDesc<'static>> = None;
+    fn do_visit(
+        &self,
+        binding_index: u32,
+        visitor: &mut impl DescriptorSetInterfaceVisitor<'a, R>,
+    ) {
+        visitor.visit_sampled_image(
+            binding_index,
+            *self,
+            SamplerDescription::LINEAR_MIPMAP_LINEAR,
+        );
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
 /// Description of a vertex attribute.
 #[derive(Copy, Clone, Debug)]
 pub struct TypedVertexInputAttributeDescription<'tcx> {
@@ -87,11 +162,6 @@ pub struct TypedVertexInputAttributeDescription<'tcx> {
 pub struct VertexInputBufferDescription<'tcx> {
     pub elements: &'tcx [TypedVertexInputAttributeDescription<'tcx>],
     pub stride: usize,
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct FragmentOutputDescription {
-    // nothing yet, we just care about the count
 }
 
 ///
@@ -112,72 +182,11 @@ pub trait VertexBuffer {
     const DESCRIPTION: &'static VertexInputBufferDescription<'static>;
 }
 
-/// Trait implemented by types that are layout-compatible with an specific
-/// to GLSL/SPIR-V type.
-/// An implementation is provided for most primitive types and arrays of primitive types.
-/// Structs can derive it automatically with `#[derive(BufferLayout)]`
-pub trait BufferLayout {
-    const TYPE: TypeDesc<'static>;
-}
-
-/*
-
-/// An input buffer for vertex data
-#[derive(Clone, Debug)]
-pub struct VertexBufferDescriptor {
-    pub name: Option<String>,
-    pub index: u32,
-    pub layout: &'static VertexLayout,
-}*/
-
 /// An input buffer for indices
 #[derive(Clone, Debug)]
 pub struct IndexBufferDescriptor {
     pub format: Format,
 }
-
-/*
-/// A trait defined for types that can be bound to the pipeline as an image.
-pub trait ImageInterface: Into<TextureAny> + 'static {
-    fn get_data_type() -> Option<TextureDataType>;
-    fn get_dimensions() -> Option<TextureDimensions>;
-}
-
-impl ImageInterface for ImageHandle {
-    fn get_data_type() -> Option<TextureDataType> {
-        None
-    }
-    fn get_dimensions() -> Option<TextureDimensions> {
-        Some(TextureDimensions::Tex2D)
-    }
-}
-
-impl TextureInterface for TextureAny {
-    fn get_data_type() -> Option<TextureDataType> {
-        None
-    }
-    fn get_dimensions() -> Option<TextureDimensions> {
-        None
-    }
-}
-
-pub trait SampledTextureInterface {
-    type TextureType: TextureInterface;
-    //fn get_texture(&self) -> &Self::TextureType;
-    fn get_sampler(&self) -> &gfx::SamplerDesc;
-    fn into_texture_any(self) -> TextureAny;
-}
-
-impl SampledTextureInterface for SampledTexture2D {
-    type TextureType = Texture2D;
-    fn into_texture_any(self) -> TextureAny {
-        self.0.into()
-    }
-    fn get_sampler(&self) -> &gfx::SamplerDesc {
-        &self.1
-    }
-}
-*/
 
 /// Trait implemented by types that can serve as a vertex attribute.
 pub unsafe trait VertexAttributeType {
@@ -230,81 +239,13 @@ macro_rules! impl_index_element_type {
 impl_index_element_type!(u16, R16_UINT);
 impl_index_element_type!(u32, R32_UINT);
 
-/*
-/// Trait implemented by types that can be bound to the pipeline with a
-/// variant of glProgramUniform
-/// An implementation is provided for most primitive types .
-pub unsafe trait UniformInterface {
-    fn type_desc() -> &'static TypeDesc;
+//--------------------------------------------------------------------------------------------------
+#[derive(Copy, Clone, Debug)]
+pub struct FragmentOutputDescription {
+    // nothing yet, we just care about the count
 }
 
-macro_rules! impl_uniform_type {
-    ($t:ty, $tydesc:expr) => {
-        unsafe impl BufferLayout for $t {
-            fn type_desc() -> &'static TypeDesc {
-                static DESC: TypeDesc = $tydesc;
-                &DESC
-            }
-        }
-        unsafe impl UniformInterface for $t {
-            fn type_desc() -> &'static TypeDesc {
-                static DESC: TypeDesc = $tydesc;
-                &DESC
-            }
-        }
-    };
-}
-
-impl_uniform_type!(f32, TypeDesc::Primitive(PrimitiveType::Float));
-impl_uniform_type!([f32; 2], TypeDesc::Vector(PrimitiveType::Float, 2));
-impl_uniform_type!([f32; 3], TypeDesc::Vector(PrimitiveType::Float, 3));
-impl_uniform_type!([f32; 4], TypeDesc::Vector(PrimitiveType::Float, 4));
-impl_uniform_type!(i32, TypeDesc::Primitive(PrimitiveType::Int));
-impl_uniform_type!([i32; 2], TypeDesc::Vector(PrimitiveType::Int, 2));
-impl_uniform_type!([i32; 3], TypeDesc::Vector(PrimitiveType::Int, 3));
-impl_uniform_type!([i32; 4], TypeDesc::Vector(PrimitiveType::Int, 4));
-impl_uniform_type!([[f32; 2]; 2], TypeDesc::Matrix(PrimitiveType::Float, 2, 2));
-impl_uniform_type!([[f32; 3]; 3], TypeDesc::Matrix(PrimitiveType::Float, 3, 3));
-impl_uniform_type!([[f32; 4]; 4], TypeDesc::Matrix(PrimitiveType::Float, 4, 4));
-*/
-
-/*
-/// Trait implemented by types that can be bound to the pipeline as a buffer object
-pub unsafe trait BufferInterface {
-    /// Get the layout of the buffer data, if it is known.
-    fn layout() -> Option<&'static TypeDesc>;
-}
-*/
-
-/*unsafe impl<T: BufferData+BufferLayout> BufferInterface for gfx::Buffer<T>
-{
-    fn get_layout() -> Option<&'static BufferLayout> {
-        Some(<T as BufferLayout>::get_description())
-    }
-}
-
-unsafe impl BufferInterface for gfx::BufferAny
-{
-    fn get_layout() -> Option<&'static BufferLayout> {
-        None
-    }
-}*/
-
-/*
-// impl for typed buffers
-unsafe impl<T: BufferData + BufferLayout> BufferInterface for gfx::BufferSlice<T> {
-    fn get_layout() -> Option<&'static TypeDesc> {
-        Some(<T as BufferLayout>::get_description())
-    }
-}
-
-// impl for untyped buffers
-unsafe impl BufferInterface for gfx::BufferSliceAny {
-    fn get_layout() -> Option<&'static TypeDesc> {
-        None
-    }
-}*/
-
+//--------------------------------------------------------------------------------------------------
 pub trait PipelineInterfaceVisitor<'a, R: RendererBackend> {
     /// `#[descriptor_set]`
     fn visit_descriptor_sets(&mut self, descriptor_sets: &[DescriptorSet<'a, R>]);
@@ -327,11 +268,10 @@ pub trait PipelineInterfaceVisitor<'a, R: RendererBackend> {
     //fn visit_data(&self, binding: u32, data: &[u8]);
 }
 
-/// 'static bound for getting the typeid
 pub trait PipelineInterface<'a, R: RendererBackend> {
     const VERTEX_INPUT_INTERFACE: &'static [VertexInputBufferDescription<'static>];
     const FRAGMENT_OUTPUT_INTERFACE: &'static [FragmentOutputDescription];
-    const DESCRIPTOR_SET_INTERFACE: &'static [DescriptorSetDescription<'static>];
+    const DESCRIPTOR_SET_INTERFACE: &'static [&'static [DescriptorSetLayoutBinding<'static>]];
 
     fn do_visit(&self, visitor: &mut PipelineInterfaceVisitor<'a, R>);
 

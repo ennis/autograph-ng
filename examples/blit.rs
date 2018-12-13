@@ -11,7 +11,6 @@ use gfx2::renderer;
 use gfx2::renderer::backend::gl as gl_backend;
 use gfx2::renderer::*;
 
-
 //--------------------------------------------------------------------------------------------------
 type Backend = gl_backend::OpenGlBackend;
 type Buffer<'a, T: BufferData + ?Sized> = renderer::Buffer<'a, Backend, T>;
@@ -23,17 +22,17 @@ type DescriptorSetLayout<'a> = renderer::DescriptorSetLayout<'a, Backend>;
 type GraphicsPipeline<'a> = renderer::GraphicsPipeline<'a, Backend>;
 
 //--------------------------------------------------------------------------------------------------
-#[derive(Copy,Clone)]
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct Vertex {
     pub pos: glm::Vec2,
     pub tex: glm::Vec2,
 }
 
-#[derive(Copy,Clone)]
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct Uniforms {
-    pub transform: glm::Mat3x4
+    pub transform: glm::Mat3x4,
 }
 
 pub struct PerObject<'a> {
@@ -42,21 +41,23 @@ pub struct PerObject<'a> {
 }
 
 impl<'a> DescriptorSetInterface<'a, Backend> for PerObject<'a> {
-    const INTERFACE: DescriptorSetDescription<'static> = DescriptorSetDescription { descriptors: &[
-        DescriptorSetLayoutBinding {
-            binding: 0,
-            stage_flags: ShaderStageFlags::ALL_GRAPHICS,
-            descriptor_type: DescriptorType::UniformBuffer,
-            count: 1,
-            tydesc: None,
-        },
-        DescriptorSetLayoutBinding {
-            binding: 1,
-            stage_flags: ShaderStageFlags::ALL_GRAPHICS,
-            descriptor_type: DescriptorType::SampledImage,
-            count: 1,
-            tydesc: None,
-        },]
+    const INTERFACE: DescriptorSetDescription<'static> = DescriptorSetDescription {
+        descriptors: &[
+            DescriptorSetLayoutBinding {
+                binding: 0,
+                stage_flags: ShaderStageFlags::ALL_GRAPHICS,
+                descriptor_type: DescriptorType::UniformBuffer,
+                count: 1,
+                tydesc: None,
+            },
+            DescriptorSetLayoutBinding {
+                binding: 1,
+                stage_flags: ShaderStageFlags::ALL_GRAPHICS,
+                descriptor_type: DescriptorType::SampledImage,
+                count: 1,
+                tydesc: None,
+            },
+        ],
     };
 
     fn do_visit(&self, visitor: &mut impl DescriptorSetInterfaceVisitor<'a, R>) {
@@ -93,8 +94,8 @@ struct PipelineAndLayout<'a> {
 
 fn create_pipelines<'a>(arena: &'a Arena<Backend>) -> PipelineAndLayout<'a> {
     // load pipeline file
-    let pp = gl_backend::PipelineDescriptionFile::load(arena, "tests/data/shaders/blit.glsl")
-        .unwrap();
+    let pp =
+        gl_backend::PipelineDescriptionFile::load(arena, "tests/data/shaders/blit.glsl").unwrap();
 
     let shader_stages = GraphicsPipelineShaderStages {
         vertex: pp.modules.vs.unwrap(),
@@ -163,12 +164,10 @@ fn create_pipelines<'a>(arena: &'a Arena<Backend>) -> PipelineAndLayout<'a> {
     let attachment_layout = AttachmentLayoutCreateInfo {
         input_attachments: &[],
         depth_attachment: None,
-        color_attachments: &[
-            AttachmentDescription {
-                format: Format::R8G8B8A8_SRGB,
-                samples: 1,
-            },
-        ],
+        color_attachments: &[AttachmentDescription {
+            format: Format::R8G8B8A8_SRGB,
+            samples: 1,
+        }],
     };
 
     let additional = gl_backend::GraphicsPipelineCreateInfoAdditional {

@@ -45,7 +45,7 @@ pub struct RenderKey(u64);
 
 impl RenderKey {}
 
-#[derive(Copy,Clone)]
+#[derive(Copy, Clone)]
 #[repr(C)]
 struct CameraParameters {
     view_matrix: glm::Mat4,
@@ -57,7 +57,7 @@ struct CameraParameters {
     taa_offset: glm::Vec2,
 }
 
-#[derive(Copy,Clone)]
+#[derive(Copy, Clone)]
 #[repr(C)]
 struct ObjectParameters {
     model_matrix: glm::Mat4,
@@ -111,7 +111,12 @@ impl<'a, R: RendererBackend> DescriptorSetInterface<'a, R> for PerFrameUniforms<
     };
 
     fn do_visit(&self, visitor: &mut impl DescriptorSetInterfaceVisitor<'a, R>) {
-        visitor.visit_buffer(0, self.camera_params.into(), 0, mem::size_of::<CameraParameters>());
+        visitor.visit_buffer(
+            0,
+            self.camera_params.into(),
+            0,
+            mem::size_of::<CameraParameters>(),
+        );
         //visitor.visit_buffer(1, self.camera_params, 0, 64);
     }
 }
@@ -134,7 +139,12 @@ impl<'a, R: RendererBackend> DescriptorSetInterface<'a, R> for PerObjectUniforms
     };
 
     fn do_visit(&self, visitor: &mut impl DescriptorSetInterfaceVisitor<'a, R>) {
-        visitor.visit_buffer(0, self.obj_params.into(), 0, mem::size_of::<ObjectParameters>());
+        visitor.visit_buffer(
+            0,
+            self.obj_params.into(),
+            0,
+            mem::size_of::<ObjectParameters>(),
+        );
     }
 }
 
@@ -322,10 +332,7 @@ impl<'a> PipelineInterface<'a, Backend> for SimplePipelineInterface<'a> {
     }
 }
 
-
-
-
-//--------------------------------------------------------------------------------------------------
+/*//--------------------------------------------------------------------------------------------------
 mod blit {
     use super::*;
 
@@ -375,7 +382,7 @@ mod blit {
             visitor.visit_descriptor_sets(&[self.per_object]);
         }
     }
-}
+}*/
 
 //--------------------------------------------------------------------------------------------------
 fn main() {
@@ -389,7 +396,9 @@ fn main() {
 
     let r = app.renderer();
     let arena_long_lived = r.create_arena();
-    let long_lived_buffer = arena_long_lived.upload_slice(&[0, 0, 0, 0, 0, 0, 0, 0]).into();
+    let long_lived_buffer = arena_long_lived
+        .upload_slice(&[0, 0, 0, 0, 0, 0, 0, 0])
+        .into();
 
     // graphics pipelines
     'outer: loop {
@@ -423,7 +432,8 @@ fn main() {
                 ImageUsageFlags::COLOR_ATTACHMENT,
             );
 
-            let framebuffer = arena_swapchain.create_framebuffer(&[color_buffer], Some(depth_buffer));
+            let framebuffer =
+                arena_swapchain.create_framebuffer(&[color_buffer], Some(depth_buffer));
 
             // inner event loop (frame-based resource scope)
             'events: while !should_close {
@@ -443,9 +453,7 @@ fn main() {
 
                 let per_object_data = a.create_descriptor_set(
                     pipeline.per_object_descriptor_set_layout,
-                    PerObjectUniforms {
-                        obj_params,
-                    },
+                    PerObjectUniforms { obj_params },
                 );
 
                 let mut cmdbuf = r.create_command_buffer();
@@ -472,8 +480,8 @@ fn main() {
                 );
 
                 /*cmdbuf.draw(PipelineInterface {
-                framebuffer: a.create_framebuffer(&[color_buffer]),
-            });*/
+                    framebuffer: a.create_framebuffer(&[color_buffer]),
+                });*/
 
                 cmdbuf.present(0x0, color_buffer, default_swapchain);
                 r.submit_frame(vec![cmdbuf]);

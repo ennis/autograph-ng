@@ -68,7 +68,7 @@ pub struct Buffer {
     pub should_destroy: bool,
     pub alias_info: Option<AliasInfo<BufferAliasKey>>,
     pub offset: usize,
-    pub size: usize,
+    pub size: usize, // should be u64?
 }
 
 pub struct SamplerCache {
