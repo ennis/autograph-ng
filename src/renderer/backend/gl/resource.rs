@@ -239,7 +239,7 @@ impl Resources {
                 d.dimensions, d.format, d.usage, d.mipcount, d.samples
             );
             if d.usage
-                .intersects(ImageUsageFlags::STORAGE | ImageUsageFlags::SAMPLE)
+                .intersects(ImageUsageFlags::STORAGE | ImageUsageFlags::SAMPLED)
             {
                 // will be used as storage or sampled image
                 RawImage::new_texture(

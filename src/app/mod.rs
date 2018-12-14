@@ -44,6 +44,7 @@ impl App {
         let fullscreen = cfg.get::<u32>("gfx.window.fullscreen").unwrap();
         let vsync = cfg.get::<bool>("gfx.window.vsync").unwrap();
         let window_title = cfg.get::<String>("gfx.window.title").unwrap();
+
         let window_builder = winit::WindowBuilder::new()
             .with_title(window_title.clone())
             .with_dimensions((window_width, window_height).into());
@@ -72,7 +73,6 @@ impl App {
                 } => {
                     should_close = true;
                 }
-                // if resize, then delete persistent resources and re-create
                 _ => callback(event),
             }
         });

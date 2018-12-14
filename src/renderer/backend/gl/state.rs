@@ -25,6 +25,7 @@ pub struct StateCache {
     front_face: Option<GLenum>,
     program: Option<GLuint>,
     vertex_array: Option<GLuint>,
+    framebuffer: Option<GLuint>,
 
     stencil_test_enabled: Option<bool>,
     stencil_front: Option<StencilOpState>,
@@ -50,6 +51,14 @@ pub struct StateCache {
     shader_storage_buffers: Option<Vec<GLuint>>,
     shader_storage_buffer_sizes: Option<Vec<GLsizeiptr>>,
     shader_storage_buffer_offsets: Option<Vec<GLintptr>>,
+}
+
+fn topology_to_gl(topo: PrimitiveTopology) -> GLenum {
+    match topo {
+        PrimitiveTopology::TriangleList => gl::TRIANGLES,
+        PrimitiveTopology::LineList => gl::LINES,
+        PrimitiveTopology::PointList => gl::POINTS,
+    }
 }
 
 fn stencil_op_to_gl(op: StencilOp) -> GLenum {
@@ -160,6 +169,7 @@ impl StateCache {
             front_face: None,
             program: None,
             vertex_array: None,
+            framebuffer: None,
             stencil_test_enabled: None,
             stencil_front: None,
             stencil_back: None,
@@ -195,6 +205,7 @@ impl StateCache {
             front_face: None,
             program: None,
             vertex_array: None,
+            framebuffer: None,
             stencil_test_enabled: None,
             stencil_front: None,
             stencil_back: None,
@@ -228,6 +239,12 @@ impl StateCache {
     pub fn set_vertex_array(&mut self, vertex_array: GLuint) {
         self.vertex_array.update_cached(vertex_array, || unsafe {
             gl::BindVertexArray(vertex_array);
+        });
+    }
+
+    pub fn set_draw_framebuffer(&mut self, framebuffer: GLuint) {
+        self.framebuffer.update_cached(framebuffer, || unsafe {
+            gl::BindFramebuffer(gl::DRAW_FRAMEBUFFER, framebuffer);
         });
     }
 
@@ -567,6 +584,12 @@ impl StateCache {
         unsafe { gl::BindTextures(0, textures.len() as i32, textures.as_ptr()) }
     }
 
+    pub fn set_images(&mut self, images: &[GLuint]) {
+        // passthrough, for now
+        // may do a comparison, or a quick diff in the future
+        unsafe { gl::BindImageTextures(0, images.len() as i32, images.as_ptr()) }
+    }
+
     pub fn set_vertex_buffers(
         &mut self,
         buffers: &[GLuint],
@@ -599,6 +622,58 @@ impl StateCache {
             IndexType::U16 => gl::UNSIGNED_SHORT,
             IndexType::U32 => gl::UNSIGNED_INT,
         });
+    }
+
+    pub fn draw(
+        &mut self,
+        topo: PrimitiveTopology,
+        vertex_count: u32,
+        instance_count: u32,
+        first_vertex: u32,
+        first_instance: u32,
+    ) {
+        let mode = topology_to_gl(topo);
+        unsafe {
+            gl::DrawArraysInstancedBaseInstance(
+                mode,
+                first_vertex as i32,
+                vertex_count as i32,
+                instance_count as i32,
+                first_instance,
+            );
+        }
+    }
+
+    pub fn draw_indexed(
+        &mut self,
+        topo: PrimitiveTopology,
+        index_count: u32,
+        instance_count: u32,
+        first_index: u32,
+        vertex_offset: i32,
+        first_instance: u32,
+    ) {
+        let mode = topology_to_gl(topo);
+        let idx_offset = self
+            .index_buffer_offset
+            .expect("no index buffer was bound before indexed draw operation");
+        let ty = self.index_buffer_type.unwrap();
+        let idx_stride = match ty {
+            gl::UNSIGNED_SHORT => 2,
+            gl::UNSIGNED_INT => 4,
+            _ => unreachable!(),
+        };
+        unsafe {
+            gl::DrawElementsInstancedBaseVertexBaseInstance(
+                mode,
+                index_count as i32,
+                ty,
+                (idx_offset + first_index as usize * idx_stride) as *const GLvoid,
+                instance_count as i32,
+                vertex_offset,
+                first_instance,
+            );
+        }
     }
 
     //pub fn set_blend_mode(&mut self)

@@ -3,13 +3,15 @@
 //#![feature(arbitrary_self_types)]
 #![feature(const_transmute)]
 
+#[cfg(feature="glm-types")]
+extern crate nalgebra_glm as glm;
+
 extern crate typed_arena;
 extern crate unreachable;
 #[macro_use]
 extern crate bitflags;
 extern crate config;
 extern crate regex;
-extern crate toml;
 #[macro_use]
 extern crate lazy_static;
 //#[macro_use]

@@ -32,20 +32,24 @@ pub struct CmdSetVertexBuffers<'a, R: RendererBackend> {
 // command header(with sort key), followed by subcommands (state-change commands)
 
 #[derive(Copy, Clone, Debug)]
-pub enum DrawCommand {
-    DrawArrays {
-        first: u32,
-        count: u32,
-    },
-    DrawIndexed {
-        first: u32,
-        count: u32,
-        base_vertex: u32,
-    },
+pub struct DrawParams {
+    pub vertex_count: u32,
+    pub instance_count: u32,
+    pub first_vertex: u32,
+    pub first_instance: u32,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct DrawIndexedParams {
+    pub index_count: u32,
+    pub instance_count: u32,
+    pub first_index: u32,
+    pub vertex_offset: i32,
+    pub first_instance: u32,
 }
 
 pub enum CommandInner<'a, R: RendererBackend> {
-    // MAIN COMMANDS -------------------------------------------------------------------------------
+    // MAIN (LEAD-IN) COMMANDS ---------------------------------------------------------------------
     PipelineBarrier {},
     ClearImageFloat {
         image: Image<'a, R>,
@@ -83,18 +87,24 @@ pub enum CommandInner<'a, R: RendererBackend> {
         //first: u32,
         scissors: Vec<ScissorRect>,
     },
-    //SetAllScissors {
-    //    scissor: ScissorRect,
-    //},
     SetViewports {
         //first: u32,
         viewports: Vec<Viewport>,
     },
-    //SetAllViewports {
-    //    viewport: Viewport,
-    //},
+
+    // DRAW (LEAD-OUT) COMMANDS --------------------------------------------------------------------
     Draw {
-        draw: DrawCommand,
+        vertex_count: u32,
+        instance_count: u32,
+        first_vertex: u32,
+        first_instance: u32,
+    },
+    DrawIndexed {
+        index_count: u32,
+        instance_count: u32,
+        first_index: u32,
+        vertex_offset: i32,
+        first_instance: u32,
     },
 }
 
@@ -157,7 +167,31 @@ impl<'a, R: RendererBackend> Clone for CommandInner<'a, R> {
             // CommandInner::SetAllViewports { viewport } => {
             //    CommandInner::SetAllViewports { viewport }
             //}
-            CommandInner::Draw { draw } => CommandInner::Draw { draw },
+            CommandInner::Draw {
+                vertex_count,
+                instance_count,
+                first_vertex,
+                first_instance,
+            } => CommandInner::Draw {
+                vertex_count,
+                instance_count,
+                first_vertex,
+                first_instance,
+            },
+
+            CommandInner::DrawIndexed {
+                index_count,
+                instance_count,
+                first_index,
+                vertex_offset,
+                first_instance,
+            } => CommandInner::DrawIndexed {
+                index_count,
+                instance_count,
+                first_index,
+                vertex_offset,
+                first_instance,
+            },
         }
     }
 }
@@ -351,7 +385,7 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
         self.push_command(sort_key, CommandInner::SetAllScissors { scissor: *scissor })
     }*/
 
-    pub fn draw<PI: PipelineInterface<'a, R>>(
+    fn bind_pipeline_interface<PI: PipelineInterface<'a, R>>(
         &mut self,
         sort_key: u64,
         pipeline: GraphicsPipeline<'a, R>,
@@ -412,6 +446,45 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
         };
 
         interface.do_visit(&mut v);
+    }
+
+    pub fn draw<PI: PipelineInterface<'a, R>>(
+        &mut self,
+        sort_key: u64,
+        pipeline: GraphicsPipeline<'a, R>,
+        interface: &PI,
+        params: DrawParams,
+    ) {
+        self.bind_pipeline_interface(sort_key, pipeline, interface);
+        self.push_command(
+            sort_key,
+            CommandInner::Draw {
+                vertex_count: params.vertex_count,
+                instance_count: params.instance_count,
+                first_vertex: params.first_vertex,
+                first_instance: params.first_instance,
+            },
+        );
+    }
+
+    pub fn draw_indexed<PI: PipelineInterface<'a, R>>(
+        &mut self,
+        sort_key: u64,
+        pipeline: GraphicsPipeline<'a, R>,
+        interface: &PI,
+        params: DrawIndexedParams,
+    ) {
+        self.bind_pipeline_interface(sort_key, pipeline, interface);
+        self.push_command(
+            sort_key,
+            CommandInner::DrawIndexed {
+                index_count: params.index_count,
+                instance_count: params.instance_count,
+                first_index: params.first_index,
+                vertex_offset: params.vertex_offset,
+                first_instance: params.first_instance,
+            },
+        );
     }
 
     //----------------------------------------------------------------------------------------------

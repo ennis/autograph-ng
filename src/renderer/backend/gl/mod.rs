@@ -270,7 +270,7 @@ impl RendererBackend for OpenGlBackend {
         // initial data specified, allocate a texture
         let raw = RawImage::new_texture(format, &dimensions, mipcount, samples);
 
-        /*unsafe {
+        unsafe {
             upload_image_region(
                 raw.target,
                 raw.obj,
@@ -280,7 +280,7 @@ impl RendererBackend for OpenGlBackend {
                 dimensions.width_height_depth(),
                 data,
             );
-        }*/
+        }
 
         arena.images.alloc(Image {
             should_destroy: true,

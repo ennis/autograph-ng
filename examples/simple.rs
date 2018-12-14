@@ -100,15 +100,14 @@ struct PerFrameUniforms<'a, R: RendererBackend> {
 
 // SHOULD BE AUTOMATICALLY DERIVED
 impl<'a, R: RendererBackend> DescriptorSetInterface<'a, R> for PerFrameUniforms<'a, R> {
-    const INTERFACE: DescriptorSetDescription<'static> = DescriptorSetDescription {
-        descriptors: &[DescriptorSetLayoutBinding {
+    const INTERFACE: &'static [DescriptorSetLayoutBinding<'static>] =
+        &[DescriptorSetLayoutBinding {
             binding: 0,
             descriptor_type: DescriptorType::UniformBuffer,
             stage_flags: ShaderStageFlags::ALL_GRAPHICS,
             count: 1,
             tydesc: None,
-        }],
-    };
+        }];
 
     fn do_visit(&self, visitor: &mut impl DescriptorSetInterfaceVisitor<'a, R>) {
         visitor.visit_buffer(
@@ -128,15 +127,14 @@ struct PerObjectUniforms<'a, R: RendererBackend> {
 
 // SHOULD BE AUTOMATICALLY DERIVED
 impl<'a, R: RendererBackend> DescriptorSetInterface<'a, R> for PerObjectUniforms<'a, R> {
-    const INTERFACE: DescriptorSetDescription<'static> = DescriptorSetDescription {
-        descriptors: &[DescriptorSetLayoutBinding {
+    const INTERFACE: &'static [DescriptorSetLayoutBinding<'static>] =
+        &[DescriptorSetLayoutBinding {
             binding: 0,
             descriptor_type: DescriptorType::UniformBuffer,
             stage_flags: ShaderStageFlags::ALL_GRAPHICS,
             count: 1,
             tydesc: None,
-        }],
-    };
+        }];
 
     fn do_visit(&self, visitor: &mut impl DescriptorSetInterfaceVisitor<'a, R>) {
         visitor.visit_buffer(
@@ -323,7 +321,7 @@ impl<'a> PipelineInterface<'a, Backend> for SimplePipelineInterface<'a> {
     // TODO
     const VERTEX_INPUT_INTERFACE: &'static [VertexInputBufferDescription<'static>] = &[];
     const FRAGMENT_OUTPUT_INTERFACE: &'static [FragmentOutputDescription] = &[];
-    const DESCRIPTOR_SET_INTERFACE: &'static [DescriptorSetDescription<'static>] = &[];
+    const DESCRIPTOR_SET_INTERFACE: &'static [&'static [DescriptorSetLayoutBinding<'static>]] = &[];
 
     fn do_visit(&self, visitor: &mut PipelineInterfaceVisitor<'a, Backend>) {
         visitor.visit_descriptor_sets(&[self.per_frame_data, self.per_object_data]);
@@ -390,8 +388,6 @@ fn main() {
 
     // this creates an event loop, a window, context, and a swapchain associated to the window.
     let mut app = App::new();
-
-    let mut first = true;
     let mut should_close = false;
 
     let r = app.renderer();
@@ -467,15 +463,14 @@ fn main() {
                         framebuffer,
                         per_frame_data,
                         per_object_data,
-                        viewport: Viewport {
-                            x: 0.0.into(),
-                            y: 0.0.into(),
-                            width: (w as f32).into(),
-                            height: (h as f32).into(),
-                            min_depth: 0.0.into(),
-                            max_depth: 1.0.into(),
-                        },
+                        viewport: (w, h).into(),
                         vertex_buffer: long_lived_buffer,
+                    },
+                    DrawParams {
+                        instance_count: 1,
+                        first_instance: 0,
+                        vertex_count: 6,
+                        first_vertex: 0,
                     },
                 );
 

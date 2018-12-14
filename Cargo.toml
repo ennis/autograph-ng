@@ -15,21 +15,18 @@ gl_generator = "*"
 embed-resource = "*"
 
 [dev-dependencies]
-nalgebra-glm = "*"
+image = "*"
+gfx2_derive = { path = "gfx2_derive" }
 
 [dependencies]
 #petgraph = { version = "*", features = ["serde-1"] }
 bitflags = "*"
-toml = "0.4"
 config = "*"
 winit = "*"
 glutin = "*"
 pretty_env_logger = "*"
 log = "*"
 slotmap = { version = "*", features = ["unstable"] }
-#serde = "*"
-#serde_derive = "*"
-#downcast-rs = "*"
 time = "*"
 sid_vec = "*"
 regex="*"
@@ -41,11 +38,12 @@ unreachable = "*"
 typed-arena = "*"
 fxhash = "*"
 derivative = "*"
+nalgebra-glm = { version = "*", optional = true }
 
-#[target.'cfg(windows)'.dependencies]
-#winapi = { version = "*", features = ["windef", "winuser"] }
 
-#[target.'cfg(target_os = "macos")'.dependencies]
-#metal-rs = "*"
-#cocoa = "*"
-#objc = "*"
+[features]
+glm-types = ["nalgebra-glm"]
+
+[[example]]
+name = "blit"
+required-features = ["glm-types"]

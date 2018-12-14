@@ -87,7 +87,9 @@ define_sort_key! {
 
 sequence_id!{ opaque, layer=group_id, depth=d, pass_immediate=0 }*/
 
-pub use self::command_buffer::{sort_command_buffers, Command, CommandBuffer, CommandInner};
+pub use self::command_buffer::{
+    sort_command_buffers, Command, CommandBuffer, CommandInner, DrawIndexedParams, DrawParams,
+};
 pub use self::format::*;
 pub use self::image::*;
 pub use self::sampler::*;
@@ -1133,12 +1135,15 @@ impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
             }
 
             fn visit_sampled_image(
-                &self,
+                &mut self,
                 binding: u32,
-                image: Image<'_, R>,
+                image: Image<'a, R>,
                 sampler: &SamplerDescription,
             ) {
-                unimplemented!()
+                self.descriptors.push(Descriptor::SampledImage {
+                    sampler: *sampler,
+                    img: image,
+                })
             }
         }
 

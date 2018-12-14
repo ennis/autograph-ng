@@ -881,4 +881,21 @@ Alternative: arena-based GPU synchronization
  - OR: exit scope somehow when resizing
  - final: use special scope (and arena) for swapchain-dependent resources
  
- #### Split crates (renderer + backend + extras)
+#### Split crates (renderer + backend + extras)
+ 
+#### Observations from the current design
+- works
+- too early to make performance measurements
+- creating pipelines and shaders is **tedious**
+    - must have a GUI, or a full-fledged format
+- updating pipeline interfaces is **tedious**
+    - e.g. adding a uniform in a buffer
+        - modify uniform in struct
+        - change buffer interface (optional)
+    - e.g. adding a shader resource
+        - modify descriptor set
+        - check shader so that the descriptor maps to the correct binding
+        - modify descriptor set interface
+    - first improvement: easier creation of descriptor sets
+        - typed descriptor sets (implementing DescriptorSetInterface)
+        - no need to specify the layout: put in cache

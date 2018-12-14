@@ -283,16 +283,16 @@ pub struct PipelineColorBlendStateOwned {
 
 #[derive(Clone, Debug)]
 pub struct GraphicsPipeline {
-    rasterization_state: PipelineRasterizationStateCreateInfo,
-    depth_stencil_state: PipelineDepthStencilStateCreateInfo,
-    multisample_state: PipelineMultisampleStateCreateInfo,
-    input_assembly_state: PipelineInputAssemblyStateCreateInfo,
-    vertex_input_bindings: Vec<VertexInputBindingDescription>,
-    color_blend_state: PipelineColorBlendStateOwned,
-    descriptor_map: DescriptorMap,
-    static_samplers: Vec<StaticSamplerEntry>,
-    program: GLuint,
-    vao: GLuint,
+    pub(super) rasterization_state: PipelineRasterizationStateCreateInfo,
+    pub(super) depth_stencil_state: PipelineDepthStencilStateCreateInfo,
+    pub(super) multisample_state: PipelineMultisampleStateCreateInfo,
+    pub(super) input_assembly_state: PipelineInputAssemblyStateCreateInfo,
+    pub(super) vertex_input_bindings: Vec<VertexInputBindingDescription>,
+    pub(super) color_blend_state: PipelineColorBlendStateOwned,
+    pub(super) descriptor_map: DescriptorMap,
+    pub(super) static_samplers: Vec<StaticSamplerEntry>,
+    pub(super) program: GLuint,
+    pub(super) vao: GLuint,
 }
 
 impl GraphicsPipeline {
@@ -359,7 +359,7 @@ pub fn create_graphics_pipeline_internal<'a>(
 
 impl GraphicsPipeline {
     pub fn bind(&self, state_cache: &mut StateCache) {
-        /*state_cache.set_program(self.program);
+        state_cache.set_program(self.program);
         state_cache.set_vertex_array(self.vao);
         state_cache.set_cull_mode(self.rasterization_state.cull_mode);
         state_cache.set_polygon_mode(self.rasterization_state.polygon_mode);
@@ -371,6 +371,6 @@ impl GraphicsPipeline {
                     state_cache.set_blend_separate(i as u32, s);
                 }
             }
-        }*/
+        }
     }
 }

@@ -78,6 +78,21 @@ impl_buffer_layout_type!([[f32; 2]; 2], &TypeDesc::Matrix(PrimitiveType::Float, 
 impl_buffer_layout_type!([[f32; 3]; 3], &TypeDesc::Matrix(PrimitiveType::Float, 3, 3));
 impl_buffer_layout_type!([[f32; 4]; 4], &TypeDesc::Matrix(PrimitiveType::Float, 4, 4));
 
+#[cfg(feature="glm-types")]
+impl_buffer_layout_type!(glm::Vec2, &TypeDesc::Vector(PrimitiveType::Float, 2));
+#[cfg(feature="glm-types")]
+impl_buffer_layout_type!(glm::Vec3, &TypeDesc::Vector(PrimitiveType::Float, 3));
+#[cfg(feature="glm-types")]
+impl_buffer_layout_type!(glm::Vec4, &TypeDesc::Vector(PrimitiveType::Float, 4));
+#[cfg(feature="glm-types")]
+impl_buffer_layout_type!(glm::Mat2, &TypeDesc::Matrix(PrimitiveType::Float, 2, 2));
+#[cfg(feature="glm-types")]
+impl_buffer_layout_type!(glm::Mat3, &TypeDesc::Matrix(PrimitiveType::Float, 3, 3));
+#[cfg(feature="glm-types")]
+impl_buffer_layout_type!(glm::Mat4, &TypeDesc::Matrix(PrimitiveType::Float, 4, 4));
+#[cfg(feature="glm-types")]
+impl_buffer_layout_type!(glm::Mat4x3, &TypeDesc::Matrix(PrimitiveType::Float, 4, 3));
+
 //--------------------------------------------------------------------------------------------------
 /*#[derive(Copy, Clone, Debug)]
 pub struct DescriptorSetDescription<'tcx> {
@@ -92,7 +107,12 @@ pub trait DescriptorSetInterfaceVisitor<'a, R: RendererBackend> {
         offset: usize,
         size: usize,
     );
-    fn visit_sampled_image(&self, binding: u32, image: Image<'a, R>, sampler: &SamplerDescription);
+    fn visit_sampled_image(
+        &mut self,
+        binding: u32,
+        image: Image<'a, R>,
+        sampler: &SamplerDescription,
+    );
 
     //fn visit_vertex_input<'a>(&self, buffer: &'a R::Buffer);
     //fn visit_fragment_output<'a>(&self, image: &'a R::Image);

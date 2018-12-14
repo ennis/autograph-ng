@@ -201,6 +201,6 @@ bitflags! {
         const DEPTH_ATTACHMENT = 0b0000_0010;
         const INPUT_ATTACHMENT = 0b0000_0100;
         const STORAGE          = 0b0000_1000;
-        const SAMPLE           = 0b0001_0000;
+        const SAMPLED          = 0b0001_0000;
     }
 }

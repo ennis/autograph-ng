@@ -4,6 +4,7 @@ use crate::renderer::backend::gl::api::types::*;
 use crate::renderer::backend::gl::{buffer::RawBuffer, image::RawImage};
 use crate::renderer::backend::gl::{
     descriptor::{DescriptorSet, ShaderResourceBindings},
+    framebuffer::Framebuffer,
     resource::{Buffer, Image, Resources},
     state::StateCache,
     GraphicsPipeline, ImplementationParameters, OpenGlBackend, Swapchain,
@@ -135,6 +136,9 @@ impl<'a, 'rcx> ExecuteContext<'a, 'rcx> {
             &sr.shader_storage_buffer_offsets,
             &sr.shader_storage_buffer_sizes,
         );
+        self.state_cache.set_textures(&sr.textures);
+        self.state_cache.set_samplers(&sr.samplers);
+        self.state_cache.set_images(&sr.images);
     }
 
     pub fn cmd_present(&mut self, image: &Image, swapchain: &Swapchain) {
@@ -183,6 +187,10 @@ impl<'a, 'rcx> ExecuteContext<'a, 'rcx> {
         self.window.swap_buffers().expect("swap_buffers error")
     }
 
+    fn cmd_set_framebuffer(&mut self, fb: &'rcx Framebuffer) {
+        self.state_cache.set_draw_framebuffer(fb.obj);
+    }
+
     fn cmd_set_graphics_pipeline(&mut self, pipeline: &'rcx GraphicsPipeline) {
         // switching pipelines
         self.current_pipeline = Some(pipeline);
@@ -216,6 +224,46 @@ impl<'a, 'rcx> ExecuteContext<'a, 'rcx> {
     fn cmd_set_index_buffer(&mut self, index_buffer: &'rcx Buffer, offset: usize, ty: IndexType) {
         self.state_cache
             .set_index_buffer(index_buffer.obj, offset, ty);
+    }
+
+    fn cmd_draw(
+        &mut self,
+        vertex_count: u32,
+        instance_count: u32,
+        first_vertex: u32,
+        first_instance: u32,
+    ) {
+        let pipeline = self
+            .current_pipeline
+            .expect("cmd_set_vertex_buffers called with no pipeline bound");
+        self.state_cache.draw(
+            pipeline.input_assembly_state.topology,
+            vertex_count,
+            instance_count,
+            first_vertex,
+            first_instance,
+        );
+    }
+
+    fn cmd_draw_indexed(
+        &mut self,
+        index_count: u32,
+        instance_count: u32,
+        first_index: u32,
+        vertex_offset: i32,
+        first_instance: u32,
+    ) {
+        let pipeline = self
+            .current_pipeline
+            .expect("cmd_set_vertex_buffers called with no pipeline bound");
+        self.state_cache.draw_indexed(
+            pipeline.input_assembly_state.topology,
+            index_count,
+            instance_count,
+            first_index,
+            vertex_offset,
+            first_instance,
+        );
     }
 
     pub fn execute_command(&mut self, command: &Command<'rcx, OpenGlBackend>) {
@@ -257,8 +305,28 @@ impl<'a, 'rcx> ExecuteContext<'a, 'rcx> {
                 self.cmd_set_viewports(viewports);
             }
             //CommandInner::SetAllViewports { viewport } => {}
-            CommandInner::SetFramebuffer { framebuffer } => {}
-            CommandInner::Draw { .. } => unimplemented!(),
+            CommandInner::SetFramebuffer { framebuffer } => {
+                self.cmd_set_framebuffer(framebuffer.0);
+            }
+            CommandInner::Draw {
+                vertex_count,
+                instance_count,
+                first_vertex,
+                first_instance,
+            } => self.cmd_draw(vertex_count, instance_count, first_vertex, first_instance),
+            CommandInner::DrawIndexed {
+                index_count,
+                instance_count,
+                first_index,
+                vertex_offset,
+                first_instance,
+            } => self.cmd_draw_indexed(
+                index_count,
+                instance_count,
+                first_index,
+                vertex_offset,
+                first_instance,
+            ),
             CommandInner::Present { image, swapchain } => {
                 self.cmd_present(image.0, swapchain.0);
             }
