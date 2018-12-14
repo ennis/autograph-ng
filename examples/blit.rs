@@ -1,18 +1,15 @@
-extern crate gfx2;
-#[macro_use]
-extern crate gfx2_derive;
 #[macro_use]
 extern crate log;
-extern crate image;
-extern crate nalgebra_glm as glm;
 
 use std::env;
 use std::mem;
 
 use gfx2::app::*;
+use gfx2::glm;
 use gfx2::renderer;
 use gfx2::renderer::backend::gl as gl_backend;
 use gfx2::renderer::*;
+use gfx2_derive::{BufferLayout, DescriptorSetInterface};
 
 mod common;
 
@@ -21,6 +18,7 @@ type Backend = gl_backend::OpenGlBackend;
 type Buffer<'a, T> = renderer::Buffer<'a, Backend, T>;
 type BufferTypeless<'a> = renderer::BufferTypeless<'a, Backend>;
 type Image<'a> = renderer::Image<'a, Backend>;
+type SampledImage<'a> = renderer::SampledImage<'a, Backend>;
 type Framebuffer<'a> = renderer::Framebuffer<'a, Backend>;
 type DescriptorSet<'a> = renderer::DescriptorSet<'a, Backend>;
 type DescriptorSetLayout<'a> = renderer::DescriptorSetLayout<'a, Backend>;
@@ -40,8 +38,7 @@ impl Vertex {
     }
 }
 
-#[derive(BufferLayout)]
-#[derive(Copy, Clone)]
+#[derive(BufferLayout, Copy, Clone)]
 #[repr(C)]
 pub struct Uniforms {
     pub transform: glm::Mat4x3,
@@ -49,14 +46,14 @@ pub struct Uniforms {
 }
 
 #[derive(DescriptorSetInterface)]
-#[interface(arguments="<'a,Backend>")]
+#[interface(arguments = "<'a,Backend>")]
 pub struct PerObject<'a> {
     #[descriptor(uniform_buffer)]
     pub uniforms: Buffer<'a, Uniforms>,
     #[descriptor(sampled_image)]
-    pub image: Image<'a>,
+    pub image: SampledImage<'a>,
     #[descriptor(sampled_image)]
-    pub dither: Image<'a>,
+    pub dither: SampledImage<'a>,
 }
 
 pub struct Blit<'a> {
@@ -193,16 +190,20 @@ fn main() {
         // reload pipelines
         let pipeline = create_pipelines(&arena_0);
 
-        let image = arena_0.create_image(
-            AliasScope::no_alias(),
-            Format::R16G16B16A16_SFLOAT,
-            (512, 512).into(),
-            MipmapsCount::One,
-            1,
-            ImageUsageFlags::SAMPLED,
-        );
+        let image = arena_0
+            .create_image(
+                AliasScope::no_alias(),
+                Format::R16G16B16A16_SFLOAT,
+                (512, 512).into(),
+                MipmapsCount::One,
+                1,
+                ImageUsageFlags::SAMPLED,
+            )
+            .into_sampled(SamplerDescription::NEAREST_MIPMAP_NEAREST);
 
-        let dither = common::load_image_2d(&arena_0, "tests/data/img/dither.png").unwrap();
+        let dither = common::load_image_2d(&arena_0, "tests/data/img/dither.png")
+            .unwrap()
+            .into_sampled(SamplerDescription::WRAP_NEAREST_MIPMAP_NEAREST);
 
         let (left, top, right, bottom) = (-1.0, 1.0, 1.0, -1.0);
 

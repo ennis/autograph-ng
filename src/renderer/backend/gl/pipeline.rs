@@ -336,11 +336,6 @@ pub fn create_graphics_pipeline_internal<'a>(
         blend_constants: create_info.color_blend_state.blend_constants,
     };
 
-    debug!(
-        "descriptor map: {:#?}",
-        create_info.additional.descriptor_map
-    );
-
     let g = GraphicsPipeline {
         rasterization_state: *create_info.rasterization_state,
         depth_stencil_state: *create_info.depth_stencil_state,

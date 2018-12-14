@@ -155,7 +155,7 @@ impl OpenGlBackend {
         unsafe { window.make_current() }.unwrap();
         gl::load_with(|symbol| {
             let ptr = window.get_proc_address(symbol) as *const _;
-            debug!("getProcAddress {} -> {:?}", symbol, ptr);
+            //debug!("getProcAddress {} -> {:?}", symbol, ptr);
             ptr
         });
 
@@ -189,7 +189,7 @@ impl OpenGlBackend {
         assert!(upload_buffer_size <= usize::max_value() as u64);
         let max_frames_in_flight = cfg.get::<u32>("gfx.max_frames_in_flight").unwrap();
 
-        let mut timeline = Timeline::new(0);
+        let timeline = Timeline::new(0);
 
         let impl_params = ImplementationParameters::populate();
         let state_cache = StateCache::new(&impl_params);
@@ -248,7 +248,7 @@ impl RendererBackend for OpenGlBackend {
     }
 
     //----------------------------------------------------------------------------------------------
-    fn create_swapchain<'a>(&self, arena: &'a Self::Arena) -> &'a Self::Swapchain {
+    fn create_swapchain<'a>(&self, _arena: &'a Self::Arena) -> &'a Self::Swapchain {
         unimplemented!()
     }
 
@@ -264,7 +264,7 @@ impl RendererBackend for OpenGlBackend {
         dimensions: Dimensions,
         mipcount: MipmapsCount,
         samples: u32,
-        usage: ImageUsageFlags,
+        _usage: ImageUsageFlags,
         data: &[u8],
     ) -> &'a Self::Image {
         // initial data specified, allocate a texture
@@ -348,7 +348,7 @@ impl RendererBackend for OpenGlBackend {
     }
 
     //----------------------------------------------------------------------------------------------
-    fn create_buffer<'a>(&self, arena: &'a Self::Arena, size: u64) -> &'a Self::Buffer {
+    fn create_buffer<'a>(&self, _arena: &'a Self::Arena, _size: u64) -> &'a Self::Buffer {
         unimplemented!()
     }
 

@@ -25,7 +25,7 @@ impl ImageDescription {
         samples: u32,
         usage: ImageUsageFlags,
     ) -> ImageDescription {
-        let (w, h, d) = dimensions.width_height_depth();
+        let (w, h, _d) = dimensions.width_height_depth();
         let mipcount = match mipmaps_count {
             // TODO mipcount for 3D textures?
             MipmapsCount::Log2 => get_texture_mip_map_count(max(w, h)),

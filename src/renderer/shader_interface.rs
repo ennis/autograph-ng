@@ -78,20 +78,41 @@ impl_buffer_layout_type!([[f32; 2]; 2], &TypeDesc::Matrix(PrimitiveType::Float, 
 impl_buffer_layout_type!([[f32; 3]; 3], &TypeDesc::Matrix(PrimitiveType::Float, 3, 3));
 impl_buffer_layout_type!([[f32; 4]; 4], &TypeDesc::Matrix(PrimitiveType::Float, 4, 4));
 
-#[cfg(feature="glm-types")]
-impl_buffer_layout_type!(glm::Vec2, &TypeDesc::Vector(PrimitiveType::Float, 2));
-#[cfg(feature="glm-types")]
-impl_buffer_layout_type!(glm::Vec3, &TypeDesc::Vector(PrimitiveType::Float, 3));
-#[cfg(feature="glm-types")]
-impl_buffer_layout_type!(glm::Vec4, &TypeDesc::Vector(PrimitiveType::Float, 4));
-#[cfg(feature="glm-types")]
-impl_buffer_layout_type!(glm::Mat2, &TypeDesc::Matrix(PrimitiveType::Float, 2, 2));
-#[cfg(feature="glm-types")]
-impl_buffer_layout_type!(glm::Mat3, &TypeDesc::Matrix(PrimitiveType::Float, 3, 3));
-#[cfg(feature="glm-types")]
-impl_buffer_layout_type!(glm::Mat4, &TypeDesc::Matrix(PrimitiveType::Float, 4, 4));
-#[cfg(feature="glm-types")]
-impl_buffer_layout_type!(glm::Mat4x3, &TypeDesc::Matrix(PrimitiveType::Float, 4, 3));
+#[cfg(feature = "glm-types")]
+impl_buffer_layout_type!(
+    nalgebra_glm::Vec2,
+    &TypeDesc::Vector(PrimitiveType::Float, 2)
+);
+#[cfg(feature = "glm-types")]
+impl_buffer_layout_type!(
+    nalgebra_glm::Vec3,
+    &TypeDesc::Vector(PrimitiveType::Float, 3)
+);
+#[cfg(feature = "glm-types")]
+impl_buffer_layout_type!(
+    nalgebra_glm::Vec4,
+    &TypeDesc::Vector(PrimitiveType::Float, 4)
+);
+#[cfg(feature = "glm-types")]
+impl_buffer_layout_type!(
+    nalgebra_glm::Mat2,
+    &TypeDesc::Matrix(PrimitiveType::Float, 2, 2)
+);
+#[cfg(feature = "glm-types")]
+impl_buffer_layout_type!(
+    nalgebra_glm::Mat3,
+    &TypeDesc::Matrix(PrimitiveType::Float, 3, 3)
+);
+#[cfg(feature = "glm-types")]
+impl_buffer_layout_type!(
+    nalgebra_glm::Mat4,
+    &TypeDesc::Matrix(PrimitiveType::Float, 4, 4)
+);
+#[cfg(feature = "glm-types")]
+impl_buffer_layout_type!(
+    nalgebra_glm::Mat4x3,
+    &TypeDesc::Matrix(PrimitiveType::Float, 4, 3)
+);
 
 //--------------------------------------------------------------------------------------------------
 /*#[derive(Copy, Clone, Debug)]
@@ -163,8 +184,19 @@ impl<'a, R: RendererBackend> DescriptorInterface<'a, R> for Image<'a, R> {
         visitor.visit_sampled_image(
             binding_index,
             *self,
-            SamplerDescription::LINEAR_MIPMAP_LINEAR,
+            &SamplerDescription::LINEAR_MIPMAP_LINEAR,
         );
+    }
+}
+
+impl<'a, R: RendererBackend> DescriptorInterface<'a, R> for SampledImage<'a, R> {
+    const TYPE: Option<&'static TypeDesc<'static>> = None;
+    fn do_visit(
+        &self,
+        binding_index: u32,
+        visitor: &mut impl DescriptorSetInterfaceVisitor<'a, R>,
+    ) {
+        visitor.visit_sampled_image(binding_index, self.0.into(), &self.1);
     }
 }
 
@@ -267,25 +299,12 @@ pub struct FragmentOutputDescription {
 
 //--------------------------------------------------------------------------------------------------
 pub trait PipelineInterfaceVisitor<'a, R: RendererBackend> {
-    /// `#[descriptor_set]`
     fn visit_descriptor_sets(&mut self, descriptor_sets: &[DescriptorSet<'a, R>]);
-    /// `#[vertex_input(index)]`
     fn visit_vertex_buffers(&mut self, buffer: &[BufferTypeless<'a, R>]);
-    /// `#[index_buffer]`
     fn visit_index_buffer(&mut self, buffer: BufferTypeless<'a, R>, offset: usize, ty: IndexType);
-    /// `#[fragment_output]`
     fn visit_framebuffer(&mut self, framebuffer: Framebuffer<'a, R>);
-
-    /// `#[viewports]`
     fn visit_dynamic_viewports(&mut self, viewports: &[Viewport]);
-    /*/// `#[viewport]`
-    fn visit_dynamic_viewport_all(&mut self, viewport: &Viewport);*/
-    /// `#[scissors]`
     fn visit_dynamic_scissors(&mut self, scissors: &[ScissorRect]);
-    /*/// `#[scissor]`
-    fn visit_dynamic_scissor_all(&mut self, scissor: &ScissorRect);*/
-
-    //fn visit_data(&self, binding: u32, data: &[u8]);
 }
 
 pub trait PipelineInterface<'a, R: RendererBackend> {
@@ -300,8 +319,4 @@ pub trait PipelineInterface<'a, R: RendererBackend> {
     fn fragment_outputs<'a,'rcx>(&'a self) -> impl Iterator<Item=&'rcx R::Image> + 'a;
     fn descriptor_sets<'a,'rcx>(&'a self) -> impl Iterator<Item=&'rcx R::DescriptorSet> + 'a;
     fn index_buffer(&self) -> Option<R::BufferHandle>;*/
-
-    // misc. render states
-    // fn viewports<'a>(&'a self) -> Option<impl Iterator<Item=&'a Viewport> + 'a>;
-    // fn scissor_rects<'a>(&'a self) -> Option<impl Iterator<Item=&'a ScissorRect> + 'a>;
 }

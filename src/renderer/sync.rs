@@ -1,4 +1,5 @@
 use crate::renderer::RendererBackend;
+use bitflags::bitflags;
 
 bitflags! {
     /// Used for manual synchronization.

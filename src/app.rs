@@ -41,8 +41,8 @@ impl App {
         let events_loop = create_events_loop();
         let window_width = cfg.get::<u32>("gfx.window.width").unwrap();
         let window_height = cfg.get::<u32>("gfx.window.height").unwrap();
-        let fullscreen = cfg.get::<u32>("gfx.window.fullscreen").unwrap();
-        let vsync = cfg.get::<bool>("gfx.window.vsync").unwrap();
+        let _fullscreen = cfg.get::<u32>("gfx.window.fullscreen").unwrap();
+        let _vsync = cfg.get::<bool>("gfx.window.vsync").unwrap();
         let window_title = cfg.get::<String>("gfx.window.title").unwrap();
 
         let window_builder = winit::WindowBuilder::new()

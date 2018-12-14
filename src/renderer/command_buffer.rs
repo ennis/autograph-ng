@@ -226,10 +226,10 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
     /// Inserts an explicit pipeline barrier.
     pub fn pipeline_barrier(
         &mut self,
-        sort_key: u64,
-        src: PipelineStageFlags,
-        dst: PipelineStageFlags,
-        memory_barriers: &[MemoryBarrier<R>],
+        _sort_key: u64,
+        _src: PipelineStageFlags,
+        _dst: PipelineStageFlags,
+        _memory_barriers: &[MemoryBarrier<R>],
     ) {
         unimplemented!()
     }
@@ -237,45 +237,17 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
     //----------------------------------------------------------------------------------------------
     // Allocate
 
-    /*/// Uploads data to a temporary buffer.
-    pub fn upload(&mut self, name: Option<&str>, data: &[u8]) -> &'a R::Buffer {
-        unimplemented!()
-    }*/
-
-    /*
-    /// Returns a reference to the named resource.
-    pub fn create_image(&mut self) -> R::Image {
-        unimplemented!()
-    }
-
-    /// Returns a reference to the named resource.
-    pub fn create_buffer(&mut self) -> R::BufferHandle {
-        unimplemented!()
-    }
-
-    /// Drops a temporary image.
-    /// (drop_img <image>)
-    pub fn drop_image(&mut self, sort_key: u64, image: R::ImageHandle) {
-        unimplemented!()
-    }
-
-    /// Drops a temporary image.
-    /// (drop_buf <image>)
-    pub fn drop_buffer(&mut self, sort_key: u64, buffer: R::BufferHandle) {
-        unimplemented!()
-    }*/
-
     //----------------------------------------------------------------------------------------------
     // Copy
 
     /// Copy data between buffers.
     pub fn copy_buffer(
         &mut self,
-        sort_key: u64,
-        src: BufferTypeless<'a, R>,
-        dst: BufferTypeless<'a, R>,
-        src_range: Range<u64>,
-        dst_range: Range<u64>,
+        _sort_key: u64,
+        _src: BufferTypeless<'a, R>,
+        _dst: BufferTypeless<'a, R>,
+        _src_range: Range<u64>,
+        _dst_range: Range<u64>,
     ) {
         unimplemented!()
     }
@@ -363,15 +335,6 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
         )
     }
 
-    /*fn set_all_viewports(&mut self, sort_key: u64, viewport: &Viewport) {
-        self.push_command(
-            sort_key,
-            CommandInner::SetAllViewports {
-                viewport: *viewport,
-            },
-        )
-    }*/
-
     fn set_scissors(&mut self, sort_key: u64, scissors: &[ScissorRect]) {
         self.push_command(
             sort_key,
@@ -380,10 +343,6 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
             },
         )
     }
-
-    /* fn set_all_scissors(&mut self, sort_key: u64, scissor: &ScissorRect) {
-        self.push_command(sort_key, CommandInner::SetAllScissors { scissor: *scissor })
-    }*/
 
     fn bind_pipeline_interface<PI: PipelineInterface<'a, R>>(
         &mut self,
@@ -427,17 +386,9 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
                 self.cmdbuf.set_viewports(self.sort_key, viewports);
             }
 
-            /*fn visit_dynamic_viewport_all(&mut self, viewport: &Viewport) {
-                self.cmdbuf.set_all_viewports(self.sort_key, viewport);
-            }*/
-
             fn visit_dynamic_scissors(&mut self, scissors: &[ScissorRect]) {
                 self.cmdbuf.set_scissors(self.sort_key, scissors);
             }
-
-            /*fn visit_dynamic_scissor_all(&mut self, scissor: &ScissorRect) {
-                self.cmdbuf.set_all_scissors(self.sort_key, scissor);
-            }*/
         }
 
         let mut v = Visitor {

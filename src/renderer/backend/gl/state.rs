@@ -258,7 +258,7 @@ impl StateCache {
                 src_alpha_blend_factor,
                 dst_alpha_blend_factor,
                 alpha_blend_op,
-                color_write_mask,
+                color_write_mask: _,
             } => unsafe {
                 gl::Enable(gl::BLEND);
                 gl::BlendEquationSeparate(
@@ -304,7 +304,7 @@ impl StateCache {
                 src_alpha_blend_factor,
                 dst_alpha_blend_factor,
                 alpha_blend_op,
-                color_write_mask,
+                color_write_mask: _,
             } => unsafe {
                 gl::Enablei(gl::BLEND, index);
                 gl::BlendEquationSeparatei(

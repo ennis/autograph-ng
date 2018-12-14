@@ -1,5 +1,3 @@
-#cargo-features = ["edition"]
-
 [profile.release]
 debug = true
 
@@ -8,7 +6,7 @@ name = "gfx2"
 version = "0.1.0"
 authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
 build = "build.rs"
-#edition = '2018'
+edition = '2018'
 
 [build-dependencies]
 gl_generator = "*"
@@ -19,7 +17,6 @@ image = "*"
 gfx2_derive = { path = "gfx2_derive" }
 
 [dependencies]
-#petgraph = { version = "*", features = ["serde-1"] }
 bitflags = "*"
 config = "*"
 winit = "*"
@@ -40,10 +37,13 @@ fxhash = "*"
 derivative = "*"
 nalgebra-glm = { version = "*", optional = true }
 
-
 [features]
 glm-types = ["nalgebra-glm"]
 
 [[example]]
 name = "blit"
+required-features = ["glm-types"]
+
+[[example]]
+name = "simple"
 required-features = ["glm-types"]

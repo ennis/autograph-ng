@@ -1,5 +1,4 @@
 //! Renderer manifesto:
-//!
 //! - Easy to use
 //! - Flexible
 //! - Not too verbose
@@ -22,42 +21,9 @@
 //! `CommandBuffers` are renderer-agnostic.
 //! They contain commands with a sort key that indicates their relative execution order.
 //!
-//! Unsolved questions: properly handle the sort keys.
-//!
-//! Idea: named resources (resource semantics)
-//! - A way to assign arbitrary IDs to resources that has meaning to the application
-//!     - e.g. the temporary render layer of mesh group X for appearance Y
-//!     - 64-bit handles
-//! - Pre-described and allocated on first use
-//! - Resource templates: ID + mask that describes how to allocate a resource with the specified bit pattern
-//!     - registered in advance (pipeline config)
-//! - advantage: no need to pass resource handles around, just refer to them by semantics (convention over configuration)
-//! - would allow draw calls like:
-//! ```
-//!     draw (
-//!         sort_key = sequence_id!{ opaque, layer=group_id, depth=d, pass_immediate=0 },
-//!         target   = stylized_layer(objgroup)
-//!     )
-//! ```
-//! To test in the high-level renderer:
-//! - 2D texturing (ss splats anchored on submeshes)
-//! - Splat-based shading (splat proxies in screen space masked, directed by projected light direction)
-//! - Good contour detection (explicit crease edges + fast DF)
-//! - Good cast shadows (soft & hard, raycasting and temporal integration?)
-//! - Real depth-sorted transparency everywhere (assume non-intersecting objects)
-//! - Per-object-group screen-space calculations (e.g. curvature, surface descriptors, etc.)
-//!       - Discretize into coarse grid to evaluate filter only where needed
-//! - Performance might be abysmal, but that's not an issue
-//!     - for our purposes, 5 fps is good enough! -> target animation
-//! - Stroke-based rendering with arbitrary curves (curve DF)
-//!     - big unknown, prepare for poor performance
-//! - High-quality ambient occlusion?
-//!
-//! UI is important!
-//!
-//! Renderer backend: object-safe or compile-time?
-//! - avoid costly recompilation times -> object-safe
 
+use bitflags::bitflags;
+use derivative::Derivative;
 use ordered_float::NotNan;
 use std::cmp::Eq;
 use std::fmt::Debug;
@@ -76,17 +42,6 @@ mod shader_interface;
 mod sync;
 mod util;
 
-/*
-define_sort_key! {
-    [sequence:3  , layer:8, depth:16, pass_immediate:4],
-    [opaque:3 = 3, layer:8, depth:16, pass_immediate:4],
-    [shadow:3 = 1, view: 6, layer:8, depth:16, pass_immediate:4]
-
-    sequence,objgroup,comp-pass(pre,draw,post),effect,effect-pass(pre,draw,post)
-}
-
-sequence_id!{ opaque, layer=group_id, depth=d, pass_immediate=0 }*/
-
 pub use self::command_buffer::{
     sort_command_buffers, Command, CommandBuffer, CommandInner, DrawIndexedParams, DrawParams,
 };
@@ -96,16 +51,6 @@ pub use self::sampler::*;
 pub use self::shader_interface::*;
 
 //--------------------------------------------------------------------------------------------------
-
-/*// hackish way to have a const NotNan.
-union TransmuteNotNan {
-    from: f32,
-    to: NotNan<f32>,
-}
-
-const unsafe fn const_notnan(v: f32) -> NotNan<f32> {
-    TransmuteNotNan { from: v }.to
-}*/
 
 #[derive(Copy, Clone, Debug)]
 pub enum MemoryType {
@@ -691,6 +636,22 @@ impl<'a, R: RendererBackend> Deref for Image<'a, R> {
         &self.0
     }
 }
+impl<'a, R: RendererBackend> Image<'a, R> {
+    pub fn into_sampled(self, d: SamplerDescription) -> SampledImage<'a, R> {
+        SampledImage(self.0, d)
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""), Copy(bound = ""), Debug(bound = ""))]
+pub struct SampledImage<'a, R: RendererBackend>(pub &'a R::Image, pub SamplerDescription);
+impl<'a, R: RendererBackend> Deref for SampledImage<'a, R> {
+    type Target = &'a R::Image;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Derivative)]
@@ -1122,7 +1083,7 @@ impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
         impl<'a, R: RendererBackend> DescriptorSetInterfaceVisitor<'a, R> for Visitor<'a, R> {
             fn visit_buffer(
                 &mut self,
-                binding: u32,
+                _binding: u32,
                 buffer: BufferTypeless<'a, R>,
                 offset: usize,
                 size: usize,
@@ -1136,7 +1097,7 @@ impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
 
             fn visit_sampled_image(
                 &mut self,
-                binding: u32,
+                _binding: u32,
                 image: Image<'a, R>,
                 sampler: &SamplerDescription,
             ) {

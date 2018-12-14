@@ -1,3 +1,4 @@
+use lazy_static::lazy_static;
 use regex::Regex;
 use std::error;
 use std::fmt;
@@ -121,7 +122,7 @@ impl error::Error for Error {}
 pub struct PreprocessErrors(Vec<Error>);
 
 impl fmt::Display for PreprocessErrors {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, _f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         unimplemented!()
     }
 }
@@ -708,7 +709,7 @@ mod tests {
 
     #[test]
     fn test_pp_shader_internal() {
-        let mut result = GlslPreprocessResult {
+        let mut result = PreprocessResult {
             preprocessed_source: String::new(),
             stages: ShaderStageFlags::empty(),
             vertex_attributes: None,
@@ -736,25 +737,25 @@ mod tests {
             result.vertex_attributes.as_ref().map(|a| a.as_ref()),
             Some(
                 [
-                    VertexInputAttribute {
+                    VertexInputAttributeDescription {
                         format: Format::R32G32B32_SFLOAT,
                         location: 0,
                         binding: 0,
                         offset: 0
                     },
-                    VertexInputAttribute {
+                    VertexInputAttributeDescription {
                         format: Format::R32G32B32_SFLOAT,
                         location: 1,
                         binding: 0,
                         offset: 12
                     },
-                    VertexInputAttribute {
+                    VertexInputAttributeDescription {
                         format: Format::R32G32B32_SFLOAT,
                         location: 2,
                         binding: 0,
                         offset: 24
                     },
-                    VertexInputAttribute {
+                    VertexInputAttributeDescription {
                         format: Format::R32G32_SFLOAT,
                         location: 3,
                         binding: 0,
@@ -770,15 +771,15 @@ mod tests {
         assert_eq!(
             &result.descriptor_map,
             &[
-                DescriptorMapEntry {
-                    target_binding_range: (0, 7),
-                    target_binding_space: BindingSpace::UniformBuffer,
+                ParsedDescriptorMapping {
+                    gl_binding_range: (0, 7),
+                    gl_binding_space: BindingSpace::UniformBuffer,
                     set: 0,
                     binding_base: 0
                 },
-                DescriptorMapEntry {
-                    target_binding_range: (0, 0),
-                    target_binding_space: BindingSpace::Texture,
+                ParsedDescriptorMapping {
+                    gl_binding_range: (0, 0),
+                    gl_binding_space: BindingSpace::Texture,
                     set: 0,
                     binding_base: 8
                 }

@@ -899,3 +899,6 @@ Alternative: arena-based GPU synchronization
     - first improvement: easier creation of descriptor sets
         - typed descriptor sets (implementing DescriptorSetInterface)
         - no need to specify the layout: put in cache
+- investigate how to create reusable shaders / image passes
+    - e.g. now, need to re-create a pipeline if the output format changes
+        - shader templates?

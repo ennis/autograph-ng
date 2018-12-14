@@ -1,4 +1,5 @@
 //! Images
+use bitflags::bitflags;
 use std::fmt;
 
 //--------------------------------------------------------------------------------------------------
@@ -166,23 +167,6 @@ pub enum MipmapsCount {
     One,
     Specific(u32),
 }
-
-/*impl MipmapsCount
-{
-    fn to_count(&self, size: u32) -> u32 {
-        let mipcount = match self {
-            MipmapsCount::Log2 => get_texture_mip_map_count(size),
-            MipmapsCount::Specific(count) => {
-                // Multisampled textures can't have more than one mip level
-                if samples > 1 {
-                    assert_eq!(count, 1);
-                }
-                count
-            }
-            MipmapsCount::One => 1,
-        };
-    }
-}*/
 
 ///
 /// Get the maximum number of mip map levels for a 2D texture of size (width,height)

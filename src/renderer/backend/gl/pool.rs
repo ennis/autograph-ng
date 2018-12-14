@@ -1,6 +1,7 @@
 use super::buffer::{BufferDescription, RawBuffer};
 use super::image::{ImageDescription, RawImage};
 use crate::renderer::AliasScope;
+use slotmap::new_key_type;
 use std::marker::PhantomData;
 
 //--------------------------------------------------------------------------------------------------
@@ -15,32 +16,6 @@ impl<D: Eq + Clone, T> AliasedObject<D, T> {
         self.live_scopes.iter().any(|s| s.overlaps(&scope))
     }
 }
-
-//--------------------------------------------------------------------------------------------------
-/*#[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-#[repr(transparent)]
-struct AliasKey<T>(slotmap::KeyData, PhantomData<*const T>);
-
-impl<T> slotmap::Key for AliasKey<T> {
-}
-
-impl<T> Default for AliasKey<T> {
-    fn default() -> Self {
-        AliasKey(slotmap::KeyData::default(), PhantomData)
-    }
-}
-
-impl<T> From<slotmap::KeyData> for AliasKey<T> {
-    fn from(k: slotmap::KeyData) -> Self {
-        AliasKey(k, PhantomData)
-    }
-}
-
-impl<T> From<AliasKey<T>> for slotmap::KeyData {
-    fn from(k: AliasKey<T>) -> Self {
-        k.0
-    }
-}*/
 
 //--------------------------------------------------------------------------------------------------
 pub struct Pool<D: Eq + Clone, K: slotmap::Key + Copy, T> {
@@ -86,8 +61,8 @@ impl<D: Eq + Clone, K: slotmap::Key + Copy, T> Pool<D, K, T> {
         }
     }
 
-    pub fn destroy(&mut self, key: K, scope: AliasScope, callback: impl FnOnce(T)) {
-        let should_remove = if let Some(mut v) = self.entries.get_mut(key.clone()) {
+    pub fn destroy(&mut self, key: K, scope: AliasScope, _callback: impl FnOnce(T)) {
+        let _should_remove = if let Some(mut v) = self.entries.get_mut(key.clone()) {
             let pos = v.live_scopes.iter().position(|s| *s == scope);
             if let Some(pos) = pos {
                 v.live_scopes.swap_remove(pos);
@@ -105,7 +80,7 @@ impl<D: Eq + Clone, K: slotmap::Key + Copy, T> Pool<D, K, T> {
         }*/
     }
 
-    fn evict<F: FnMut(T)>(&mut self, until_frame: u64, mut deleter: F) {
+    fn evict<F: FnMut(T)>(&mut self, _until_frame: u64, _deleter: F) {
         /*self.store.retain(|k, e| {
             if e.last_used_frame > until_frame {
                 let v = mem::replace(&mut e.value, None).unwrap();

@@ -1,12 +1,11 @@
-extern crate gfx2;
 #[macro_use]
 extern crate log;
-extern crate nalgebra_glm as glm;
 
 use std::env;
 use std::mem;
 
 use gfx2::app::*;
+use gfx2::glm;
 use gfx2::renderer;
 use gfx2::renderer::backend::gl as gl_backend;
 use gfx2::renderer::*;
@@ -329,58 +328,6 @@ impl<'a> PipelineInterface<'a, Backend> for SimplePipelineInterface<'a> {
         visitor.visit_vertex_buffers(&[self.vertex_buffer]);
     }
 }
-
-/*//--------------------------------------------------------------------------------------------------
-mod blit {
-    use super::*;
-
-    #[derive(Copy,Clone)]
-    #[repr(C)]
-    pub struct Vertex {
-        pub pos: glm::Vec2,
-        pub tex: glm::Vec2,
-    }
-
-    #[derive(Copy,Clone)]
-    #[repr(C)]
-    pub struct Uniforms {
-        pub transform: glm::Mat3x4
-    }
-
-    pub struct PerObject<'a> {
-        pub uniforms: Buffer<'a, Uniforms>,
-        pub image: Image<'a>,
-    }
-
-    impl<'a> DescriptorSetInterface<'a, Backend> for PerObject<'a> {
-        const INTERFACE: DescriptorSetDescription<'static> = &[];
-
-        fn do_visit(&self, visitor: &mut impl DescriptorSetInterfaceVisitor<'a, R>) {
-            visitor.visit_buffer(0, self.uniforms.into(), 0, mem::size_of::<Uniforms>());
-            visitor.visit_sampled_image(1, self.image, SamplerDescription::LINEAR_MIPMAP_LINEAR);
-        }
-    }
-
-    pub struct Blit<'a> {
-        pub framebuffer: Framebuffer<'a>,
-        pub per_object: DescriptorSet<'a>,
-        pub viewport: Viewport,
-        pub vertex_buffer: Buffer<'a, [Vertex]>,
-    }
-
-    impl<'a> PipelineInterface<'a, Backend> for Blit<'a> {
-        const VERTEX_INPUT_INTERFACE: &'static [VertexInputBufferDescription<'static>] = &[];
-        const FRAGMENT_OUTPUT_INTERFACE: &'static [FragmentOutputDescription] = &[];
-        const DESCRIPTOR_SET_INTERFACE: &'static [DescriptorSetDescription<'static>] = &[];
-
-        fn do_visit(&self, visitor: &mut PipelineInterfaceVisitor<'a, Backend>) {
-            visitor.visit_dynamic_viewports(&[self.viewport]);
-            visitor.visit_vertex_buffers(&[self.vertex_buffer.into()]);
-            visitor.visit_framebuffer(self.framebuffer);
-            visitor.visit_descriptor_sets(&[self.per_object]);
-        }
-    }
-}*/
 
 //--------------------------------------------------------------------------------------------------
 fn main() {

@@ -87,7 +87,7 @@ impl<'a, 'rcx> ExecuteContext<'a, 'rcx> {
                     gl::RENDERBUFFER,
                     obj,
                 );
-                if let Some(stencil) = stencil {
+                if let Some(_stencil) = stencil {
                     unimplemented!()
                 } else {
                     gl::ClearNamedFramebufferfv(tmpfb, gl::DEPTH, 0, &depth);
@@ -97,7 +97,7 @@ impl<'a, 'rcx> ExecuteContext<'a, 'rcx> {
         } else {
             // TODO specify which level to clear in command
             unsafe {
-                if let Some(stencil) = stencil {
+                if let Some(_stencil) = stencil {
                     unimplemented!()
                 } else {
                     gl::ClearTexImage(
@@ -141,7 +141,7 @@ impl<'a, 'rcx> ExecuteContext<'a, 'rcx> {
         self.state_cache.set_images(&sr.images);
     }
 
-    pub fn cmd_present(&mut self, image: &Image, swapchain: &Swapchain) {
+    pub fn cmd_present(&mut self, image: &Image, _swapchain: &Swapchain) {
         // only handle default swapchain for now
         //assert_eq!(swapchain, 0, "invalid swapchain handle");
         // make a framebuffer and bind the image to it

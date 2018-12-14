@@ -138,7 +138,7 @@ impl Timeline {
         true
     }
 
-    pub fn driver_sync(&mut self, value: u64, timeout: Timeout) -> bool {
+    pub fn driver_sync(&mut self, _value: u64, _timeout: Timeout) -> bool {
         unimplemented!()
     }
 }
