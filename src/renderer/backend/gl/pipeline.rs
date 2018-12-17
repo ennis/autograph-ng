@@ -33,18 +33,24 @@ pub enum BindingSpace {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct BindingLocation {
+pub struct FlatBinding {
     pub space: BindingSpace,
     pub location: u32,
 }
 
+impl FlatBinding {
+    pub fn new(space: BindingSpace, location: u32) -> FlatBinding {
+        FlatBinding { space, location }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct DescriptorMap {
-    pub sets: Vec<Vec<BindingLocation>>,
+    pub sets: Vec<Vec<FlatBinding>>,
 }
 
 impl DescriptorMap {
-    pub fn get_binding_location(&self, set: u32, binding: u32) -> Option<BindingLocation> {
+    pub fn get_binding_location(&self, set: u32, binding: u32) -> Option<FlatBinding> {
         self.sets.get(set as usize).and_then(|set| {
             set.get(binding as usize).and_then(|loc| {
                 if loc.space == BindingSpace::Empty {
@@ -59,8 +65,8 @@ impl DescriptorMap {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct StaticSamplerEntry {
-    pub texture_binding_range: (u32, u32),
-    pub description: SamplerDescription,
+    pub tex_range: (u32, u32),
+    pub desc: SamplerDescription,
 }
 
 #[derive(Clone, Debug)]
@@ -140,30 +146,30 @@ impl From<ShaderCreationError> for ProgramCreationError {
 }
 
 fn create_graphics_program(
-    vertex_shader: &ShaderModule,
-    fragment_shader: Option<&ShaderModule>,
-    geometry_shader: Option<&ShaderModule>,
-    tess_control_shader: Option<&ShaderModule>,
-    tess_eval_shader: Option<&ShaderModule>,
+    vert: &ShaderModule,
+    frag: Option<&ShaderModule>,
+    geom: Option<&ShaderModule>,
+    tessctl: Option<&ShaderModule>,
+    tesseval: Option<&ShaderModule>,
 ) -> Result<GLuint, ProgramCreationError> {
-    let spirv = vertex_shader.spirv.is_some();
+    let spirv = vert.spirv.is_some();
 
-    if fragment_shader.map_or(false, |s| s.spirv.is_some() != spirv)
-        || geometry_shader.map_or(false, |s| s.spirv.is_some() != spirv)
-        || tess_control_shader.map_or(false, |s| s.spirv.is_some() != spirv)
-        || tess_eval_shader.map_or(false, |s| s.spirv.is_some() != spirv)
+    if frag.map_or(false, |s| s.spirv.is_some() != spirv)
+        || geom.map_or(false, |s| s.spirv.is_some() != spirv)
+        || tessctl.map_or(false, |s| s.spirv.is_some() != spirv)
+        || tesseval.map_or(false, |s| s.spirv.is_some() != spirv)
     {
         return Err(ProgramCreationError(
-            "cannot mix SPIR-V and GLSL shaders".into(),
+            "cannot mix both SPIR-V and GLSL shaders".into(),
         ));
     }
 
     let (vs, fs, gs, tcs, tes) = if spirv {
         // SPIR-V path
         let vs = create_specialized_spirv_shader(ShaderStageFlags::VERTEX, "main", unsafe {
-            vertex_shader.spirv.as_ref().unchecked_unwrap()
+            vert.spirv.as_ref().unchecked_unwrap()
         })?;
-        let fs = if let Some(s) = fragment_shader {
+        let fs = if let Some(s) = frag {
             create_specialized_spirv_shader(ShaderStageFlags::FRAGMENT, "main", unsafe {
                 s.spirv.as_ref().unchecked_unwrap()
             })?
@@ -171,7 +177,7 @@ fn create_graphics_program(
         } else {
             None
         };
-        let gs = if let Some(s) = geometry_shader {
+        let gs = if let Some(s) = geom {
             create_specialized_spirv_shader(ShaderStageFlags::GEOMETRY, "main", unsafe {
                 s.spirv.as_ref().unchecked_unwrap()
             })?
@@ -179,7 +185,7 @@ fn create_graphics_program(
         } else {
             None
         };
-        let tcs = if let Some(s) = tess_control_shader {
+        let tcs = if let Some(s) = tessctl {
             create_specialized_spirv_shader(ShaderStageFlags::TESS_CONTROL, "main", unsafe {
                 s.spirv.as_ref().unchecked_unwrap()
             })?
@@ -187,7 +193,7 @@ fn create_graphics_program(
         } else {
             None
         };
-        let tes = if let Some(s) = tess_eval_shader {
+        let tes = if let Some(s) = tesseval {
             create_specialized_spirv_shader(ShaderStageFlags::TESS_EVAL, "main", unsafe {
                 s.spirv.as_ref().unchecked_unwrap()
             })?
@@ -199,11 +205,11 @@ fn create_graphics_program(
     } else {
         // GLSL path
         (
-            vertex_shader.obj,
-            fragment_shader.map(|s| s.obj),
-            geometry_shader.map(|s| s.obj),
-            tess_control_shader.map(|s| s.obj),
-            tess_eval_shader.map(|s| s.obj),
+            vert.obj,
+            frag.map(|s| s.obj),
+            geom.map(|s| s.obj),
+            tessctl.map(|s| s.obj),
+            tesseval.map(|s| s.obj),
         )
     };
 
@@ -311,41 +317,41 @@ impl GraphicsPipeline {
 
 pub fn create_graphics_pipeline_internal<'a>(
     arena: &'a Arena,
-    create_info: &GraphicsPipelineCreateInfo<OpenGlBackend>,
+    ci: &GraphicsPipelineCreateInfo<OpenGlBackend>,
 ) -> &'a GraphicsPipeline {
     let program = {
-        let vs = create_info.shader_stages.vertex.0;
-        let fs = create_info.shader_stages.fragment.map(|s| s.0);
-        let gs = create_info.shader_stages.geometry.map(|s| s.0);
-        let tcs = create_info.shader_stages.tess_control.map(|s| s.0);
-        let tes = create_info.shader_stages.tess_eval.map(|s| s.0);
+        let vs = ci.shader_stages.vertex.0;
+        let fs = ci.shader_stages.fragment.map(|s| s.0);
+        let gs = ci.shader_stages.geometry.map(|s| s.0);
+        let tcs = ci.shader_stages.tess_control.map(|s| s.0);
+        let tes = ci.shader_stages.tess_eval.map(|s| s.0);
         create_graphics_program(vs, fs, gs, tcs, tes).expect("failed to create program")
     };
 
     //assert_eq!(vertex_shader.stage, ShaderStageFlags::VERTEX);
-    let vao = create_vertex_array_object(create_info.vertex_input_state.attributes);
+    let vao = create_vertex_array_object(ci.vertex_input_state.attributes);
 
     let color_blend_state = PipelineColorBlendStateOwned {
-        logic_op: create_info.color_blend_state.logic_op,
-        attachments: match create_info.color_blend_state.attachments {
+        logic_op: ci.color_blend_state.logic_op,
+        attachments: match ci.color_blend_state.attachments {
             PipelineColorBlendAttachments::All(a) => PipelineColorBlendAttachmentsOwned::All(*a),
             PipelineColorBlendAttachments::Separate(a) => {
                 PipelineColorBlendAttachmentsOwned::Separate(a.to_vec())
             }
         },
-        blend_constants: create_info.color_blend_state.blend_constants,
+        blend_constants: ci.color_blend_state.blend_constants,
     };
 
     let g = GraphicsPipeline {
-        rasterization_state: *create_info.rasterization_state,
-        depth_stencil_state: *create_info.depth_stencil_state,
-        multisample_state: *create_info.multisample_state,
-        input_assembly_state: *create_info.input_assembly_state,
-        vertex_input_bindings: create_info.vertex_input_state.bindings.to_vec(),
+        rasterization_state: *ci.rasterization_state,
+        depth_stencil_state: *ci.depth_stencil_state,
+        multisample_state: *ci.multisample_state,
+        input_assembly_state: *ci.input_assembly_state,
+        vertex_input_bindings: ci.vertex_input_state.bindings.to_vec(),
         program,
         vao,
-        descriptor_map: create_info.additional.descriptor_map.clone(),
-        static_samplers: create_info.additional.static_samplers.clone(),
+        descriptor_map: ci.additional.descriptor_map.clone(),
+        static_samplers: ci.additional.static_samplers.clone(),
         color_blend_state,
     };
 

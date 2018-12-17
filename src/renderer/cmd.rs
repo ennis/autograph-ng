@@ -3,13 +3,13 @@ use std::ops::Range;
 
 use crate::renderer::sync::*;
 use crate::renderer::{
-    shader_interface::{PipelineInterface, PipelineInterfaceVisitor},
+    interface::{PipelineInterface, PipelineInterfaceVisitor},
     Buffer, BufferTypeless, DescriptorSet, DescriptorSetLayout, Framebuffer, GraphicsPipeline,
     Image, IndexType, RendererBackend, ScissorRect, Swapchain, Viewport,
 };
 
 pub struct Command<'a, R: RendererBackend> {
-    pub sort_key: u64,
+    pub sortkey: u64,
     pub cmd: CommandInner<'a, R>,
 }
 
@@ -18,7 +18,7 @@ impl<'a, R: RendererBackend> Clone for Command<'a, R> {
     fn clone(&self) -> Self {
         Command {
             cmd: self.cmd.clone(),
-            sort_key: self.sort_key,
+            sortkey: self.sortkey,
         }
     }
 }
@@ -209,11 +209,11 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
         }
     }
 
-    fn push_command(&mut self, sort_key: u64, cmd: CommandInner<'a, R>) {
-        self.commands.push(Command { cmd, sort_key })
+    fn push_command(&mut self, sortkey: u64, cmd: CommandInner<'a, R>) {
+        self.commands.push(Command { cmd, sortkey })
     }
 
-    // fn self.push_header_command(sort_key)
+    // fn self.push_header_command(sortkey)
     // fn self.push_trailing_command()
 
     pub fn iter(&self) -> impl Iterator<Item = &Command<'a, R>> {
@@ -256,9 +256,9 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
     // Clear
 
     /// Clears an image.
-    pub fn clear_image(&mut self, sort_key: u64, image: Image<'a, R>, color: &[f32; 4]) {
+    pub fn clear_image(&mut self, sortkey: u64, image: Image<'a, R>, color: &[f32; 4]) {
         self.push_command(
-            sort_key,
+            sortkey,
             CommandInner::ClearImageFloat {
                 image,
                 color: *color,
@@ -269,13 +269,13 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
     /// Clears an image.
     pub fn clear_depth_stencil_image(
         &mut self,
-        sort_key: u64,
+        sortkey: u64,
         image: Image<'a, R>,
         depth: f32,
         stencil: Option<u8>,
     ) {
         self.push_command(
-            sort_key,
+            sortkey,
             CommandInner::ClearDepthStencilImage {
                 image,
                 depth,
@@ -287,22 +287,22 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
     //----------------------------------------------------------------------------------------------
     // Draw
 
-    fn set_descriptor_sets(&mut self, sort_key: u64, descriptor_sets: &[DescriptorSet<'a, R>]) {
+    fn set_descriptor_sets(&mut self, sortkey: u64, descriptor_sets: &[DescriptorSet<'a, R>]) {
         self.push_command(
-            sort_key,
+            sortkey,
             CommandInner::SetDescriptorSets {
                 descriptor_sets: descriptor_sets.to_vec(),
             },
         )
     }
 
-    fn set_framebuffer(&mut self, sort_key: u64, framebuffer: Framebuffer<'a, R>) {
-        self.push_command(sort_key, CommandInner::SetFramebuffer { framebuffer })
+    fn set_framebuffer(&mut self, sortkey: u64, framebuffer: Framebuffer<'a, R>) {
+        self.push_command(sortkey, CommandInner::SetFramebuffer { framebuffer })
     }
 
-    fn set_vertex_buffers(&mut self, sort_key: u64, vertex_buffers: &[BufferTypeless<'a, R>]) {
+    fn set_vertex_buffers(&mut self, sortkey: u64, vertex_buffers: &[BufferTypeless<'a, R>]) {
         self.push_command(
-            sort_key,
+            sortkey,
             CommandInner::SetVertexBuffers {
                 vertex_buffers: vertex_buffers.to_vec(),
             },
@@ -311,13 +311,13 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
 
     fn set_index_buffer(
         &mut self,
-        sort_key: u64,
+        sortkey: u64,
         index_buffer: BufferTypeless<'a, R>,
         offset: usize,
         ty: IndexType,
     ) {
         self.push_command(
-            sort_key,
+            sortkey,
             CommandInner::SetIndexBuffer {
                 index_buffer,
                 offset,
@@ -326,18 +326,18 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
         )
     }
 
-    fn set_viewports(&mut self, sort_key: u64, viewports: &[Viewport]) {
+    fn set_viewports(&mut self, sortkey: u64, viewports: &[Viewport]) {
         self.push_command(
-            sort_key,
+            sortkey,
             CommandInner::SetViewports {
                 viewports: viewports.to_vec(),
             },
         )
     }
 
-    fn set_scissors(&mut self, sort_key: u64, scissors: &[ScissorRect]) {
+    fn set_scissors(&mut self, sortkey: u64, scissors: &[ScissorRect]) {
         self.push_command(
-            sort_key,
+            sortkey,
             CommandInner::SetScissors {
                 scissors: scissors.to_vec(),
             },
@@ -346,26 +346,25 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
 
     fn bind_pipeline_interface<PI: PipelineInterface<'a, R>>(
         &mut self,
-        sort_key: u64,
+        sortkey: u64,
         pipeline: GraphicsPipeline<'a, R>,
         interface: &PI,
     ) {
-        self.push_command(sort_key, CommandInner::DrawHeader { pipeline });
+        self.push_command(sortkey, CommandInner::DrawHeader { pipeline });
 
         struct Visitor<'a, 'b, R: RendererBackend> {
-            sort_key: u64,
+            sortkey: u64,
             cmdbuf: &'b mut CommandBuffer<'a, R>,
         }
 
         impl<'a, 'b, R: RendererBackend> PipelineInterfaceVisitor<'a, R> for Visitor<'a, 'b, R> {
             fn visit_descriptor_sets(&mut self, descriptor_sets: &[DescriptorSet<'a, R>]) {
                 self.cmdbuf
-                    .set_descriptor_sets(self.sort_key, descriptor_sets);
+                    .set_descriptor_sets(self.sortkey, descriptor_sets);
             }
 
             fn visit_vertex_buffers(&mut self, vertex_buffers: &[BufferTypeless<'a, R>]) {
-                self.cmdbuf
-                    .set_vertex_buffers(self.sort_key, vertex_buffers);
+                self.cmdbuf.set_vertex_buffers(self.sortkey, vertex_buffers);
             }
 
             fn visit_index_buffer(
@@ -375,24 +374,24 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
                 ty: IndexType,
             ) {
                 self.cmdbuf
-                    .set_index_buffer(self.sort_key, index_buffer, offset, ty);
+                    .set_index_buffer(self.sortkey, index_buffer, offset, ty);
             }
 
             fn visit_framebuffer(&mut self, framebuffer: Framebuffer<'a, R>) {
-                self.cmdbuf.set_framebuffer(self.sort_key, framebuffer);
+                self.cmdbuf.set_framebuffer(self.sortkey, framebuffer);
             }
 
             fn visit_dynamic_viewports(&mut self, viewports: &[Viewport]) {
-                self.cmdbuf.set_viewports(self.sort_key, viewports);
+                self.cmdbuf.set_viewports(self.sortkey, viewports);
             }
 
             fn visit_dynamic_scissors(&mut self, scissors: &[ScissorRect]) {
-                self.cmdbuf.set_scissors(self.sort_key, scissors);
+                self.cmdbuf.set_scissors(self.sortkey, scissors);
             }
         }
 
         let mut v = Visitor {
-            sort_key,
+            sortkey,
             cmdbuf: self,
         };
 
@@ -401,14 +400,14 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
 
     pub fn draw<PI: PipelineInterface<'a, R>>(
         &mut self,
-        sort_key: u64,
+        sortkey: u64,
         pipeline: GraphicsPipeline<'a, R>,
         interface: &PI,
         params: DrawParams,
     ) {
-        self.bind_pipeline_interface(sort_key, pipeline, interface);
+        self.bind_pipeline_interface(sortkey, pipeline, interface);
         self.push_command(
-            sort_key,
+            sortkey,
             CommandInner::Draw {
                 vertex_count: params.vertex_count,
                 instance_count: params.instance_count,
@@ -420,14 +419,14 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
 
     pub fn draw_indexed<PI: PipelineInterface<'a, R>>(
         &mut self,
-        sort_key: u64,
+        sortkey: u64,
         pipeline: GraphicsPipeline<'a, R>,
         interface: &PI,
         params: DrawIndexedParams,
     ) {
-        self.bind_pipeline_interface(sort_key, pipeline, interface);
+        self.bind_pipeline_interface(sortkey, pipeline, interface);
         self.push_command(
-            sort_key,
+            sortkey,
             CommandInner::DrawIndexed {
                 index_count: params.index_count,
                 instance_count: params.instance_count,
@@ -443,8 +442,8 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
 
     /// Presents the specified image to the swapchain.
     /// Might incur a copy / blit or format conversion if necessary.
-    pub fn present(&mut self, sort_key: u64, image: Image<'a, R>, swapchain: Swapchain<'a, R>) {
-        self.push_command(sort_key, CommandInner::Present { image, swapchain })
+    pub fn present(&mut self, sortkey: u64, image: Image<'a, R>, swapchain: Swapchain<'a, R>) {
+        self.push_command(sortkey, CommandInner::Present { image, swapchain })
     }
 }
 
@@ -458,10 +457,10 @@ pub fn sort_command_buffers<'a, R: RendererBackend>(
     for cmdbuf in cmdbufs.iter() {
         for cmd in cmdbuf.commands.iter() {
             fused.push(cmd.clone());
-            //sortkeys.push(cmd.sort_key);
+            //sortkeys.push(cmd.sortkey);
         }
     }
 
-    fused.sort_by(|cmd_a, cmd_b| cmd_a.sort_key.cmp(&cmd_b.sort_key));
+    fused.sort_by(|cmd_a, cmd_b| cmd_a.sortkey.cmp(&cmd_b.sortkey));
     fused
 }

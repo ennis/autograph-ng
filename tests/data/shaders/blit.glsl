@@ -1,6 +1,7 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_ARB_shading_language_420pack : enable
+
 #pragma stages(vertex,fragment)
 #pragma vertex_attribute(location=0,b0,rg32f,offset=0)
 #pragma vertex_attribute(location=1,b0,rg32f,offset=8)

@@ -34,21 +34,21 @@ use std::sync::Mutex;
 
 pub mod backend;
 mod buffer;
-mod command_buffer;
+mod cmd;
 mod format;
 mod image;
+mod interface;
 mod sampler;
-mod shader_interface;
 mod sync;
 mod util;
 
-pub use self::command_buffer::{
+pub use self::cmd::{
     sort_command_buffers, Command, CommandBuffer, CommandInner, DrawIndexedParams, DrawParams,
 };
 pub use self::format::*;
 pub use self::image::*;
+pub use self::interface::*;
 pub use self::sampler::*;
-pub use self::shader_interface::*;
 
 //--------------------------------------------------------------------------------------------------
 

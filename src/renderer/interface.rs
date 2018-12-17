@@ -9,6 +9,7 @@ pub enum PrimitiveType {
     Half, //?
     Float,
     Double,
+    Bool,
 }
 
 /// Texture basic data type (NOT storage format)
@@ -34,6 +35,9 @@ pub enum TypeDesc<'tcx> {
     Struct(&'tcx [(usize, &'tcx TypeDesc<'tcx>)]),
     /// An image type.
     Image(ImageDataType, Option<Format>),
+    SampledImage(ImageDataType, Option<Format>),
+    Void,
+    Pointer(&'tcx TypeDesc<'tcx>),
     Unknown,
 }
 

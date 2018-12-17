@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use crate::renderer;
 use crate::renderer::backend::gl::shader::preprocessor::*;
 use crate::renderer::backend::gl::{
-    pipeline::{BindingLocation, BindingSpace, DescriptorMap},
+    pipeline::{BindingSpace, DescriptorMap, FlatBinding},
     shader::ShaderModule,
     OpenGlBackend,
 };
@@ -18,58 +18,59 @@ use crate::renderer::{
 
 //--------------------------------------------------------------------------------------------------
 struct ShaderSources {
-    vs: Option<String>,
-    fs: Option<String>,
-    gs: Option<String>,
-    tes: Option<String>,
-    tcs: Option<String>,
-    cs: Option<String>,
+    vert: Option<String>,
+    frag: Option<String>,
+    geom: Option<String>,
+    tesseval: Option<String>,
+    tessctl: Option<String>,
+    comp: Option<String>,
 }
 
 struct SpirvModules {
-    vs: Option<Vec<u32>>,
-    fs: Option<Vec<u32>>,
-    gs: Option<Vec<u32>>,
-    tes: Option<Vec<u32>>,
-    tcs: Option<Vec<u32>>,
-    cs: Option<Vec<u32>>,
+    vert: Option<Vec<u32>>,
+    frag: Option<Vec<u32>>,
+    geom: Option<Vec<u32>>,
+    tesseval: Option<Vec<u32>>,
+    tessctl: Option<Vec<u32>>,
+    comp: Option<Vec<u32>>,
 }
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Copy, Clone, Debug)]
 struct SourceWithFileName<'a> {
-    source: &'a str,
-    file_name: &'a str,
+    src: &'a str,
+    file: &'a str,
 }
 
 impl<'a> SourceWithFileName<'a> {
-    fn new(source: &'a str, file_name: &'a str) -> SourceWithFileName<'a> {
-        SourceWithFileName { source, file_name }
+    fn new(src: &'a str, file: &'a str) -> SourceWithFileName<'a> {
+        SourceWithFileName { src, file }
     }
 }
 
 /// Compile a bunch of GLSL files to SPIR-V. File names are for better error reporting.
 fn compile_glsl_to_spirv<'a>(
     version: u32,
-    vertex: SourceWithFileName<'a>,
-    fragment: SourceWithFileName<'a>,
-    geometry: Option<SourceWithFileName<'a>>,
-    tess_control: Option<SourceWithFileName<'a>>,
-    tess_eval: Option<SourceWithFileName<'a>>,
+    vert: SourceWithFileName<'a>,
+    frag: SourceWithFileName<'a>,
+    geom: Option<SourceWithFileName<'a>>,
+    tessctl: Option<SourceWithFileName<'a>>,
+    tesseval: Option<SourceWithFileName<'a>>,
 ) -> Result<SpirvModules, Box<Error>> {
-    use shaderc;
-    let mut compiler = shaderc::Compiler::new().unwrap();
-    let mut options = shaderc::CompileOptions::new().unwrap();
-    options.set_target_env(shaderc::TargetEnv::OpenGL, 0);
-    options.set_forced_version_profile(version, shaderc::GlslProfile::None);
-    options.set_optimization_level(shaderc::OptimizationLevel::Zero);
+    use shaderc::{CompileOptions, Compiler, GlslProfile, OptimizationLevel, TargetEnv};
 
-    let print_debug_info = |source: SourceWithFileName<'a>,
+    let mut c = Compiler::new().unwrap();
+    let mut opt = CompileOptions::new().unwrap();
+    opt.set_target_env(TargetEnv::Vulkan, 0);
+    opt.set_forced_version_profile(version, GlslProfile::None);
+    opt.set_optimization_level(OptimizationLevel::Zero);
+
+    let print_debug_info = |src: SourceWithFileName<'a>,
                             stage: ShaderStageFlags,
                             ca: &shaderc::CompilationArtifact| {
         debug!(
             "Successfully compiled shader to SPIR-V: {}, stage {:?}",
-            source.file_name, stage
+            src.file, stage
         );
         let nw = ca.get_num_warnings();
         if nw != 0 {
@@ -80,71 +81,71 @@ fn compile_glsl_to_spirv<'a>(
 
     //debug!("==== Preprocessed ====\n\n{}", pp.vertex.as_ref().unwrap());
 
-    let vertex_compile_result = compiler.compile_into_spirv(
-        vertex.source,
+    let cvert = c.compile_into_spirv(
+        vert.src,
         shaderc::ShaderKind::Vertex,
-        vertex.file_name,
+        vert.file,
         "main",
-        Some(&options),
+        Some(&opt),
     )?;
-    print_debug_info(vertex, ShaderStageFlags::VERTEX, &vertex_compile_result);
+    print_debug_info(vert, ShaderStageFlags::VERTEX, &cvert);
 
-    let fragment_compile_result = compiler.compile_into_spirv(
-        fragment.source,
+    let cfrag = c.compile_into_spirv(
+        frag.src,
         shaderc::ShaderKind::Fragment,
-        fragment.file_name,
+        frag.file,
         "main",
-        Some(&options),
+        Some(&opt),
     )?;
-    print_debug_info(fragment, ShaderStageFlags::FRAGMENT, &vertex_compile_result);
+    print_debug_info(frag, ShaderStageFlags::FRAGMENT, &cfrag);
 
-    let geometry_compile_result = if let Some(geometry) = geometry {
-        let ca = compiler.compile_into_spirv(
-            geometry.source,
+    let cgeom = if let Some(geom) = geom {
+        let ca = c.compile_into_spirv(
+            geom.src,
             shaderc::ShaderKind::Geometry,
-            geometry.file_name,
+            geom.file,
             "main",
-            Some(&options),
+            Some(&opt),
         )?;
-        print_debug_info(geometry, ShaderStageFlags::GEOMETRY, &ca);
+        print_debug_info(geom, ShaderStageFlags::GEOMETRY, &ca);
         Some(ca)
     } else {
         None
     };
-    let tess_control_compile_result = if let Some(tess_control) = tess_control {
-        let ca = compiler.compile_into_spirv(
-            tess_control.source,
+    let ctessctl = if let Some(tessctl) = tessctl {
+        let ca = c.compile_into_spirv(
+            tessctl.src,
             shaderc::ShaderKind::TessControl,
-            tess_control.file_name,
+            tessctl.file,
             "main",
-            Some(&options),
+            Some(&opt),
         )?;
-        print_debug_info(tess_control, ShaderStageFlags::TESS_CONTROL, &ca);
+        print_debug_info(tessctl, ShaderStageFlags::TESS_CONTROL, &ca);
         Some(ca)
     } else {
         None
     };
-    let tess_eval_compile_result = if let Some(tess_eval) = tess_eval {
-        let ca = compiler.compile_into_spirv(
-            tess_eval.source,
+    let ctesseval = if let Some(tesseval) = tesseval {
+        let ca = c.compile_into_spirv(
+            tesseval.src,
             shaderc::ShaderKind::TessEvaluation,
-            tess_eval.file_name,
+            tesseval.file,
             "main",
-            Some(&options),
+            Some(&opt),
         )?;
-        print_debug_info(tess_eval, ShaderStageFlags::TESS_EVAL, &ca);
+        print_debug_info(tesseval, ShaderStageFlags::TESS_EVAL, &ca);
         Some(ca)
     } else {
         None
     };
 
     Ok(SpirvModules {
-        vs: Some(vertex_compile_result.as_binary().into()),
-        fs: Some(fragment_compile_result.as_binary().into()),
-        gs: geometry_compile_result.map(|gs| gs.as_binary().into()),
-        tcs: tess_control_compile_result.map(|tcs| tcs.as_binary().into()),
-        tes: tess_eval_compile_result.map(|tes| tes.as_binary().into()),
-        cs: None,
+        vert: Some(cvert.as_binary().into()),
+        frag: Some(cfrag.as_binary().into()),
+        geom: cgeom.map(|gs| gs.as_binary().into()),
+        tessctl: ctessctl.map(|tcs| tcs.as_binary().into()),
+        tesseval: ctesseval.map(|tes| tes.as_binary().into()),
+        comp: None,
     })
 }
 
@@ -154,22 +155,22 @@ fn as_bytes(buf: &[u32]) -> &[u8] {
 
 //--------------------------------------------------------------------------------------------------
 pub struct ShaderModules<'rcx> {
-    pub vs: Option<renderer::ShaderModule<'rcx, OpenGlBackend>>,
-    pub fs: Option<renderer::ShaderModule<'rcx, OpenGlBackend>>,
-    pub gs: Option<renderer::ShaderModule<'rcx, OpenGlBackend>>,
-    pub tes: Option<renderer::ShaderModule<'rcx, OpenGlBackend>>,
-    pub tcs: Option<renderer::ShaderModule<'rcx, OpenGlBackend>>,
-    pub cs: Option<renderer::ShaderModule<'rcx, OpenGlBackend>>,
+    pub vert: Option<renderer::ShaderModule<'rcx, OpenGlBackend>>,
+    pub frag: Option<renderer::ShaderModule<'rcx, OpenGlBackend>>,
+    pub geom: Option<renderer::ShaderModule<'rcx, OpenGlBackend>>,
+    pub tesseval: Option<renderer::ShaderModule<'rcx, OpenGlBackend>>,
+    pub tessctl: Option<renderer::ShaderModule<'rcx, OpenGlBackend>>,
+    pub comp: Option<renderer::ShaderModule<'rcx, OpenGlBackend>>,
 }
 
 pub struct PipelineDescriptionFile<'rcx> {
-    pub source: String,
+    pub src: String,
     pub path: Option<PathBuf>,
-    pub preprocessed: PreprocessResult,
-    pub descriptor_map: DescriptorMap,
-    pub separate_sources: SeparateShaderSources,
+    pub pp: PreprocessResult,
+    pub desc_map: DescriptorMap,
+    pub sep: SeparateShaderSources,
     pub modules: ShaderModules<'rcx>,
-    pub vertex_input_bindings: Vec<VertexInputBindingDescription>,
+    pub vtx_bindings: Vec<VertexInputBindingDescription>,
 }
 
 fn mappings_to_descriptor_map(mappings: &[ParsedDescriptorMapping]) -> DescriptorMap {
@@ -181,21 +182,21 @@ fn mappings_to_descriptor_map(mappings: &[ParsedDescriptorMapping]) -> Descripto
             sets.resize(set + 1, Vec::new());
         }
         let set = &mut sets[set];
-        let max_binding_rel = (m.gl_binding_range.1 - m.gl_binding_range.0) as usize;
+        let max_binding_rel = (m.gl_range.1 - m.gl_range.0) as usize;
         let max_binding = m.binding_base as usize + max_binding_rel;
         if max_binding >= set.len() {
             set.resize(
                 max_binding + 1,
-                BindingLocation {
+                FlatBinding {
                     space: BindingSpace::Empty,
                     location: 0,
                 },
             );
         }
         for i in 0..=max_binding_rel {
-            let ii = m.gl_binding_range.0 + i as u32;
-            set[m.binding_base as usize + i] = BindingLocation {
-                space: m.gl_binding_space,
+            let ii = m.gl_range.0 + i as u32;
+            set[m.binding_base as usize + i] = FlatBinding {
+                space: m.gl_space,
                 location: ii,
             };
         }
@@ -207,145 +208,75 @@ fn mappings_to_descriptor_map(mappings: &[ParsedDescriptorMapping]) -> Descripto
 impl<'rcx> PipelineDescriptionFile<'rcx> {
     pub fn load<P: AsRef<Path>>(
         arena: &'rcx Arena<OpenGlBackend>,
-        file_path: P,
+        path: P,
     ) -> Result<PipelineDescriptionFile<'rcx>, Box<Error>> {
-        let mut source = String::new();
-        File::open(file_path.as_ref())?.read_to_string(&mut source)?;
+        let mut src = String::new();
+        File::open(path.as_ref())?.read_to_string(&mut src)?;
 
-        let preprocessed =
-            preprocess_pipeline_description_file(&source, Some(file_path.as_ref()), &[])?;
-        let version = preprocessed.version.unwrap_or_else(|| {
+        let pp = preprocess_pipeline_description_file(&src, Some(path.as_ref()), &[])?;
+        let version = pp.version.unwrap_or_else(|| {
             warn!(
                 "({:?}) no GLSL version specified, defaulting to 3.30",
-                file_path.as_ref()
+                path.as_ref()
             );
             330
         });
-        let separate_sources = SeparateShaderSources::from_combined_source(
-            &preprocessed.preprocessed_source,
-            version,
-            preprocessed.stages,
-            &[],
-        );
+        let sep = SeparateShaderSources::from_combined_source(&pp.srcpp, version, pp.stages, &[]);
 
-        let descriptor_map = mappings_to_descriptor_map(&preprocessed.descriptor_map);
+        let desc_map = mappings_to_descriptor_map(&pp.desc_map);
 
         let modules = {
-            let file_path_str = file_path.as_ref().to_str().unwrap();
-            let vertex_src = separate_sources
-                .vertex
+            let path_str = path.as_ref().to_str().unwrap();
+            let vert = sep
+                .vert
                 .as_ref()
                 .ok_or_else(|| "no vertex source".to_owned())?;
-            let fragment_src = separate_sources
-                .fragment
+            let frag = sep
+                .frag
                 .as_ref()
-                .ok_or_else(|| "no vertex source".to_owned())?;
-            let geometry_src = separate_sources.geometry.as_ref();
-            let tess_control_src = separate_sources.tess_control.as_ref();
-            let tess_eval_src = separate_sources.tess_eval.as_ref();
+                .ok_or_else(|| "no fragment source".to_owned())?;
+            let geom = sep.geom.as_ref();
+            let tessctl = sep.tessctl.as_ref();
+            let tesseval = sep.tesseval.as_ref();
 
             let spirv = compile_glsl_to_spirv(
                 version,
-                SourceWithFileName::new(vertex_src, file_path_str),
-                SourceWithFileName::new(fragment_src, file_path_str),
-                geometry_src.map(|s| SourceWithFileName::new(s, file_path_str)),
-                tess_control_src.map(|s| SourceWithFileName::new(s, file_path_str)),
-                tess_eval_src.map(|s| SourceWithFileName::new(s, file_path_str)),
+                SourceWithFileName::new(vert, path_str),
+                SourceWithFileName::new(frag, path_str),
+                geom.map(|s| SourceWithFileName::new(s, path_str)),
+                tessctl.map(|s| SourceWithFileName::new(s, path_str)),
+                tesseval.map(|s| SourceWithFileName::new(s, path_str)),
             )?;
 
             // create shaders
             ShaderModules {
-                vs: spirv.vs.as_ref().map(|data| {
+                vert: spirv.vert.as_ref().map(|data| {
                     arena.create_shader_module(as_bytes(data), ShaderStageFlags::VERTEX)
                 }),
-                fs: spirv.fs.as_ref().map(|data| {
+                frag: spirv.frag.as_ref().map(|data| {
                     arena.create_shader_module(as_bytes(data), ShaderStageFlags::FRAGMENT)
                 }),
-                gs: spirv.gs.as_ref().map(|data| {
+                geom: spirv.geom.as_ref().map(|data| {
                     arena.create_shader_module(as_bytes(data), ShaderStageFlags::GEOMETRY)
                 }),
-                tcs: spirv.tcs.as_ref().map(|data| {
+                tessctl: spirv.tessctl.as_ref().map(|data| {
                     arena.create_shader_module(as_bytes(data), ShaderStageFlags::TESS_CONTROL)
                 }),
-                tes: spirv.tes.as_ref().map(|data| {
+                tesseval: spirv.tesseval.as_ref().map(|data| {
                     arena.create_shader_module(as_bytes(data), ShaderStageFlags::TESS_EVAL)
                 }),
-                cs: None,
+                comp: None,
             }
         };
 
         Ok(PipelineDescriptionFile {
-            source,
-            path: Some(file_path.as_ref().to_path_buf()),
-            preprocessed,
-            separate_sources,
-            descriptor_map,
+            src,
+            path: Some(path.as_ref().to_path_buf()),
+            pp,
+            sep,
+            desc_map,
             modules,
-            vertex_input_bindings: Vec::new(),
+            vtx_bindings: Vec::new(),
         })
     }
-
-    pub fn with_vertex_input_bindings(
-        &mut self,
-        bindings: &[VertexInputBindingDescription],
-    ) -> &mut Self {
-        self.vertex_input_bindings = bindings.to_vec();
-        self
-    }
 }
-
-/*//--------------------------------------------------------------------------------------------------
-impl<'a> From<&'a PipelineDescriptionFile> for GraphicsPipelineCreateInfo<'a, OpenGlBackend>
-{
-    fn from(p: &'a PipelineDescriptionFile) -> Self {
-
-        let shader_stages = GraphicsPipelineShaderStages {
-            vertex: p.modules.vs.unwrap(),
-            geometry: p.modules.gs,
-            fragment: p.modules.fs,
-            tess_eval: p.modules.tes,
-            tess_control: p.modules.tcs,
-        };
-
-        GraphicsPipelineCreateInfo {
-            shader_stages,
-            vertex_input_state: PipelineVertexInputStateCreateInfo {
-                bindings: p.vertex_input_bindings.as_slice(),
-                attributes: p.preprocessed.vertex_attributes.as_ref().unwrap().as_slice()
-            },
-            viewport_state: PipelineViewportStateCreateInfo {
-                viewports_scissors: &[],
-            },
-            rasterization_state: PipelineRasterizationStateCreateInfo {
-                depth_clamp_enable: false,
-                rasterizer_discard_enable: false,
-                polygon_mode: PolygonMode::Fill,
-                cull_mode: CullModeFlags::NONE,
-                depth_bias: DepthBias::Disabled,
-                front_face: FrontFace::Clockwise,
-                line_width: 1.0.into()
-            },
-            multisample_state: PipelineMultisampleStateCreateInfo {
-                rasterization_samples: 0,
-                sample_shading: SampleShading::Disabled,
-                alpha_to_coverage_enable: false,
-                alpha_to_one_enable: false
-            },
-            depth_stencil_state: PipelineDepthStencilStateCreateInfo {
-                depth_test_enable: true,
-                depth_write_enable: true,
-                depth_compare_op: CompareOp::Less,
-                depth_bounds_test: DepthBoundTest::Disabled,
-                stencil_test: StencilTest::Disabled
-            },
-            input_assembly_state: (),
-            color_blend_state: (),
-            dynamic_state: (),
-            pipeline_layout: (),
-            attachment_layout: (),
-            additional: ()
-        }
-
-    }
-}
-*/

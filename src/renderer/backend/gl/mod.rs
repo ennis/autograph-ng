@@ -29,10 +29,11 @@ mod state;
 // synchronization primitives
 mod sync;
 // upload buffers
-mod command;
+mod cmd;
 mod descriptor;
 mod framebuffer;
 mod resource;
+mod spirv;
 mod upload;
 mod window;
 
@@ -47,9 +48,9 @@ use smallvec::SmallVec;
 
 use self::api as gl;
 use self::api::types::*;
-use self::command::ExecuteContext;
+use self::cmd::ExecuteCtxt;
 use crate::renderer;
-use crate::renderer::command_buffer::*;
+use crate::renderer::cmd::*;
 use crate::renderer::util;
 use crate::renderer::{
     AliasScope, AttachmentDescription, Descriptor, DescriptorSetLayoutBinding, DescriptorType,
@@ -137,24 +138,24 @@ impl renderer::SwapchainBackend for Swapchain {
 }
 
 pub struct OpenGlBackend {
-    resources: Mutex<Resources>,
+    rsrc: Mutex<Resources>,
     timeline: Mutex<Timeline>,
-    frame_number: Mutex<u64>, // replace with AtomicU64 once stabilized
+    frame_num: Mutex<u64>, // replace with AtomicU64 once stabilized
     state_cache: Mutex<StateCache>,
     sampler_cache: Mutex<SamplerCache>,
-    impl_params: ImplementationParameters,
+    limits: ImplementationParameters,
     window: GlWindow,
-    default_swapchain: Swapchain,
+    def_swapchain: Swapchain,
     max_frames_in_flight: u32,
 }
 
 impl OpenGlBackend {
-    pub fn with_gl_window(cfg: &Config, window: GlWindow) -> OpenGlBackend {
+    pub fn with_gl_window(cfg: &Config, w: GlWindow) -> OpenGlBackend {
         // Make current the OpenGL context associated to the window
         // and load function pointers
-        unsafe { window.make_current() }.unwrap();
+        unsafe { w.make_current() }.unwrap();
         gl::load_with(|symbol| {
-            let ptr = window.get_proc_address(symbol) as *const _;
+            let ptr = w.get_proc_address(symbol) as *const _;
             //debug!("getProcAddress {} -> {:?}", symbol, ptr);
             ptr
         });
@@ -191,19 +192,19 @@ impl OpenGlBackend {
 
         let timeline = Timeline::new(0);
 
-        let impl_params = ImplementationParameters::populate();
-        let state_cache = StateCache::new(&impl_params);
+        let limits = ImplementationParameters::populate();
+        let state_cache = StateCache::new(&limits);
 
         OpenGlBackend {
-            resources: Mutex::new(Resources::new(upload_buffer_size as usize)),
+            rsrc: Mutex::new(Resources::new(upload_buffer_size as usize)),
             timeline: Mutex::new(timeline),
-            frame_number: Mutex::new(1),
-            default_swapchain: Swapchain {
-                size: Mutex::new(window.get_inner_size().unwrap().into()),
+            frame_num: Mutex::new(1),
+            def_swapchain: Swapchain {
+                size: Mutex::new(w.get_inner_size().unwrap().into()),
             },
-            window,
+            window: w,
             max_frames_in_flight,
-            impl_params,
+            limits,
             state_cache: Mutex::new(state_cache),
             sampler_cache: Mutex::new(SamplerCache::new()),
         }
@@ -240,11 +241,11 @@ impl RendererBackend for OpenGlBackend {
     //type AttachmentLayoutHandle = AttachmentLayoutHandle;
 
     fn create_arena(&self) -> Self::Arena {
-        self.resources.lock().unwrap().create_arena()
+        self.rsrc.lock().unwrap().create_arena()
     }
 
     fn drop_arena(&self, arena: Self::Arena) {
-        self.resources.lock().unwrap().drop_arena(arena)
+        self.rsrc.lock().unwrap().drop_arena(arena)
     }
 
     //----------------------------------------------------------------------------------------------
@@ -253,31 +254,31 @@ impl RendererBackend for OpenGlBackend {
     }
 
     fn default_swapchain<'rcx>(&'rcx self) -> Option<&'rcx Self::Swapchain> {
-        Some(&self.default_swapchain)
+        Some(&self.def_swapchain)
     }
 
     //----------------------------------------------------------------------------------------------
     fn create_immutable_image<'a>(
         &self,
         arena: &'a Self::Arena,
-        format: Format,
-        dimensions: Dimensions,
-        mipcount: MipmapsCount,
+        fmt: Format,
+        dims: Dimensions,
+        mips: MipmapsCount,
         samples: u32,
         _usage: ImageUsageFlags,
         data: &[u8],
     ) -> &'a Self::Image {
         // initial data specified, allocate a texture
-        let raw = RawImage::new_texture(format, &dimensions, mipcount, samples);
+        let raw = RawImage::new_texture(fmt, &dims, mips, samples);
 
         unsafe {
             upload_image_region(
                 raw.target,
                 raw.obj,
-                format,
+                fmt,
                 0,
                 (0, 0, 0),
-                dimensions.width_height_depth(),
+                dims.width_height_depth(),
                 data,
             );
         }
@@ -295,16 +296,16 @@ impl RendererBackend for OpenGlBackend {
         &self,
         arena: &'a Self::Arena,
         scope: AliasScope,
-        format: Format,
-        dimensions: Dimensions,
+        fmt: Format,
+        dims: Dimensions,
         mipcount: MipmapsCount,
         samples: u32,
         usage: ImageUsageFlags,
     ) -> &'a Self::Image {
-        self.resources
+        self.rsrc
             .lock()
             .unwrap()
-            .alloc_aliased_image(arena, scope, format, dimensions, mipcount, samples, usage)
+            .alloc_aliased_image(arena, scope, fmt, dims, mipcount, samples, usage)
     }
 
     //----------------------------------------------------------------------------------------------
@@ -313,12 +314,12 @@ impl RendererBackend for OpenGlBackend {
     fn create_framebuffer<'a>(
         &self,
         arena: &'a Self::Arena,
-        color_attachments: &[renderer::Image<'a, Self>],
-        depth_stencil_attachment: Option<renderer::Image<'a, Self>>,
+        color_att: &[renderer::Image<'a, Self>],
+        depth_stencil_att: Option<renderer::Image<'a, Self>>,
     ) -> &'a Self::Framebuffer {
         arena
             .framebuffers
-            .alloc(Framebuffer::new(color_attachments, depth_stencil_attachment).unwrap())
+            .alloc(Framebuffer::new(color_att, depth_stencil_att).unwrap())
     }
 
     //----------------------------------------------------------------------------------------------
@@ -332,7 +333,7 @@ impl RendererBackend for OpenGlBackend {
             // if the buffer is small enough, allocate through the upload buffer
             let (obj, offset) = arena
                 .upload_buffer
-                .write(data, self.impl_params.uniform_buffer_alignment)
+                .write(data, self.limits.uniform_buffer_alignment)
                 .unwrap();
             arena.buffers.alloc(Buffer {
                 obj,
@@ -370,8 +371,7 @@ impl RendererBackend for OpenGlBackend {
                 // FIXME clippy warning: data may be misaligned
                 ::std::slice::from_raw_parts(data.as_ptr() as *const u32, data.len() / 4)
             };
-            //let obj = create_shader_from_spirv(stage, data_u32)
-            //    .expect("failed to create shader from SPIR-V bytecode");
+
             ShaderModule {
                 obj: 0,
                 spirv: data_u32.to_vec().into(),
@@ -426,31 +426,26 @@ impl RendererBackend for OpenGlBackend {
 
     //----------------------------------------------------------------------------------------------
     fn submit_frame<'a>(&self, frame: &[Command<'a, Self>]) {
-        let mut resources = self.resources.lock().unwrap();
-        let mut state_cache = self.state_cache.lock().unwrap();
+        let mut rsrc = self.rsrc.lock().unwrap();
+        let mut scache = self.state_cache.lock().unwrap();
 
         // execute commands
         {
-            let mut execute_context = ExecuteContext::new(
-                &mut resources,
-                &mut state_cache,
-                &self.window,
-                &self.impl_params,
-            );
+            let mut ectxt = ExecuteCtxt::new(&mut rsrc, &mut scache, &self.window, &self.limits);
             for cmd in frame.iter() {
-                execute_context.execute_command(cmd);
+                ectxt.execute_command(cmd);
             }
         }
 
-        let mut frame_number = self.frame_number.lock().unwrap();
+        let mut fnum = self.frame_num.lock().unwrap();
         let mut timeline = self.timeline.lock().unwrap();
-        timeline.signal(*frame_number);
+        timeline.signal(*fnum);
 
         // wait for previous frames before starting a new one
         // if max_frames_in_flight is zero, then will wait on the previously signalled point.
-        if *frame_number > u64::from(self.max_frames_in_flight) {
+        if *fnum > u64::from(self.max_frames_in_flight) {
             let timeout = !timeline.client_sync(
-                *frame_number - u64::from(self.max_frames_in_flight),
+                *fnum - u64::from(self.max_frames_in_flight),
                 Timeout::Nanoseconds(1_000_000),
             );
             if timeout {
@@ -458,8 +453,8 @@ impl RendererBackend for OpenGlBackend {
             }
         }
 
-        *frame_number += 1;
+        *fnum += 1;
         // update default framebuffer size
-        *self.default_swapchain.size.lock().unwrap() = self.window.get_inner_size().unwrap().into();
+        *self.def_swapchain.size.lock().unwrap() = self.window.get_inner_size().unwrap().into();
     }
 }

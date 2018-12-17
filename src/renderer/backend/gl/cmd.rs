@@ -15,7 +15,7 @@ use crate::renderer::{
 use glutin::GlWindow;
 
 // resources
-pub struct ExecuteContext<'a, 'rcx> {
+pub struct ExecuteCtxt<'a, 'rcx> {
     resources: &'a mut Resources,
     state_cache: &'a mut StateCache,
     window: &'a GlWindow,
@@ -23,14 +23,14 @@ pub struct ExecuteContext<'a, 'rcx> {
     current_pipeline: Option<&'rcx GraphicsPipeline>,
 }
 
-impl<'a, 'rcx> ExecuteContext<'a, 'rcx> {
+impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
     pub fn new(
         resources: &'a mut Resources,
         state_cache: &'a mut StateCache,
         window: &'a GlWindow,
         impl_params: &'a ImplementationParameters,
-    ) -> ExecuteContext<'a, 'rcx> {
-        ExecuteContext {
+    ) -> ExecuteCtxt<'a, 'rcx> {
+        ExecuteCtxt {
             resources,
             state_cache,
             window,

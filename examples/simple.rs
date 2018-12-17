@@ -11,7 +11,7 @@ use gfx2::renderer::backend::gl as gl_backend;
 use gfx2::renderer::*;
 
 type Backend = gl_backend::OpenGlBackend;
-type Buffer<'a, T: BufferData + ?Sized> = renderer::Buffer<'a, Backend, T>;
+type Buffer<'a, T> = renderer::Buffer<'a, Backend, T>;
 type BufferTypeless<'a> = renderer::BufferTypeless<'a, Backend>;
 type Image<'a> = renderer::Image<'a, Backend>;
 type Framebuffer<'a> = renderer::Framebuffer<'a, Backend>;
@@ -154,15 +154,15 @@ struct PipelineAndLayout<'a> {
 
 fn create_pipelines<'rcx, 'a>(arena: &'a Arena<'rcx, Backend>) -> PipelineAndLayout<'a> {
     // load pipeline file
-    let pp = gl_backend::PipelineDescriptionFile::load(arena, "tests/data/shaders/deferred.glsl")
+    let file = gl_backend::PipelineDescriptionFile::load(arena, "tests/data/shaders/deferred.glsl")
         .unwrap();
 
     let shader_stages = GraphicsPipelineShaderStages {
-        vertex: pp.modules.vs.unwrap(),
-        geometry: pp.modules.gs,
-        fragment: pp.modules.fs,
-        tess_eval: pp.modules.tes,
-        tess_control: pp.modules.tcs,
+        vertex: file.modules.vert.unwrap(),
+        geometry: file.modules.geom,
+        fragment: file.modules.frag,
+        tess_eval: file.modules.tesseval,
+        tess_control: file.modules.tessctl,
     };
 
     let vertex_input_state = PipelineVertexInputStateCreateInfo {
@@ -171,12 +171,7 @@ fn create_pipelines<'rcx, 'a>(arena: &'a Arena<'rcx, Backend>) -> PipelineAndLay
             stride: 44,
             input_rate: VertexInputRate::Vertex,
         }],
-        attributes: pp
-            .preprocessed
-            .vertex_attributes
-            .as_ref()
-            .unwrap()
-            .as_slice(),
+        attributes: file.pp.attribs.as_ref().unwrap().as_slice(),
     };
 
     let viewport_state = PipelineViewportStateCreateInfo {
@@ -268,8 +263,8 @@ fn create_pipelines<'rcx, 'a>(arena: &'a Arena<'rcx, Backend>) -> PipelineAndLay
     };
 
     let additional = gl_backend::GraphicsPipelineCreateInfoAdditional {
-        descriptor_map: pp.descriptor_map.clone(),
-        static_samplers: pp.preprocessed.static_samplers.clone(),
+        descriptor_map: file.desc_map.clone(),
+        static_samplers: file.pp.samplers.clone(),
     };
 
     let gci = GraphicsPipelineCreateInfo {
