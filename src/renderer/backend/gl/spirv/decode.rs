@@ -8,293 +8,64 @@
 // according to those terms.
 use num_traits::FromPrimitive;
 use spirv_headers::*;
+use std::marker::PhantomData;
+use super::{inst::*, Module, ParseError, IPtr};
 
-/// Parses a SPIR-V document.
-pub fn parse_spirv(data: &[u8]) -> Result<Module, ParseError> {
-    if data.len() < 20 {
-        return Err(ParseError::MissingHeader);
-    }
-
-    // we need to determine whether we are in big endian order or little endian order depending
-    // on the magic number at the start of the file
-    let data = if data[0] == 0x07 && data[1] == 0x23 && data[2] == 0x02 && data[3] == 0x03 {
-        // big endian
-        data.chunks(4)
-            .map(|c| {
-                ((c[0] as u32) << 24) | ((c[1] as u32) << 16) | ((c[2] as u32) << 8) | c[3] as u32
-            })
-            .collect::<Vec<_>>()
-    } else if data[3] == 0x07 && data[2] == 0x23 && data[1] == 0x02 && data[0] == 0x03 {
-        // little endian
-        data.chunks(4)
-            .map(|c| {
-                ((c[3] as u32) << 24) | ((c[2] as u32) << 16) | ((c[1] as u32) << 8) | c[0] as u32
-            })
-            .collect::<Vec<_>>()
-    } else {
-        return Err(ParseError::MissingHeader);
-    };
-
-    parse_spirv_u32s(&data)
-}
-
-/// Parses a SPIR-V document from a list of u32s.
-///
-/// Endianess has already been handled.
-pub fn parse_spirv_u32s(i: &[u32]) -> Result<Module, ParseError> {
-    if i.len() < 5 {
-        return Err(ParseError::MissingHeader);
-    }
-
-    if i[0] != 0x07230203 {
-        return Err(ParseError::WrongHeader);
-    }
-
-    let version = (
-        ((i[1] & 0x00ff0000) >> 16) as u8,
-        ((i[1] & 0x0000ff00) >> 8) as u8,
-    );
-
-    Ok(Module {
-        version: version,
-        bound: i[3],
-        data: i.to_vec(),
-    })
-}
-
-/// Error that can happen when parsing.
-#[derive(Debug, Clone)]
-pub enum ParseError {
-    MissingHeader,
-    WrongHeader,
-    IncompleteInstruction,
-    UnknownConstant(&'static str, u32),
-}
-
-#[derive(Debug, Clone)]
-pub struct Module {
-    pub data: Vec<u32>,
-    pub version: (u8, u8),
-    pub bound: u32,
-}
 
 impl Module {
-    pub fn raw_instructions(&self) -> impl Iterator<Item = RawInstruction> {
+    pub fn raw_instructions<'a>(&'a self) -> impl Iterator<Item = (IPtr<'a>, RawInstruction)> {
         struct RawInstIter<'m> {
             i: &'m [u32],
+            ptr: usize,
         }
 
         impl<'m> Iterator for RawInstIter<'m> {
-            type Item = RawInstruction<'m>;
+            type Item = (IPtr<'m>, RawInstruction<'m>);
 
-            fn next(&mut self) -> Option<RawInstruction<'m>> {
+            fn next(&mut self) -> Option<(IPtr<'m>, RawInstruction<'m>)> {
                 if self.i.len() >= 1 {
-                    let (instruction, rest) = parse_raw_instruction(self.i).unwrap();
+                    let (inst, rest) = parse_raw_instruction(self.i).unwrap();
+                    let ptr = self.ptr;
                     self.i = rest;
-                    Some(instruction)
+                    self.ptr += inst.word_count as usize;
+                    Some((IPtr(ptr, PhantomData), inst))
                 } else {
                     None
                 }
             }
         }
 
-        RawInstIter { i: &self.data }
+        RawInstIter {
+            i: &self.data[5..],
+            ptr: 0,
+        }
     }
 
-    pub fn filter_opcodes<'a, T: DecodedInstruction<'a>>(&'a self) -> impl Iterator<Item = T> + 'a {
-        self.raw_instructions().filter_map(|inst| {
+    pub fn filter_instructions<'a, T: DecodedInstruction<'a>>(
+        &'a self,
+    ) -> impl Iterator<Item = (IPtr<'a>, T)> + 'a {
+        self.raw_instructions().filter_map(|(iptr, inst)| {
             if inst.opcode == T::OPCODE as u16 {
-                T::decode(inst.operands).into()
+                Some((iptr, T::decode(inst.operands).into()))
             } else {
                 None
             }
         })
     }
 
-    pub fn decoded_instructions(&self) -> impl Iterator<Item = Instruction> {
-        self.raw_instructions().map(|inst| inst.decode())
+    pub fn decoded_instructions(&self) -> impl Iterator<Item = (IPtr, Instruction)> {
+        self.raw_instructions()
+            .map(|(iptr, inst)| (iptr, inst.decode()))
     }
+
 }
 
 pub trait DecodedInstruction<'m>: 'm {
     const OPCODE: Op;
     fn decode<'a: 'm>(operands: &'a [u32]) -> Self;
-}
-
-#[derive(Debug, Clone)]
-pub struct IUnknownInst(pub u16, pub Vec<u32>);
-
-#[derive(Debug, Clone)]
-pub struct IName {
-    pub target_id: u32,
-    pub name: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct IMemberName {
-    pub target_id: u32,
-    pub member: u32,
-    pub name: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct IExtInstImport {
-    pub result_id: u32,
-    pub name: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct IMemoryModel(pub AddressingModel, pub MemoryModel);
-
-#[derive(Debug, Clone)]
-pub struct IEntryPoint<'m> {
-    pub execution: ExecutionModel,
-    pub id: u32,
-    pub name: String,
-    pub interface: &'m [u32],
-}
-
-#[derive(Debug, Clone)]
-pub struct IExecutionMode<'m> {
-    pub target_id: u32,
-    pub mode: ExecutionMode,
-    pub optional_literals: &'m [u32],
-}
-
-#[derive(Debug, Clone)]
-pub struct ICapability(pub Capability);
-
-#[derive(Debug, Clone)]
-pub struct ITypeVoid {
-    pub result_id: u32,
-}
-
-#[derive(Debug, Clone)]
-pub struct ITypeBool {
-    pub result_id: u32,
-}
-
-#[derive(Debug, Clone)]
-pub struct ITypeInt {
-    pub result_id: u32,
-    pub width: u32,
-    pub signedness: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct ITypeFloat {
-    pub result_id: u32,
-    pub width: u32,
-}
-
-#[derive(Debug, Clone)]
-pub struct ITypeVector {
-    pub result_id: u32,
-    pub component_id: u32,
-    pub count: u32,
-}
-
-#[derive(Debug, Clone)]
-pub struct ITypeMatrix {
-    pub result_id: u32,
-    pub column_type_id: u32,
-    pub column_count: u32,
-}
-
-#[derive(Debug, Clone)]
-pub struct ITypeImage {
-    pub result_id: u32,
-    pub sampled_type_id: u32,
-    pub dim: Dim,
-    pub depth: Option<bool>,
-    pub arrayed: bool,
-    pub ms: bool,
-    pub sampled: Option<bool>,
-    pub format: ImageFormat,
-    pub access: Option<AccessQualifier>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ITypeSampler {
-    pub result_id: u32,
-}
-
-#[derive(Debug, Clone)]
-pub struct ITypeSampledImage {
-    pub result_id: u32,
-    pub image_type_id: u32,
-}
-
-#[derive(Debug, Clone)]
-pub struct ITypeArray {
-    pub result_id: u32,
-    pub type_id: u32,
-    pub length_id: u32,
-}
-
-#[derive(Debug, Clone)]
-pub struct ITypeRuntimeArray {
-    pub result_id: u32,
-    pub type_id: u32,
-}
-
-#[derive(Debug, Clone)]
-pub struct ITypeStruct<'m> {
-    pub result_id: u32,
-    pub member_types: &'m [u32],
-}
-
-#[derive(Debug, Clone)]
-pub struct ITypeOpaque {
-    pub result_id: u32,
-    pub name: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct ITypePointer {
-    pub result_id: u32,
-    pub storage_class: StorageClass,
-    pub type_id: u32,
-}
-
-#[derive(Debug, Clone)]
-pub struct IConstant<'m> {
-    pub result_type_id: u32,
-    pub result_id: u32,
-    pub data: &'m [u32],
-}
-
-#[derive(Debug, Clone)]
-pub struct IVariable {
-    pub result_type_id: u32,
-    pub result_id: u32,
-    pub storage_class: StorageClass,
-    pub initializer: Option<u32>,
-}
-
-#[derive(Debug, Clone)]
-pub struct IDecorate<'m> {
-    pub target_id: u32,
-    pub decoration: Decoration,
-    pub params: &'m [u32],
-}
-
-#[derive(Debug, Clone)]
-pub struct IMemberDecorate<'m> {
-    pub target_id: u32,
-    pub member: u32,
-    pub decoration: Decoration,
-    pub params: &'m [u32],
-}
-
-#[derive(Debug, Clone)]
-pub struct ILabel {
-    pub result_id: u32,
-}
-
-#[derive(Debug, Clone)]
-pub struct IBranch {
-    pub result_id: u32,
+    fn encode(&self, out_instructions: &mut Vec<u32>) {
+        unimplemented!()
+    }
 }
 
 //impl DecodedInstruction for INop { const OPCODE: u16 = 0; }
@@ -545,6 +316,17 @@ impl<'m> DecodedInstruction<'m> for IDecorate<'m> {
             params: &operands[2..],
         }
     }
+
+    fn encode(&self, out: &mut Vec<u32>) {
+        encode_instruction(
+            out,
+            Op::Decorate,
+            [self.target_id, self.decoration as u32]
+                .iter()
+                .cloned()
+                .chain(self.params.iter().cloned()),
+        );
+    }
 }
 impl<'m> DecodedInstruction<'m> for IMemberDecorate<'m> {
     const OPCODE: Op = Op::MemberDecorate;
@@ -582,48 +364,6 @@ impl DecodedInstruction for IReturn {
     }
 }*/
 
-#[derive(Debug, Clone)]
-pub enum Instruction<'m> {
-    Unknown(IUnknownInst),
-    Nop,
-    Name(IName),
-    MemberName(IMemberName),
-    ExtInstImport(IExtInstImport),
-    MemoryModel(IMemoryModel),
-    EntryPoint(IEntryPoint<'m>),
-    ExecutionMode(IExecutionMode<'m>),
-    Capability(ICapability),
-    TypeVoid(ITypeVoid),
-    TypeBool(ITypeBool),
-    TypeInt(ITypeInt),
-    TypeFloat(ITypeFloat),
-    TypeVector(ITypeVector),
-    TypeMatrix(ITypeMatrix),
-    TypeImage(ITypeImage),
-    TypeSampler(ITypeSampler),
-    TypeSampledImage(ITypeSampledImage),
-    TypeArray(ITypeArray),
-    TypeRuntimeArray(ITypeRuntimeArray),
-    TypeStruct(ITypeStruct<'m>),
-    TypeOpaque(ITypeOpaque),
-    TypePointer(ITypePointer),
-    Constant(IConstant<'m>),
-    FunctionEnd,
-    Variable(IVariable),
-    Decorate(IDecorate<'m>),
-    MemberDecorate(IMemberDecorate<'m>),
-    Label(ILabel),
-    Branch(IBranch),
-    Kill,
-    Return,
-}
-
-pub struct RawInstruction<'m> {
-    pub opcode: u16,
-    pub word_count: u16,
-    pub operands: &'m [u32],
-}
-
 impl<'m> RawInstruction<'m> {
     pub fn decode(&self) -> Instruction<'m> {
         decode_instruction(self.opcode, self.operands).unwrap()
@@ -632,7 +372,6 @@ impl<'m> RawInstruction<'m> {
 
 fn parse_raw_instruction(i: &[u32]) -> Result<(RawInstruction, &[u32]), ParseError> {
     assert!(i.len() >= 1);
-
     let word_count = (i[0] >> 16) as usize;
     assert!(word_count >= 1);
     let opcode = (i[0] & 0xffff) as u16;
@@ -652,6 +391,14 @@ fn parse_raw_instruction(i: &[u32]) -> Result<(RawInstruction, &[u32]), ParseErr
 
 fn try_parse_constant<T: FromPrimitive>(constant: u32) -> Result<T, ParseError> {
     T::from_u32(constant).ok_or(ParseError::UnknownConstant("unknown", constant))
+}
+
+fn encode_instruction(out: &mut Vec<u32>, opcode: Op, operands: impl Iterator<Item = u32>) {
+    let sptr = out.len();
+    out.push(0);
+    out.extend(operands);
+    let eptr = out.len();
+    out[sptr] = (opcode as u32) | ((eptr - sptr) as u32) << 16;
 }
 
 fn decode_instruction(opcode: u16, operands: &[u32]) -> Result<Instruction, ParseError> {

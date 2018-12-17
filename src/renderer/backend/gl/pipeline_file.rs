@@ -202,7 +202,7 @@ fn mappings_to_descriptor_map(mappings: &[ParsedDescriptorMapping]) -> Descripto
         }
     }
 
-    DescriptorMap { sets }
+    DescriptorMap(sets)
 }
 
 impl<'rcx> PipelineDescriptionFile<'rcx> {

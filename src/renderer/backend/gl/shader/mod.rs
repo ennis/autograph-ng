@@ -9,11 +9,10 @@ use std::ptr;
 pub mod preprocessor;
 
 pub use self::preprocessor::*;
-use super::pipeline::{BindingSpace, FlatBinding};
+use super::pipeline::{BindingSpace, FlatBinding, DescriptorMap};
 use crate::renderer::backend::gl::api as gl;
 use crate::renderer::backend::gl::api::types::*;
-use crate::renderer::ShaderStageFlags;
-use spirv_cross::{glsl, spirv};
+use crate::renderer::{ShaderStageFlags, TypeDesc, PrimitiveType};
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Debug)]
@@ -123,15 +122,13 @@ pub fn create_specialized_spirv_shader(
         }
     }
 }
+
 /*
-#[derive(Clone, Debug)]
-pub struct DescriptorMap {
-    pub sets: Vec<Vec<FlatBinding>>,
-}
+pub struct DescriptorMap(Vec<Vec<FlatBinding>>);
 
 impl DescriptorMap {
     pub fn get_binding_location(&self, set: u32, binding: u32) -> Option<FlatBinding> {
-        self.sets.get(set as usize).and_then(|set| {
+        self.0.get(set as usize).and_then(|set| {
             set.get(binding as usize).and_then(|loc| {
                 if loc.space == BindingSpace::Empty {
                     None
@@ -141,14 +138,25 @@ impl DescriptorMap {
             })
         })
     }
+}*/
 
-    fn insert(&mut self, set: u32, binding: u32, new_binding: FlatBinding) {
+#[derive(Clone, Debug)]
+pub struct DescriptorMapBuilder {
+    sets: Vec<Vec<FlatBinding>>,
+    next_tex: u32,
+    next_img: u32,
+    next_ssbo: u32,
+    next_ubo: u32,
+}
+
+impl DescriptorMapBuilder {
+    fn insert(&mut self, set: u32, binding: u32, space: BindingSpace) -> FlatBinding {
         let set = set as usize;
         if set >= self.sets.len() {
             self.sets.resize(set + 1, Vec::new());
         }
 
-        let set = &mut sets[set];
+        let set = &mut self.sets[set];
         let binding = binding as usize;
         if binding >= set.len() {
             set.resize(
@@ -160,14 +168,39 @@ impl DescriptorMap {
             );
         }
 
-        set[binding] = new_binding;
+        if set[binding].space != BindingSpace::Empty {
+            set[binding]
+        } else {
+            let next = match space {
+                BindingSpace::UniformBuffer => &mut self.next_ubo,
+                BindingSpace::ShaderStorageBuffer => &mut self.next_ssbo,
+                BindingSpace::AtomicCounterBuffer => unimplemented!(),
+                BindingSpace::Texture => &mut self.next_tex,
+                BindingSpace::Image => &mut self.next_img,
+                _ => panic!("invalid binding space")
+            };
+            let new = FlatBinding {
+                space,
+                location: *next
+            };
+            *next += 1;
+            set[binding] = new;
+            new
+        }
     }
 
-    fn new() -> DescriptorMap {
-        DescriptorMap { sets: Vec::new() }
+    pub fn new() -> DescriptorMapBuilder {
+        DescriptorMapBuilder { sets: Vec::new(), next_tex: 0, next_img: 0, next_ssbo: 0, next_ubo: 0 }
     }
 }
 
+impl From<DescriptorMapBuilder> for DescriptorMap {
+    fn from(builder: DescriptorMapBuilder) -> Self {
+        DescriptorMap(builder.sets)
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
 
 /// Ported from gfx-rs
 ///
@@ -175,70 +208,56 @@ impl DescriptorMap {
 /// Does two things:
 /// * 'Flattens' descriptor sets and bindings into a single binding number
 /// * Builds image+sampler combinations (unimplemented)
-pub fn translate_vulkan_spirv(
+pub fn translate_spirv_to_gl_flavor(
     spv: &[u32],
     stage: ShaderStageFlags,
-    desc_map: &mut DescriptorMap
+    desc_map: &mut DescriptorMapBuilder,
 ) -> Vec<u32>
 {
-    let module = spirv::Module::from_words(spv);
-    // parse spirv
-    let mut ast = spirv::Ast::parse(&module).unwrap();
-    // translate into something that OpenGL can understand
-    let res = ast.get_shader_resources().unwrap();
-    remap_bindings(
-        &mut ast,
-        BindingSpace::UniformBuffer,
-        &res.uniform_buffers,
-        desc_map,
-    );
-    remap_bindings(
-        &mut ast,
-        BindingSpace::ShaderStorageBuffer,
-        &res.storage_buffers,
-        desc_map,
-    );
-    remap_bindings(&mut ast, BindingSpace::Image, &res.storage_images, desc_map);
-    remap_bindings(
-        &mut ast,
-        BindingSpace::Texture,
-        &res.sampled_images,
-        desc_map,
-    );
+    use spirv_headers::*;
+    use super::spirv;
 
+    let m = spirv::Module::from_words(spv).expect("failed to load SPIR-V module");
 
-}
+    {
+        // parse spirv
+        let a = spirv::Arenas::new();
+        let ast = spirv::Ast::new(&a, &m);
 
-fn translate_spirv(ast: &mut spirv::Ast<glsl::Target>, desc_map: &mut DescriptorMap) {
-    // flatten descriptor sets
-    // TODO samplers (harder)
-    // TODO atomic buffers
-}
+        for (iptr_v, v) in ast.variables() {
+            let has_block_deco = v.has_block_decoration().is_some();
+            let has_buffer_block_deco = v.has_buffer_block_decoration().is_some();
 
-fn remap_bindings(
-    ast: &mut spirv::Ast<glsl::Target>,
-    space: BindingSpace,
-    res: &[spirv::Resource],
-    desc_map: &mut DescriptorMap,
-) {
-    let mut flat_binding = 0;
-    for r in res.iter() {
-        // must have set and binding decorations
-        let set = ast
-            .get_decoration(r.id, spirv::Decoration::DescriptorSet)
-            .unwrap();
-        let binding = ast
-            .get_decoration(r.id, spirv::Decoration::Binding)
-            .unwrap();
-        desc_map.insert(
-            set,
-            binding,
-            FlatBinding::new(BindingSpace::UniformBuffer, flat_binding),
-        );
-        flat_binding += 1;
-        // remove set decoration, change binding
-        ast.unset_decoration(r.id, spirv::Decoration::DescriptorSet);
-        ast.set_decoration(r.id, spirv::Decoration::Binding, flat_binding);
+            let space = if v.storage == StorageClass::Uniform && has_block_deco {
+                BindingSpace::UniformBuffer
+            } else if (v.storage == StorageClass::Uniform && has_buffer_block_deco) || (v.storage == StorageClass::StorageBuffer) {
+                BindingSpace::ShaderStorageBuffer
+            } else if v.storage == StorageClass::UniformConstant {
+                if let &TypeDesc::Image(_, _) = v.ty {
+                    BindingSpace::Image
+                } else if let &TypeDesc::SampledImage(_, _) = v.ty {
+                    BindingSpace::Texture
+                } else {
+                    continue
+                }
+            } else {
+                continue
+            };
+
+            let (iptr_ds, ds) = v.descriptor_set_decoration().expect("expected descriptor set decoration");
+            let (iptr_b, binding) = v.binding_decoration().expect("expected binding decoration");
+            let new_binding = desc_map.insert(ds, binding, space);
+            m.remove_instruction(iptr_ds);
+            m.remove_instruction(iptr_b);
+            m.write_instruction(&spirv::IDecorate {
+                decoration: Decoration::Binding,
+                params: &[new_binding.location],
+                target_id: v.id
+            });
+        }
+        // drop AST
     }
+
+    // apply modifications
+    m.into_vec_and_apply_edits()
 }
-*/

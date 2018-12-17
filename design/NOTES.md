@@ -3,11 +3,11 @@ Renderer API notes
 
 # Old design
 
-#### Resource allocation
+### Resource allocation
 * separate for each queue
 * do not alias memory for now, but re-use
 
-#### Graph
+### Graph
 * Node = pass type (graphics or compute), callback function
 callback function parameters:
 * command buffer, within a subpass instance initialized with the correct attachments
@@ -129,7 +129,7 @@ Implicit dependencies between tasks with ordering
 -> ordering is defined implicitly by the submission order.
 -> benefits: less cluttered API
 
-#### Images
+### Images
 
 
 Creating persistent images
@@ -332,7 +332,7 @@ Q: expose Images through Arc<> or through naked objects?
             - if not, move object into deferred deletion list in device
         - need non-owning images
 
-#### Q: vkAcquireNextImageKHR should be called as late as possible. 
+### Q: vkAcquireNextImageKHR should be called as late as possible. 
 
 This raises an issue with the frame graph, which needs to call it back when generating the buffers.
 - Borrow the swapchain image
@@ -358,7 +358,7 @@ This raises an issue with the frame graph, which needs to call it back when gene
 - (extreme) Build the command buffers on the fly
     - a.k.a do not pursue the frame graph approach
         
-#### Q: FrameGraphs vs on-the-fly command buffer generation?
+### Q: FrameGraphs vs on-the-fly command buffer generation?
 FrameGraphs: full knowledge of the structure and dependencies inside the frame. Can reorder and schedule.
 
 On-the-fly: 
@@ -370,7 +370,7 @@ On-the-fly:
 - This is (mostly) an internal aspect, and should not change the API much: keep FrameGraph approach for now.
     
         
-#### Q: Scheduling
+### Q: Scheduling
 
 - Scheduling now happens per-task: each task is responsible for scheduling itself
 - A task may output a command into a command buffer, or a queue operation directly (e.g. vkQueuePresentKHR), or both
@@ -397,7 +397,7 @@ On-the-fly:
         - is this OK?
         - no: provide raw access to queues
             
-#### Q: texture uploads
+### Q: texture uploads
 - should happen outside frames
 - problem: lifetime of staging buffer?
     - staging buffer should be frame-bound
@@ -417,7 +417,7 @@ Q: redesign image refs
         - issue: borrows the whole frame, must refcell everything
         - partial borrows would be nice
 
-#### Target API
+### Target API
 - simple
     - drop the need to store resource versions: use ordering of commands
     - Read-after-write scenarios
@@ -435,12 +435,12 @@ Q: redesign image refs
 - should be relatively low-level
     - higher level wrappers should be possible
     
-#### Internal API for dependencies
+### Internal API for dependencies
 - should be able to specify one side of a dependency
     - semaphores to wait for
     - pipeline stage to wait for 
     
-#### Q: Expose render passes or not?
+### Q: Expose render passes or not?
 - should not, probably
 - must have a grouping pass:
     - separate pass on the graph, or during scheduling?
@@ -454,10 +454,10 @@ Q: redesign image refs
             - try to schedule from given score
             
 
-#### Schedule state: 
+### Schedule state: 
 - schedule stack (which ones to try next)
 
-#### API for graphics:
+### API for graphics:
 - Variant A:
     ```
     fn set_color_attachment(index, image, load, store) -> ImageRef
@@ -538,11 +538,11 @@ Q: redesign image refs
     
 # Redesign
     
-#### Global draw call sorting and ordering
+### Global draw call sorting and ordering
 - Order by ID
 - ID takes into account queues, dependencies
 
-#### Redesign #3:
+### Redesign #3:
 - three layers of functionality
     - synchronization (-> frame graph)
     - memory allocation (-> frame graph)
@@ -556,7 +556,7 @@ Q: redesign image refs
         - submit (command buffer, state caching)
 - Lightweight object handles
 
-#### Redesign #4: highly flexible pipeline
+### Redesign #4: highly flexible pipeline
 - Goals: allow complex appearances that locally modify scheduling / need allocation of resources
 - a.k.a. efficient post-process materials
 - a.k.a. scatter rendering commands everywhere / gather at the end
@@ -602,13 +602,13 @@ Q: redesign image refs
     - Render strokes into acceleration grid
     - When all stroke meshes are finished
     
-#### Q: what does the graph looks like? how to order and synchronize operations correctly?
+### Q: what does the graph looks like? how to order and synchronize operations correctly?
 - Revision of resources determined by order and constraints
 - constraints on async: one-way data flow only
     - resources can only be written (produced) by ONE queue 
     
     
-#### Q: window system integration
+### Q: window system integration
 - just pass a target window to the renderer constructor
     - winit::Window
     - OR glwindow
@@ -616,7 +616,7 @@ Q: redesign image refs
 - the renderer is a unique system (only one for the whole program)
     - can render to multiple windows
     
-#### Q: Shaders & graphics pipeline configuration
+### Q: Shaders & graphics pipeline configuration
 - type-safe, proc derive from struct
 - still need an interface to bind parameters from the generated derive
     - `ShaderInterface::visit(binder)`: need a standardized procedural interface for the binder.
@@ -625,7 +625,7 @@ Q: redesign image refs
     - BindingGroup: equivalent to a descriptor set, binds a group of resources at a standard location
         - shader must match (each matching binding must have the correct type)
         - warn/error (?) when some variables in the shader are not set
-#### Q: (issue) multithreaded command submission in backend / command sorting
+### Q: (issue) multithreaded command submission in backend / command sorting
 - must track resource usage across the command stream, cannot do that in parallel
 - possible solution: recover the dependency graph from the stream
     - costly...
@@ -639,7 +639,7 @@ Q: redesign image refs
         - transient resources allocated for whole passes
         - can submit passes in parallel 
         
-#### Q: Shader interface checking
+### Q: Shader interface checking
 - Typed pipelines: GraphicsPipeline1<State,I0>, GraphicsPipelineN<State,I0,I1,...>
 - State = dynamic state & push constants & vertex inputs
 - I0..In = descriptor sets
@@ -648,7 +648,7 @@ Q: redesign image refs
     - PipelineLayout (descriptor set layouts + push constants)
     
     
-#### Q: Framebuffers and render targets
+### Q: Framebuffers and render targets
 - A graphics pipeline expects a particular number of render targets with particular formats
 - VK: a graphics pipeline expects even more: render targets + compatibility with render subpasses
 - should we expose framebuffers (as a collection of attachments)
@@ -669,7 +669,7 @@ Q: redesign image refs
     - hints in scopes:
         - r.renderpass(scope, subpasses)
         
-#### Q: Pipeline creation
+### Q: Pipeline creation
  - Option A:
     Source -> ShaderModule
     ShaderModule + PipelineParameters -> Pipeline
@@ -685,7 +685,7 @@ Q: redesign image refs
     Issue: contains dynamically allocated vecs
     
     
-#### Q: Lack of statically-checked lifetimes is unfortunate: arena-based resources management
+### Q: Lack of statically-checked lifetimes is unfortunate: arena-based resources management
  - all queries must go through the backend
  - use-after-free is possible, albeit caught by the slotmap mechanism
  - Proposal: Arena based management
@@ -713,9 +713,9 @@ Q: redesign image refs
                 - this is OK!
         - caching
         
-#### Q: Command buffers?
+### Q: Command buffers?
 
-#### Q: Scoped/Persistent dichotomy
+### Q: Scoped/Persistent dichotomy
 - wrong language: the difference is actually aliasable (within a frame, and thus transient) VS non-aliasable (and persistent)
     - you can have a non-aliasable resource that is still fully transient (assign different image from frame to frame)
     - persistent : memory contents are preserved across frames
@@ -735,7 +735,7 @@ Q: redesign image refs
     - imposing no limitations may increase the complexity of the backend (indirections)
  
  
-#### Issue: cannot ensure that an arena will not live beyond the current frame
+### Issue: cannot ensure that an arena will not live beyond the current frame
 This prevents frame-based synchronization (e.g. multibuffers)
 
 Alternative: arena-based GPU synchronization
@@ -743,7 +743,7 @@ Alternative: arena-based GPU synchronization
     - one sync for each queue that uses the resources
 - recycle arenas periodically
 
-#### Refactor: put resource management in a separate module
+### Refactor: put resource management in a separate module
 - GlResources
     - upload buffers
     - available images
@@ -751,7 +751,7 @@ Alternative: arena-based GPU synchronization
     - CPU synchronized objects (upload buffers)
     - buffers
 
-#### Issue: resource swapping is somewhat problematic to implement (need an indirection)
+### Issue: resource swapping is somewhat problematic to implement (need an indirection)
  - can we do without?
     - probably not, this is an useful pattern
  - the indirection is not needed if there is no aliasing
@@ -785,7 +785,7 @@ Alternative: arena-based GPU synchronization
             - request a post-proc chain ID
             - if it's even, use the main buffer; if it's odd, use the other
 
-#### Q: draw states: what to put in blocks, what to bind separately?
+### Q: draw states: what to put in blocks, what to bind separately?
 - already a duplication between our command lists and native command buffers
     - necessary for command reordering
     - can't be avoided
@@ -836,7 +836,7 @@ Alternative: arena-based GPU synchronization
     - embrace indirect buffers
         
 
-#### Q: Framebuffers
+### Q: Framebuffers
  - useful as a group of attachments
  - if framebuffers are not exposed:
     - pass array of attachments every time
@@ -866,7 +866,7 @@ Alternative: arena-based GPU synchronization
  - can use arenas to create a framebuffer inline
  - tile-based rendering?
 
-#### P: Alternative backend design
+### P: Alternative backend design
  - Slotmaps and handles
     - handles are hashable
  - Arenas are not part of the renderer and just wrap handles in safe lifetimes
@@ -874,16 +874,16 @@ Alternative: arena-based GPU synchronization
     - prefer generic associated types (GAT) when they are finally available
     
     
-#### Issue: window resize
+### Issue: window resize
  - must re-create textures and framebuffers
     - granularity: frame
     - must cache framebuffers!
  - OR: exit scope somehow when resizing
  - final: use special scope (and arena) for swapchain-dependent resources
  
-#### Split crates (renderer + backend + extras)
+### Split crates (renderer + backend + extras)
  
-#### Observations from the current design
+### Observations from the current design
 - works
 - too early to make performance measurements
 - creating pipelines and shaders is **tedious**
@@ -903,7 +903,7 @@ Alternative: arena-based GPU synchronization
     - e.g. now, need to re-create a pipeline if the output format changes
         - shader templates?
 
-#### Authoring graphics pipelines
+### Authoring graphics pipelines
 - shaders + pipeline states 
 - a.k.a. effect files
 - goals
@@ -942,12 +942,14 @@ Alternative: arena-based GPU synchronization
             - ...
             - vertex_shader
         
-#### Authoring graphics pipelines: alternate approaches
+### Authoring graphics pipelines: alternate approaches
 - a specialized file format is heavy in maintenance
     - need proper parsing, validation, error reporting
     - templates may need to grow into full-featured expressions
+    - in the end, raw code is more attractive
 - Lots of low-level things that will be rarely changed: why make a GUI for that?
     - except for learning purposes, useless
+- Code-driven approach
 - idea: leverage the existing programming language (Rust) and author graphics pipelines in Rust
     - leverage type checking, functions, syntax for specifying data
 - main drawback: must recompile when pipeline changes, and restart the application
@@ -960,39 +962,37 @@ Alternative: arena-based GPU synchronization
     - renderer interface is not object-safe
     - can the renderer (and the arena) be object-safe?
         - backend-specific data to create a shader
-
-- Option A: make the backend object-safe
-    - Option A1: backend returns `&'a dyn Resource`
-        - pointers are fatter
-        - backend must downcast and check type before each use
-            - overhead?
-        - `Arena<R>` becomes `Box<dyn Arena>`
-        - the rest is otherwise unchanged
-    - Option A2: backend returns handles
-        - Issue: handles are not self-contained pointers to resources
-            - Need a reference to the arena to resolve
-            - But the lifetime of the arena is controlled by the user
-            - Alternative: one single table of resources in backend, arena is just for lifetimes
-                - increased overhead and syntactic noise
-                - arena is just a vec of handles, no optimization of allocation patterns
-- Option B: do not make the backend object-safe
-    - hot-reload modules must be parameterized with a single backend type, or not at all
-    - entails recompilation of the main executable if something in a generic function changes
-        - a lot of things can be generic: anything with backend types
-            - GraphicsPipelineCreateInfo is generic
-            
-- Option C: have both
-    - Object-safe wrapper around `Renderer`
-    - `dyn Renderer<Backend>`
-    - wrap around Arenas, Renderer, and Pointers
-    - impl<T> DynRenderer for Renderer<T>
-    - like Option A, but on top of the backend instead of implemented by the backend
-    - actually, can still use renderer, and have just `DynBackend` sitting on top of the backend
-    - trait BackendAny
-    - impl Backend for dyn BackendAny
-    - impl BackendAny for T where T: Backend
-    - wrapper methods that type-check the passed data
-    - there are still issues with descriptor remapping
-        - translate vulkan SPIR-V to GL SPIR-V ? gfx-rs does that
-        - use spirv_cross (thank you very much)
+##### Option A: make the backend object-safe
+- Option A1: backend returns `&'a dyn Resource`
+    - pointers are fatter
+    - backend must downcast and check type before each use
+        - overhead?
+    - `Arena<R>` becomes `Box<dyn Arena>`
+    - the rest is otherwise unchanged
+- Option A2: backend returns handles
+    - Issue: handles are not self-contained pointers to resources
+        - Need a reference to the arena to resolve
+        - But the lifetime of the arena is controlled by the user
+        - Alternative: one single table of resources in backend, arena is just for lifetimes
+            - increased overhead and syntactic noise
+            - arena is just a vec of handles, no optimization of allocation patterns
+##### Option B: do not make the backend object-safe
+- hot-reload modules must be parameterized with a single backend type, or not at all
+- entails recompilation of the main executable if something in a generic function changes
+    - a lot of things can be generic: anything with backend types
+        - GraphicsPipelineCreateInfo is generic  
+##### Option C: have both
+- Object-safe wrapper around `Renderer`
+- `dyn Renderer<Backend>`
+- wrap around Arenas, Renderer, and Pointers
+- impl<T> DynRenderer for Renderer<T>
+- like Option A, but on top of the backend instead of implemented by the backend
+- actually, can still use renderer, and have just `DynBackend` sitting on top of the backend
+- trait BackendAny
+- impl Backend for dyn BackendAny
+- impl BackendAny for T where T: Backend
+- wrapper methods that type-check the passed data
+- there are still issues with descriptor remapping
+    - translate vulkan SPIR-V to GL SPIR-V ? gfx-rs does that
+    - use spirv_cross (thank you very much)
         

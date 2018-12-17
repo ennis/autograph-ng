@@ -7,7 +7,7 @@ use crate::renderer::backend::gl::{
     api as gl,
     api::types::*,
     format::GlFormatInfo,
-    shader::{create_specialized_spirv_shader, ShaderCreationError, ShaderModule},
+    shader::{create_specialized_spirv_shader, DescriptorMapBuilder, ShaderCreationError, ShaderModule, translate_spirv_to_gl_flavor},
     state::StateCache,
     Arena, OpenGlBackend,
 };
@@ -45,13 +45,11 @@ impl FlatBinding {
 }
 
 #[derive(Clone, Debug)]
-pub struct DescriptorMap {
-    pub sets: Vec<Vec<FlatBinding>>,
-}
+pub struct DescriptorMap(pub Vec<Vec<FlatBinding>>);
 
 impl DescriptorMap {
     pub fn get_binding_location(&self, set: u32, binding: u32) -> Option<FlatBinding> {
-        self.sets.get(set as usize).and_then(|set| {
+        self.0.get(set as usize).and_then(|set| {
             set.get(binding as usize).and_then(|loc| {
                 if loc.space == BindingSpace::Empty {
                     None
@@ -127,7 +125,6 @@ fn link_program(obj: GLuint) -> Result<GLuint, String> {
 }
 
 //--------------------------------------------------------------------------------------------------
-
 #[derive(Debug)]
 pub struct ProgramCreationError(String);
 
@@ -151,9 +148,13 @@ fn create_graphics_program(
     geom: Option<&ShaderModule>,
     tessctl: Option<&ShaderModule>,
     tesseval: Option<&ShaderModule>,
-) -> Result<GLuint, ProgramCreationError> {
+    user_dm: DescriptorMap,
+) -> Result<(GLuint, DescriptorMap), ProgramCreationError>
+{
     let spirv = vert.spirv.is_some();
+    let mut dm = user_dm;
 
+    // Verify that we are not mixing GLSL and SPIR-V shaders
     if frag.map_or(false, |s| s.spirv.is_some() != spirv)
         || geom.map_or(false, |s| s.spirv.is_some() != spirv)
         || tessctl.map_or(false, |s| s.spirv.is_some() != spirv)
@@ -165,43 +166,50 @@ fn create_graphics_program(
     }
 
     let (vs, fs, gs, tcs, tes) = if spirv {
-        // SPIR-V path
-        let vs = create_specialized_spirv_shader(ShaderStageFlags::VERTEX, "main", unsafe {
-            vert.spirv.as_ref().unchecked_unwrap()
-        })?;
+        // SPIR-V path: translate to GL dialect and at the same time build
+        // the descriptor map
+        let mut dmb = DescriptorMapBuilder::new();
+        let vert = vert.spirv.as_ref().unwrap();
+        let frag = frag.map(|s| s.spirv.as_ref().unwrap());
+        let geom = geom.map(|s| s.spirv.as_ref().unwrap());
+        let tessctl = tessctl.map(|s| s.spirv.as_ref().unwrap());
+        let tesseval = tesseval.map(|s| s.spirv.as_ref().unwrap());
+
+        let vs = {
+            let vert = translate_spirv_to_gl_flavor(vert, ShaderStageFlags::VERTEX, &mut dmb);
+            create_specialized_spirv_shader(ShaderStageFlags::VERTEX, "main", &vert)?
+        };
+
         let fs = if let Some(s) = frag {
-            create_specialized_spirv_shader(ShaderStageFlags::FRAGMENT, "main", unsafe {
-                s.spirv.as_ref().unchecked_unwrap()
-            })?
-            .into()
+            let s = translate_spirv_to_gl_flavor(s, ShaderStageFlags::FRAGMENT, &mut dmb);
+            create_specialized_spirv_shader(ShaderStageFlags::FRAGMENT, "main", &s)?.into()
         } else {
             None
         };
+
         let gs = if let Some(s) = geom {
-            create_specialized_spirv_shader(ShaderStageFlags::GEOMETRY, "main", unsafe {
-                s.spirv.as_ref().unchecked_unwrap()
-            })?
-            .into()
+            let s = translate_spirv_to_gl_flavor(s, ShaderStageFlags::GEOMETRY, &mut dmb);
+            create_specialized_spirv_shader(ShaderStageFlags::GEOMETRY, "main", &s)?.into()
         } else {
             None
         };
         let tcs = if let Some(s) = tessctl {
-            create_specialized_spirv_shader(ShaderStageFlags::TESS_CONTROL, "main", unsafe {
-                s.spirv.as_ref().unchecked_unwrap()
-            })?
-            .into()
+            let s = translate_spirv_to_gl_flavor(s, ShaderStageFlags::TESS_CONTROL, &mut dmb);
+            create_specialized_spirv_shader(ShaderStageFlags::TESS_CONTROL, "main", &s)?.into()
         } else {
             None
         };
         let tes = if let Some(s) = tesseval {
-            create_specialized_spirv_shader(ShaderStageFlags::TESS_EVAL, "main", unsafe {
-                s.spirv.as_ref().unchecked_unwrap()
-            })?
-            .into()
+            let s = translate_spirv_to_gl_flavor(s, ShaderStageFlags::TESS_EVAL, &mut dmb);
+            create_specialized_spirv_shader(ShaderStageFlags::TESS_EVAL, "main", &s)?.into()
         } else {
             None
         };
+
+        // overwrite user-provided descriptor map
+        dm = dmb.into();
         (vs, fs, gs, tcs, tes)
+
     } else {
         // GLSL path
         (
@@ -213,6 +221,7 @@ fn create_graphics_program(
         )
     };
 
+    // create program, attach shaders, and link program
     unsafe {
         let program = gl::CreateProgram();
 
@@ -233,6 +242,7 @@ fn create_graphics_program(
         link_program(program).map_err(|log| {
             // cleanup
             gl::DeleteProgram(program);
+            // the SPIR-V path has generated new shader objects: don't leak them
             if spirv {
                 gl::DeleteShader(vs);
                 if let Some(s) = fs {
@@ -269,7 +279,7 @@ fn create_graphics_program(
             }
         }
 
-        Ok(program)
+        Ok((program, dm))
     }
 }
 
@@ -315,17 +325,19 @@ impl GraphicsPipeline {
     }
 }
 
+//--------------------------------------------------------------------------------------------------
 pub fn create_graphics_pipeline_internal<'a>(
     arena: &'a Arena,
     ci: &GraphicsPipelineCreateInfo<OpenGlBackend>,
-) -> &'a GraphicsPipeline {
-    let program = {
+) -> &'a GraphicsPipeline
+{
+    let (program, descriptor_map) = {
         let vs = ci.shader_stages.vertex.0;
         let fs = ci.shader_stages.fragment.map(|s| s.0);
         let gs = ci.shader_stages.geometry.map(|s| s.0);
         let tcs = ci.shader_stages.tess_control.map(|s| s.0);
         let tes = ci.shader_stages.tess_eval.map(|s| s.0);
-        create_graphics_program(vs, fs, gs, tcs, tes).expect("failed to create program")
+        create_graphics_program(vs, fs, gs, tcs, tes, ci.additional.descriptor_map.clone()).expect("failed to create program")
     };
 
     //assert_eq!(vertex_shader.stage, ShaderStageFlags::VERTEX);
@@ -350,7 +362,7 @@ pub fn create_graphics_pipeline_internal<'a>(
         vertex_input_bindings: ci.vertex_input_state.bindings.to_vec(),
         program,
         vao,
-        descriptor_map: ci.additional.descriptor_map.clone(),
+        descriptor_map,
         static_samplers: ci.additional.static_samplers.clone(),
         color_blend_state,
     };

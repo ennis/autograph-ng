@@ -1,13 +1,14 @@
 //use super::parse::SpirvModule;
-use super::parse::*;
+use super::{IPtr, decode::*, inst::*, Module};
 use crate::renderer::{Format, ImageDataType, PrimitiveType, TypeDesc};
-use spirv_headers::Decoration;
+use spirv_headers::*;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use typed_arena::Arena;
 
 pub enum ParsedDecoration {
     Block,
+    BufferBlock,
     Constant,
     Location(u32),
     Index(u32),
@@ -17,100 +18,81 @@ pub enum ParsedDecoration {
     Other(Decoration),
 }
 
-pub struct Arenas<'tcx> {
+pub struct Arenas<'tcx,'m> {
     tydesc: Arena<TypeDesc<'tcx>>,
     members: Arena<(usize, &'tcx TypeDesc<'tcx>)>,
-    deco: Arena<ParsedDecoration>,
-    vars: Arena<Variable<'tcx>>,
+    deco: Arena<(IPtr<'m>, ParsedDecoration)>,
+    vars: Arena<(IPtr<'m>, Variable<'tcx, 'm>)>,
 }
 
-pub struct Variable<'tcx> {
-    id: u32,
-    ty: &'tcx TypeDesc<'tcx>,
-    deco: &'tcx [ParsedDecoration],
+impl<'tcx, 'm> Arenas<'tcx, 'm> {
+    pub fn new() -> Arenas<'tcx, 'm> {
+        Arenas {
+            tydesc: Arena::new(),
+            members: Arena::new(),
+            deco: Arena::new(),
+            vars: Arena::new(),
+        }
+    }
+}
+
+pub struct Variable<'tcx, 'm> {
+    pub id: u32,
+    pub ty: &'tcx TypeDesc<'tcx>,
+    pub deco: &'tcx [(IPtr<'m>, ParsedDecoration)],
+    pub storage: StorageClass,
+}
+
+impl<'tcx, 'm> Variable<'tcx, 'm> {
+    pub fn has_block_decoration(&self) -> Option<IPtr<'m>> {
+        self.deco.iter().find(|(iptr,d)| match d { ParsedDecoration::Block => true, _ => false }).map(|d| d.0)
+    }
+
+    pub fn has_buffer_block_decoration(&self) -> Option<IPtr<'m>> {
+        self.deco.iter().find(|(iptr,d)| match d { ParsedDecoration::BufferBlock => true, _ => false }).map(|d| d.0)
+    }
+
+    pub fn descriptor_set_decoration(&self) -> Option<(IPtr<'m>,u32)> {
+        self.deco.iter().filter_map(|(iptr,d)| match d { ParsedDecoration::DescriptorSet(ds) => Some((*iptr, *ds)), _ => None })
+            .next()
+    }
+
+    pub fn binding_decoration(&self) -> Option<(IPtr<'m>,u32)> {
+        self.deco.iter().filter_map(|(iptr,d)| match d { ParsedDecoration::DescriptorSet(ds) => Some((*iptr, *ds)), _ => None })
+            .next()
+    }
 }
 
 pub struct Ast<'tcx, 'm> {
-    m: &'m mut Module,
-    a: &'tcx Arenas<'tcx>,
+    //a: &'tcx Arenas<'tcx>,
+    m: &'m Module,
     tymap: HashMap<u32, &'tcx TypeDesc<'tcx>>,
-    // cached: invalidated when modifying spir-v
-    vars: Cell<Option<&'tcx [Variable<'tcx>]>>,
+    vars: &'tcx [(IPtr<'m>, Variable<'tcx, 'm>)],
 }
 
 impl<'tcx, 'm> Ast<'tcx, 'm> {
-    pub fn new(arenas: &'tcx Arenas<'tcx>, module: &'m mut Module) -> Ast<'tcx, 'm> {
-        let tymap = build_types(arenas, module);
+    pub fn new(arenas: &'tcx Arenas<'tcx, 'm>, module: &'m Module) -> Ast<'tcx, 'm> {
+        let tymap = parse_types(arenas, module);
+        let vars = parse_variables(arenas, module, &tymap);
         Ast {
             m: module,
-            a: arenas,
             tymap,
-            vars: Cell::new(None),
+            vars,
         }
     }
 
-    // Borrow self to avoid modifications.
-    // In fact, modifications to the underlying spir-v will not invalidate the
-    // variables, since they are allocated in a separate arena, but
-    // this is conceptually surprising.
-    pub fn global_variables<'a>(&'a self) -> &'a [Variable<'a>] {
-        if let Some(ref vars) = self.vars.get() {
-            vars
-        } else {
-            let vars = self
-                .a
-                .vars
-                .alloc_extend(self.m.filter_opcodes::<IVariable>().map(|v| Variable {
-                    id: v.result_id,
-                    ty: self.tymap[&v.result_type_id],
-                    deco: self.decorations_internal(v.result_id),
-                }));
-            self.vars.set(Some(vars));
-            vars
-        }
-    }
-
-    fn decorations_internal(&self, id: u32) -> &'tcx [ParsedDecoration] {
-        self.a.deco.alloc_extend(
-            self.m
-                .filter_opcodes::<IDecorate>()
-                .map(|d| match d.decoration {
-                    Decoration::Block => ParsedDecoration::Block,
-                    Decoration::Constant => ParsedDecoration::Constant,
-                    Decoration::Uniform => ParsedDecoration::Uniform,
-                    Decoration::Location => ParsedDecoration::Location(d.params[0]),
-                    Decoration::Index => ParsedDecoration::Index(d.params[0]),
-                    Decoration::Binding => ParsedDecoration::Binding(d.params[0]),
-                    Decoration::DescriptorSet => ParsedDecoration::DescriptorSet(d.params[0]),
-                    other => ParsedDecoration::Other(other),
-                }),
-        )
-    }
-
-    // lifetime-restricted version of the above
-    pub fn decorations<'a>(&'a self, id: u32) -> &'a [ParsedDecoration] {
-        self.decorations_internal(id)
-    }
-
-    pub fn remove_decoration(&mut self, id: u32, deco: u32) {
-        unimplemented!()
-    }
-
-    pub fn add_decoration(&mut self, id: u32, deco: Decoration, params: &[u32]) {
-        unimplemented!()
+    pub fn variables(&self) -> impl Iterator<Item=&'tcx (IPtr<'m>, Variable<'tcx, 'm>)> {
+        self.vars.iter()
     }
 }
 
-fn build_types<'tcx, 'm>(
-    a: &'tcx Arenas<'tcx>,
-    m: &'m Module,
-) -> HashMap<u32, &'tcx TypeDesc<'tcx>> {
+fn parse_types<'tcx, 'm>(a: &'tcx Arenas<'tcx, 'm>, m: &Module) -> HashMap<u32, &'tcx TypeDesc<'tcx>> {
     // build a map from id to type
     let mut tymap = HashMap::<u32, &'tcx TypeDesc<'tcx>>::new();
 
     // can process types in order, since the spec specifies that:
     // "Types are built bottom up: A parameterizing operand in a type must be defined before being used."
-    m.decoded_instructions().for_each(|inst| {
+    m.decoded_instructions().for_each(|(_, inst)| {
         match &inst {
             Instruction::TypeVoid(ITypeVoid { result_id }) => {
                 tymap.insert(*result_id, a.tydesc.alloc(TypeDesc::Void));
@@ -252,4 +234,39 @@ fn build_types<'tcx, 'm>(
     });
 
     tymap
+}
+
+fn parse_variables<'tcx,'m>(
+    a: &'tcx Arenas<'tcx,'m>,
+    m: &'m Module,
+    tymap: &HashMap<u32, &'tcx TypeDesc<'tcx>>,
+) -> &'tcx [(IPtr<'m>, Variable<'tcx, 'm>)] {
+    let vars = a
+        .vars
+        .alloc_extend(m.filter_instructions::<IVariable>().map(|(iptr, v)| {
+            (iptr,
+            Variable {
+                id: v.result_id,
+                ty: tymap[&v.result_type_id],
+                deco: a.deco.alloc_extend(
+                    m.filter_instructions::<IDecorate>()
+                        .filter(|(_, d)| d.target_id == v.result_id)
+                        .map(|(iptr, d)| (iptr, match d.decoration {
+                            Decoration::Block => ParsedDecoration::Block,
+                            Decoration::BufferBlock => ParsedDecoration::BufferBlock,
+                            Decoration::Constant => ParsedDecoration::Constant,
+                            Decoration::Uniform => ParsedDecoration::Uniform,
+                            Decoration::Location => ParsedDecoration::Location(d.params[0]),
+                            Decoration::Index => ParsedDecoration::Index(d.params[0]),
+                            Decoration::Binding => ParsedDecoration::Binding(d.params[0]),
+                            Decoration::DescriptorSet => {
+                                ParsedDecoration::DescriptorSet(d.params[0])
+                            }
+                            other => ParsedDecoration::Other(other),
+                        })),
+                ),
+                storage: v.storage_class,
+            })
+        }));
+    vars
 }
