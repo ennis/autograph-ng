@@ -3,9 +3,28 @@
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$">
       <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/renderer/examples" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/derive/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/derive/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/derive/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/derive/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/spirv/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/spirv/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/spirv/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/spirv/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/renderer/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/renderer/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/renderer/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/backend_gl/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/backend_gl/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/backend_gl/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/backend_gl/benches" isTestSource="true" />
+      <excludeFolder url="file://$MODULE_DIR$/backend_gl/target" />
+      <excludeFolder url="file://$MODULE_DIR$/derive/target" />
+      <excludeFolder url="file://$MODULE_DIR$/renderer/target" />
+      <excludeFolder url="file://$MODULE_DIR$/spirv/target" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

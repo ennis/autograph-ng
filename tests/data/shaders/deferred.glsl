@@ -12,7 +12,7 @@
 #pragma descriptor(t0-t8,set=1,binding=1)
 #pragma sampler(t0-t8,wrap,wrap,wrap,linear,linear,mip_linear)
 
-layout(std140, binding = 0) uniform CameraParameters {
+layout(std140, set=0, binding = 0) uniform CameraParameters {
   mat4 uViewMatrix;
   mat4 uProjMatrix;
   mat4 uViewProjMatrix;
@@ -22,7 +22,7 @@ layout(std140, binding = 0) uniform CameraParameters {
   vec2 uTAAOffset;
 };
 
-layout(std140, binding = 1) uniform ObjectParameters {
+layout(std140, set=1, binding = 0) uniform ObjectParameters {
 	mat4 uModelMatrix;
 	mat4 uPrevModelMatrix;
 	int uObjectID;
@@ -67,7 +67,7 @@ layout(std140, binding = 1) uniform ObjectParameters {
 	layout(location = 2) out ivec4 rtObjectID;	// RG16I
 	layout(location = 3) out vec4 rtVelocity;	// RG16F
 
-	layout(binding = 0) uniform sampler2D texDiffuse;
+	layout(set = 0, binding = 1) uniform sampler2D texDiffuse;
 
 	void main() {
 	  vec3 Nv = normalize(Nv0);

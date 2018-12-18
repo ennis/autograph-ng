@@ -996,3 +996,8 @@ Alternative: arena-based GPU synchronization
     - translate vulkan SPIR-V to GL SPIR-V ? gfx-rs does that
     - use spirv_cross (thank you very much)
         
+### Crate refactor
+- Split into multiple crates
+    - renderer: the renderer
+    - spirv(renderer): SPIR-V processing tools (Module, Ast)
+    - backend_gl(renderer, spirv): OpenGL backend

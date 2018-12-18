@@ -1,0 +1,47 @@
+[package]
+name = "gfx2"
+version = "0.1.0"
+authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
+edition = '2018'
+
+[build-dependencies]
+embed-resource = "*"
+
+[dev-dependencies]
+image = "*"
+gfx2-derive = { path = "../derive" }
+gfx2-backend-gl = { path = "../backend_gl" }
+winit = "*"
+glutin = "*"
+
+[dependencies]
+bitflags = "*"
+config = "*"
+byteorder = "*"
+num-traits = "*"
+pretty_env_logger = "*"
+log = "*"
+slotmap = { version = "*", features = ["unstable"] }
+time = "*"
+sid_vec = "*"
+regex="*"
+smallvec = "*"
+lazy_static = "*"
+spirv_headers = "*"
+ordered-float = "*"
+unreachable = "*"
+typed-arena = "*"
+fxhash = "*"
+derivative = "*"
+nalgebra-glm = { version = "*", optional = true }
+
+[features]
+glm-types = ["nalgebra-glm"]
+
+[[example]]
+name = "blit"
+required-features = ["glm-types"]
+
+[[example]]
+name = "simple"
+required-features = ["glm-types"]

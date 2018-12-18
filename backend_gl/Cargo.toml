@@ -1,0 +1,40 @@
+[package]
+name = "gfx2-backend-gl"
+version = "0.1.0"
+authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
+build = "build.rs"
+edition = '2018'
+
+[build-dependencies]
+gl_generator = "*"
+embed-resource = "*"
+
+[dev-dependencies]
+image = "*"
+gfx2-derive = { path = "../derive" }
+
+[dependencies]
+bitflags = "*"
+config = "*"
+winit = "*"
+byteorder = "*"
+num-traits = "*"
+glutin = "*"
+pretty_env_logger = "*"
+log = "*"
+slotmap = { version = "*", features = ["unstable"] }
+time = "*"
+sid_vec = "*"
+regex="*"
+smallvec = "*"
+lazy_static = "*"
+shaderc = "*"
+spirv_cross = "*"
+spirv_headers = "*"
+ordered-float = "*"
+unreachable = "*"
+typed-arena = "*"
+fxhash = "*"
+derivative = "*"
+gfx2 = { path = "../renderer" }
+gfx2-spirv = { path = "../spirv" }
