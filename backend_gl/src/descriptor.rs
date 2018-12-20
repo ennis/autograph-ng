@@ -1,19 +1,16 @@
 use crate::{
     api::types::*,
-    buffer::RawBuffer,
-    image::RawImage,
     pipeline::{BindingSpace, DescriptorMap},
-    pool::{BufferAliasKey, ImageAliasKey},
-    resource::{Buffer, Image, SamplerCache},
+    resource::SamplerCache,
     OpenGlBackend,
 };
 use gfx2;
 use gfx2::{Descriptor, DescriptorSetLayoutBinding, DescriptorType, ShaderStageFlags};
 
-const MAX_INLINE_SHADER_RESOURCE_BINDINGS: usize = 16;
+const MAX_INLINE_SHADER_RESOURCE_BINDINGS: usize = 10;
 
 pub struct ShaderResourceBindings {
-    /*pub textures: Vec<[GLuint; MAX_INLINE_SHADER_RESOURCE_BINDINGS]>,
+    pub textures: smallvec::SmallVec<[GLuint; MAX_INLINE_SHADER_RESOURCE_BINDINGS]>,
     pub samplers: smallvec::SmallVec<[GLuint; MAX_INLINE_SHADER_RESOURCE_BINDINGS]>,
     pub images: smallvec::SmallVec<[GLuint; MAX_INLINE_SHADER_RESOURCE_BINDINGS]>,
     pub uniform_buffers: smallvec::SmallVec<[GLuint; MAX_INLINE_SHADER_RESOURCE_BINDINGS]>,
@@ -23,22 +20,13 @@ pub struct ShaderResourceBindings {
     pub shader_storage_buffer_sizes:
         smallvec::SmallVec<[GLintptr; MAX_INLINE_SHADER_RESOURCE_BINDINGS]>,
     pub shader_storage_buffer_offsets:
-        smallvec::SmallVec<[GLintptr; MAX_INLINE_SHADER_RESOURCE_BINDINGS]>,*/
-    pub textures: Vec<GLuint>,
-    pub samplers: Vec<GLuint>,
-    pub images: Vec<GLuint>,
-    pub uniform_buffers: Vec<GLuint>,
-    pub uniform_buffer_sizes: Vec<GLintptr>,
-    pub uniform_buffer_offsets: Vec<GLintptr>,
-    pub shader_storage_buffers: Vec<GLuint>,
-    pub shader_storage_buffer_sizes: Vec<GLintptr>,
-    pub shader_storage_buffer_offsets: Vec<GLintptr>,
+        smallvec::SmallVec<[GLintptr; MAX_INLINE_SHADER_RESOURCE_BINDINGS]>,
 }
 
 impl ShaderResourceBindings {
     pub fn new() -> ShaderResourceBindings {
         ShaderResourceBindings {
-            /*textures: smallvec::SmallVec::new(),
+            textures: smallvec::SmallVec::new(),
             samplers: smallvec::SmallVec::new(),
             images: smallvec::SmallVec::new(),
             uniform_buffers: smallvec::SmallVec::new(),
@@ -46,16 +34,15 @@ impl ShaderResourceBindings {
             uniform_buffer_offsets: smallvec::SmallVec::new(),
             shader_storage_buffers: smallvec::SmallVec::new(),
             shader_storage_buffer_sizes: smallvec::SmallVec::new(),
-            shader_storage_buffer_offsets: smallvec::SmallVec::new()*/
-            textures: Vec::new(),
-            samplers: Vec::new(),
-            images: Vec::new(),
-            uniform_buffers: Vec::new(),
-            uniform_buffer_sizes: Vec::new(),
-            uniform_buffer_offsets: Vec::new(),
-            shader_storage_buffers: Vec::new(),
-            shader_storage_buffer_sizes: Vec::new(),
-            shader_storage_buffer_offsets: Vec::new(),
+            shader_storage_buffer_offsets: smallvec::SmallVec::new(), /*textures: Vec::new(),
+                                                                      samplers: Vec::new(),
+                                                                      images: Vec::new(),
+                                                                      uniform_buffers: Vec::new(),
+                                                                      uniform_buffer_sizes: Vec::new(),
+                                                                      uniform_buffer_offsets: Vec::new(),
+                                                                      shader_storage_buffers: Vec::new(),
+                                                                      shader_storage_buffer_sizes: Vec::new(),
+                                                                      shader_storage_buffer_offsets: Vec::new(),*/
         }
     }
 }
@@ -182,8 +169,12 @@ impl DescriptorSet {
             v[index] = item;
         }*/
 
-        fn bind<T>(v: &mut Vec<T>, index: usize, item: T, default: T)
-        where
+        fn bind<T>(
+            v: &mut smallvec::SmallVec<impl smallvec::Array<Item = T>>,
+            index: usize,
+            item: T,
+            default: T,
+        ) where
             T: Copy,
         {
             if index >= v.len() {
@@ -204,7 +195,10 @@ impl DescriptorSet {
         for (i, d) in self.descriptors.iter().enumerate() {
             let loc = map
                 .get_binding_location(this_set_index, i as u32)
-                .expect(&format!("descriptor (set={},binding={}) is not mapped to any OpenGL binding point", this_set_index, i));
+                .expect(&format!(
+                    "descriptor (set={},binding={}) is not mapped to any OpenGL binding point",
+                    this_set_index, i
+                ));
 
             match d {
                 RawDescriptor::UniformBuffer {

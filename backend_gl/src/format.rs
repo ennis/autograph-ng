@@ -1,5 +1,5 @@
 use crate::{api as gl, api::types::*};
-use gfx2::{Format, FormatInfo};
+use gfx2::Format;
 
 pub struct GlFormatInfo {
     pub internal_fmt: GLenum,

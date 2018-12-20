@@ -2,27 +2,26 @@
 extern crate log;
 
 use std::env;
-use std::mem;
 
+use gfx2;
 use gfx2::glm;
-use gfx2::renderer;
-use gfx2::renderer::backend::gl as gl_backend;
-use gfx2::renderer::*;
+use gfx2::*;
+use gfx2_backend_gl as gl_backend;
 use gfx2_derive::{BufferLayout, DescriptorSetInterface};
 
 mod common;
-use common::*;
+use self::common::*;
 
 //--------------------------------------------------------------------------------------------------
 type Backend = gl_backend::OpenGlBackend;
-type Buffer<'a, T> = renderer::Buffer<'a, Backend, T>;
-type BufferTypeless<'a> = renderer::BufferTypeless<'a, Backend>;
-type Image<'a> = renderer::Image<'a, Backend>;
-type SampledImage<'a> = renderer::SampledImage<'a, Backend>;
-type Framebuffer<'a> = renderer::Framebuffer<'a, Backend>;
-type DescriptorSet<'a> = renderer::DescriptorSet<'a, Backend>;
-type DescriptorSetLayout<'a> = renderer::DescriptorSetLayout<'a, Backend>;
-type GraphicsPipeline<'a> = renderer::GraphicsPipeline<'a, Backend>;
+type Buffer<'a, T> = gfx2::Buffer<'a, Backend, T>;
+//type BufferTypeless<'a> = gfx2::BufferTypeless<'a, Backend>;
+//type Image<'a> = gfx2::Image<'a, Backend>;
+type SampledImage<'a> = gfx2::SampledImage<'a, Backend>;
+type Framebuffer<'a> = gfx2::Framebuffer<'a, Backend>;
+type DescriptorSet<'a> = gfx2::DescriptorSet<'a, Backend>;
+type DescriptorSetLayout<'a> = gfx2::DescriptorSetLayout<'a, Backend>;
+type GraphicsPipeline<'a> = gfx2::GraphicsPipeline<'a, Backend>;
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Copy, Clone)]
@@ -87,82 +86,54 @@ fn create_pipelines<'a>(arena: &'a Arena<Backend>) -> PipelineAndLayout<'a> {
     let file =
         gl_backend::PipelineDescriptionFile::load(arena, "tests/data/shaders/blit.glsl").unwrap();
 
-    let shader_stages = GraphicsPipelineShaderStages {
-        vertex: file.modules.vert.unwrap(),
-        geometry: file.modules.geom,
-        fragment: file.modules.frag,
-        tess_eval: file.modules.tesseval,
-        tess_control: file.modules.tessctl,
-    };
-
-    let vertex_input_state = PipelineVertexInputStateCreateInfo {
-        bindings: &[VertexInputBindingDescription {
-            binding: 0,
-            stride: 16,
-            input_rate: VertexInputRate::Vertex,
-        }],
-        attributes: file.pp.attribs.as_ref().unwrap().as_slice(),
-    };
-
-    let viewport_state = PipelineViewportStateCreateInfo {
-        viewports: PipelineViewports::Dynamic,
-        scissors: PipelineScissors::Dynamic,
-    };
-
-    let rasterization_state = PipelineRasterizationStateCreateInfo::DEFAULT;
-    let depth_stencil_state = PipelineDepthStencilStateCreateInfo::default();
-    let color_blend_state = PipelineColorBlendStateCreateInfo {
-        attachments: PipelineColorBlendAttachments::All(
-            &PipelineColorBlendAttachmentState::DISABLED,
-        ),
-        blend_constants: [0.0.into(); 4],
-        logic_op: None,
-    };
-
-    let multisample_state = PipelineMultisampleStateCreateInfo::default();
-
-    let input_assembly_state = PipelineInputAssemblyStateCreateInfo {
-        topology: PrimitiveTopology::TriangleList,
-        primitive_restart_enable: false,
-    };
-
     let descriptor_set_layout = arena.create_descriptor_set_layout(PerObject::INTERFACE);
 
-    /*let descriptor_set_layouts = [
-        per_object_descriptor_set_layout,
-    ];*/
-
-    let pipeline_layout = PipelineLayoutCreateInfo {
-        descriptor_set_layouts: &[descriptor_set_layout],
-    };
-
-    let attachment_layout = AttachmentLayoutCreateInfo {
-        input_attachments: &[],
-        depth_attachment: None,
-        color_attachments: &[AttachmentDescription {
-            format: Format::R8G8B8A8_SRGB,
-            samples: 1,
-        }],
-    };
-
-    let additional = gl_backend::GraphicsPipelineCreateInfoAdditional {
-        descriptor_map: file.desc_map.clone(),
-        static_samplers: file.pp.samplers.clone(),
-    };
-
     let gci = GraphicsPipelineCreateInfo {
-        shader_stages: &shader_stages,
-        vertex_input_state: &vertex_input_state,
-        viewport_state: &viewport_state,
-        rasterization_state: &rasterization_state,
-        multisample_state: &multisample_state,
-        depth_stencil_state: &depth_stencil_state,
-        input_assembly_state: &input_assembly_state,
-        color_blend_state: &color_blend_state,
+        shader_stages: &GraphicsPipelineShaderStages {
+            vertex: file.modules.vert.unwrap(),
+            geometry: file.modules.geom,
+            fragment: file.modules.frag,
+            tess_eval: file.modules.tesseval,
+            tess_control: file.modules.tessctl,
+        },
+        vertex_input_state: &PipelineVertexInputStateCreateInfo {
+            bindings: &[VertexInputBindingDescription {
+                binding: 0,
+                stride: 16,
+                input_rate: VertexInputRate::Vertex,
+            }],
+            attributes: file.pp.attribs.as_ref().unwrap().as_slice(),
+        },
+        viewport_state: &PipelineViewportStateCreateInfo {
+            viewports: PipelineViewports::Dynamic,
+            scissors: PipelineScissors::Dynamic,
+        },
+        rasterization_state: &PipelineRasterizationStateCreateInfo::DEFAULT,
+        multisample_state: &PipelineMultisampleStateCreateInfo::default(),
+        depth_stencil_state: &PipelineDepthStencilStateCreateInfo::default(),
+        input_assembly_state: &PipelineInputAssemblyStateCreateInfo {
+            topology: PrimitiveTopology::TriangleList,
+            primitive_restart_enable: false,
+        },
+        color_blend_state: &PipelineColorBlendStateCreateInfo {
+            attachments: PipelineColorBlendAttachments::All(
+                &PipelineColorBlendAttachmentState::DISABLED,
+            ),
+            blend_constants: [0.0.into(); 4],
+            logic_op: None,
+        },
         dynamic_state: DynamicStateFlags::VIEWPORT,
-        pipeline_layout: &pipeline_layout,
-        attachment_layout: &attachment_layout,
-        additional: &additional,
+        pipeline_layout: &PipelineLayoutCreateInfo {
+            descriptor_set_layouts: &[descriptor_set_layout],
+        },
+        attachment_layout: &AttachmentLayoutCreateInfo {
+            input_attachments: &[],
+            depth_attachment: None,
+            color_attachments: &[AttachmentDescription {
+                format: Format::R8G8B8A8_SRGB,
+                samples: 1,
+            }],
+        },
     };
 
     PipelineAndLayout {
@@ -173,10 +144,10 @@ fn create_pipelines<'a>(arena: &'a Arena<Backend>) -> PipelineAndLayout<'a> {
 
 //--------------------------------------------------------------------------------------------------
 fn main() {
-    env::set_current_dir(env!("CARGO_MANIFEST_DIR"));
+    env::set_current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/..")).unwrap();
 
     // this creates an event loop, a window, context, and a swapchain associated to the window.
-    let mut app = App::new();
+    let app = App::new();
     let r = app.renderer();
 
     // graphics pipelines
@@ -228,7 +199,6 @@ fn main() {
             let framebuffer = arena_1.create_framebuffer(&[color_buffer], None);
 
             'events: loop {
-                let mut should_close = false;
                 let mut reload_shaders = false;
 
                 let should_close = app.poll_events(|event| match event {

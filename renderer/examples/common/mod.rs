@@ -1,9 +1,16 @@
 //! Boilerplate code for creating a window and an OpenGL context with winit/glutin.
-use std::cell::RefCell;
 use config;
 use pretty_env_logger;
+use std::cell::RefCell;
 use winit;
 // re-export window event handling stuff.
+use gfx2::*;
+use gfx2_backend_gl::{create_backend_and_window, OpenGlBackend};
+use image;
+use image::GenericImageView;
+use std::error;
+use std::fmt;
+use std::path::Path;
 pub use winit::EventsLoop;
 pub use winit::Window;
 pub use winit::WindowBuilder;
@@ -12,13 +19,6 @@ pub use winit::{
     AxisId, ButtonId, DeviceId, ElementState, Event, KeyboardInput, ModifiersState, MouseButton,
     MouseScrollDelta, Touch, TouchPhase, VirtualKeyCode, WindowEvent,
 };
-use gfx2_backend_gl::{create_backend_and_window, OpenGlBackend};
-use gfx2::*;
-use image;
-use image::GenericImageView;
-use std::error;
-use std::fmt;
-use std::path::Path;
 
 #[derive(Debug)]
 pub enum ImageLoadError {
@@ -73,7 +73,6 @@ pub fn load_image_2d<'a, P: AsRef<Path>, R: RendererBackend>(
     ))
 }
 
-
 pub struct App {
     pub cfg: config::Config,
     pub events_loop: RefCell<winit::EventsLoop>,
@@ -115,8 +114,8 @@ impl App {
     }
 
     pub fn poll_events<F>(&self, mut callback: F) -> bool
-        where
-            F: FnMut(winit::Event),
+    where
+        F: FnMut(winit::Event),
     {
         let mut should_close = false;
         self.events_loop.borrow_mut().poll_events(|event| {
@@ -146,4 +145,3 @@ pub fn load_environment_config(cfg: &mut config::Config) {
 pub fn create_events_loop() -> EventsLoop {
     winit::EventsLoop::new()
 }
-

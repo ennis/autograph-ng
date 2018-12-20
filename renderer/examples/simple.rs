@@ -3,13 +3,13 @@ extern crate log;
 
 mod common;
 
-use std::env;
-use std::mem;
 use self::common::*;
 use gfx2;
 use gfx2::glm;
 use gfx2::*;
 use gfx2_backend_gl as gl_backend;
+use std::env;
+use std::mem;
 
 type Backend = gl_backend::OpenGlBackend;
 type Buffer<'a, T> = gfx2::Buffer<'a, Backend, T>;
@@ -263,11 +263,6 @@ fn create_pipelines<'rcx, 'a>(arena: &'a Arena<'rcx, Backend>) -> PipelineAndLay
         ],
     };
 
-    let additional = gl_backend::GraphicsPipelineCreateInfoAdditional {
-        descriptor_map: file.desc_map.clone(),
-        static_samplers: file.pp.samplers.clone(),
-    };
-
     let gci = GraphicsPipelineCreateInfo {
         shader_stages: &shader_stages,
         vertex_input_state: &vertex_input_state,
@@ -280,7 +275,6 @@ fn create_pipelines<'rcx, 'a>(arena: &'a Arena<'rcx, Backend>) -> PipelineAndLay
         dynamic_state: DynamicStateFlags::VIEWPORT,
         pipeline_layout: &pipeline_layout,
         attachment_layout: &attachment_layout,
-        additional: &additional,
     };
 
     PipelineAndLayout {

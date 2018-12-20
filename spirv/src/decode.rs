@@ -6,11 +6,10 @@
 // at your option. All files in the project carrying such
 // notice may not be copied, modified, or distributed except
 // according to those terms.
+use super::{inst::*, IPtr, Module, ParseError};
 use num_traits::FromPrimitive;
 use spirv_headers::*;
 use std::marker::PhantomData;
-use super::{inst::*, Module, ParseError, IPtr};
-
 
 impl Module {
     pub fn decode_raw<'a>(&'a self) -> impl Iterator<Item = (IPtr<'a>, RawInstruction)> {
@@ -55,20 +54,18 @@ impl Module {
     }
 
     pub fn decode(&self) -> impl Iterator<Item = (IPtr, Instruction)> {
-        self.decode_raw()
-            .map(|(iptr, inst)| (iptr, inst.decode()))
+        self.decode_raw().map(|(iptr, inst)| (iptr, inst.decode()))
     }
 
     pub fn decode_raw_at<'a>(&'a self, iptr: IPtr) -> Result<RawInstruction<'a>, ParseError> {
         decode_raw_instruction(&self.data[iptr.0..]).map(|(inst, _)| inst)
     }
-
 }
 
 pub trait DecodedInstruction<'m>: 'm {
     const OPCODE: Op;
     fn decode<'a: 'm>(operands: &'a [u32]) -> Self;
-    fn encode(&self, out_instructions: &mut Vec<u32>) {
+    fn encode(&self, _out_instructions: &mut Vec<u32>) {
         unimplemented!()
     }
 }
@@ -356,7 +353,7 @@ impl<'m> DecodedInstruction<'m> for IBranch {
     const OPCODE: Op = Op::Branch;
     fn decode<'a: 'm>(operands: &'a [u32]) -> Self {
         IBranch {
-            result_id: operands[0]
+            result_id: operands[0],
         }
     }
 }

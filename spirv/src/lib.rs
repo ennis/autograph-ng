@@ -2,15 +2,13 @@
 extern crate log;
 
 pub mod ast;
-pub mod inst;
-pub mod layout;
 mod decode;
 mod edit;
+pub mod inst;
+pub mod layout;
 
-use std::marker::PhantomData;
 use std::cell::RefCell;
-use std::path::Path;
-use std::fs::File;
+use std::marker::PhantomData;
 
 //pub use self::inst::*;
 //pub use self::edit::*;
@@ -28,7 +26,7 @@ pub enum ParseError {
 
 /// Be careful not to mix IPtrs between modules
 /// IPtrs are invalidated after the module is edited.
-#[derive(Copy,Clone,Debug,Eq,PartialEq,Ord,PartialOrd)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct IPtr<'m>(usize, PhantomData<&'m ()>);
 
 #[derive(Debug, Clone)]
@@ -97,5 +95,4 @@ impl Module {
             data: i.to_vec(),
         })
     }
-
 }

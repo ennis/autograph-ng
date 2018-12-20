@@ -1,6 +1,3 @@
-use crate::RendererBackend;
-use std::mem;
-use std::ptr;
 /*
 /// Conceptually, this borrows the buffer. However, actual borrowing gets rather inconvenient at times
 /// mostly due to the inability to store borrower and borrowed in the same struct.

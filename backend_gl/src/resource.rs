@@ -1,25 +1,24 @@
 use super::{
     api as gl,
     api::types::*,
-    buffer::RawBuffer,
     descriptor::{DescriptorSet, DescriptorSetLayout},
     framebuffer::Framebuffer,
     image::{ImageDescription, RawImage},
     pipeline::GraphicsPipeline,
-    pool::{BufferAliasKey, BufferPool, ImageAliasKey, ImagePool, Pool},
+    pool::{BufferAliasKey, ImageAliasKey, ImagePool},
     shader::ShaderModule,
     sync::GpuSyncObject,
     upload::{MappedBuffer, UploadBuffer},
+    util::SyncArena,
     Swapchain,
 };
-use gfx2::{
-    AliasScope, Dimensions, Filter, Format, ImageUsageFlags, MipmapsCount,
-    SamplerAddressMode, SamplerDescription, SamplerMipmapMode, SyncArena
-};
 use fxhash::FxHashMap;
+use gfx2::{
+    AliasScope, Dimensions, Filter, Format, ImageUsageFlags, MipmapsCount, SamplerAddressMode,
+    SamplerDescription, SamplerMipmapMode,
+};
 use slotmap;
-use std::collections::{HashMap, VecDeque};
-use std::marker::PhantomData;
+use std::collections::VecDeque;
 
 //--------------------------------------------------------------------------------------------------
 fn min_filter_to_glenum(filter: Filter, mipmap_mode: SamplerMipmapMode) -> GLenum {
@@ -149,7 +148,7 @@ impl Arena {
 //--------------------------------------------------------------------------------------------------
 pub struct Resources {
     image_pool: ImagePool,
-    buffer_pool: BufferPool,
+    //buffer_pool: BufferPool,
     upload_buffer_size: usize,
     upload_buffers: Vec<MappedBuffer>,
     upload_buffers_in_use: VecDeque<GpuSyncObject<Vec<MappedBuffer>>>,
@@ -159,7 +158,7 @@ impl Resources {
     pub fn new(upload_buffer_size: usize) -> Resources {
         Resources {
             image_pool: ImagePool::new(),
-            buffer_pool: BufferPool::new(),
+            //buffer_pool: BufferPool::new(),
             upload_buffer_size,
             upload_buffers: Vec::new(),
             upload_buffers_in_use: VecDeque::new(),

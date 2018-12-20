@@ -1,12 +1,7 @@
+use crate::ImplementationParameters;
 use crate::{api as gl, api::types::*};
-use crate::{GraphicsPipeline, ImplementationParameters};
 use gfx2::*;
 use ordered_float::NotNan;
-
-pub struct ViewportState {
-    all: bool,
-    viewports: Vec<Option<Viewport>>,
-}
 
 pub struct ColorBlendCache {
     all: bool,
@@ -21,7 +16,7 @@ pub struct StateCache {
     cull_enable: Option<bool>,
     cull_mode: Option<CullModeFlags>,
     polygon_mode: Option<PolygonMode>,
-    front_face: Option<GLenum>,
+    //front_face: Option<GLenum>,
     program: Option<GLuint>,
     vertex_array: Option<GLuint>,
     framebuffer: Option<GLuint>,
@@ -33,15 +28,13 @@ pub struct StateCache {
     depth_test_enabled: Option<bool>,
     depth_write_enabled: Option<bool>,
     depth_compare_op: Option<CompareOp>,
-    depth_bounds_test: Option<DepthBoundTest>,
-
+    //depth_bounds_test: Option<DepthBoundTest>,
     blend: Option<ColorBlendCache>,
     viewports: Option<(Vec<ViewportEntry>, Vec<DepthRangeEntry>)>,
     index_buffer: Option<GLuint>,
     index_buffer_offset: Option<usize>,
     index_buffer_type: Option<GLenum>,
-
-    textures: Option<Vec<GLuint>>,
+    /*textures: Option<Vec<GLuint>>,
     samplers: Option<Vec<GLuint>>,
     images: Option<Vec<GLuint>>,
     uniform_buffers: Option<Vec<GLuint>>,
@@ -49,7 +42,7 @@ pub struct StateCache {
     uniform_buffer_offsets: Option<Vec<GLintptr>>,
     shader_storage_buffers: Option<Vec<GLuint>>,
     shader_storage_buffer_sizes: Option<Vec<GLsizeiptr>>,
-    shader_storage_buffer_offsets: Option<Vec<GLintptr>>,
+    shader_storage_buffer_offsets: Option<Vec<GLintptr>>,*/
 }
 
 fn topology_to_gl(topo: PrimitiveTopology) -> GLenum {
@@ -133,12 +126,6 @@ impl<T: Eq> CacheOptionExt<T> for Option<T> {
     }
 }
 
-pub struct IndexBuffer {
-    pub buffer: GLuint,
-    pub offset: usize,
-    pub ty: IndexType,
-}
-
 #[derive(Copy, Clone)]
 #[repr(C)]
 struct ViewportEntry {
@@ -165,7 +152,7 @@ impl StateCache {
             cull_enable: None,
             cull_mode: None,
             polygon_mode: None,
-            front_face: None,
+            //front_face: None,
             program: None,
             vertex_array: None,
             framebuffer: None,
@@ -175,13 +162,13 @@ impl StateCache {
             depth_test_enabled: None,
             depth_write_enabled: None,
             depth_compare_op: None,
-            depth_bounds_test: None,
+            //depth_bounds_test: None,
             blend: None,
             viewports: None,
             index_buffer: None,
             index_buffer_offset: None,
             index_buffer_type: None,
-            textures: None,
+            /*textures: None,
             samplers: None,
             images: None,
             uniform_buffers: None,
@@ -189,7 +176,7 @@ impl StateCache {
             uniform_buffer_offsets: None,
             shader_storage_buffers: None,
             shader_storage_buffer_sizes: None,
-            shader_storage_buffer_offsets: None,
+            shader_storage_buffer_offsets: None,*/
         }
     }
 
@@ -201,7 +188,7 @@ impl StateCache {
             cull_enable: None,
             cull_mode: None,
             polygon_mode: None,
-            front_face: None,
+            //front_face: None,
             program: None,
             vertex_array: None,
             framebuffer: None,
@@ -211,13 +198,13 @@ impl StateCache {
             depth_test_enabled: None,
             depth_write_enabled: None,
             depth_compare_op: None,
-            depth_bounds_test: None,
+            //depth_bounds_test: None,
             blend: None,
             viewports: None,
             index_buffer: None,
             index_buffer_offset: None,
             index_buffer_type: None,
-            textures: None,
+            /*textures: None,
             samplers: None,
             images: None,
             uniform_buffers: None,
@@ -225,7 +212,7 @@ impl StateCache {
             uniform_buffer_offsets: None,
             shader_storage_buffers: None,
             shader_storage_buffer_sizes: None,
-            shader_storage_buffer_offsets: None,
+            shader_storage_buffer_offsets: None,*/
         };
     }
 
@@ -434,6 +421,8 @@ impl StateCache {
                 }
             })
     }
+
+    //pub fn set_depth_bounds_test(&mut self, )
 
     pub fn set_depth_compare_op(&mut self, depth_compare_op: CompareOp) {
         self.depth_compare_op

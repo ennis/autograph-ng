@@ -9,27 +9,21 @@ edition = '2018'
 gl_generator = "*"
 embed-resource = "*"
 
-[dev-dependencies]
-image = "*"
-gfx2-derive = { path = "../derive" }
-
 [dependencies]
 bitflags = "*"
 config = "*"
 winit = "*"
-byteorder = "*"
-num-traits = "*"
+#byteorder = "*"
+#num-traits = "*"
 glutin = "*"
-pretty_env_logger = "*"
 log = "*"
 slotmap = { version = "*", features = ["unstable"] }
 time = "*"
-sid_vec = "*"
 regex="*"
 smallvec = "*"
 lazy_static = "*"
 shaderc = "*"
-spirv_cross = "*"
+#spirv_cross = "*"
 spirv_headers = "*"
 ordered-float = "*"
 unreachable = "*"

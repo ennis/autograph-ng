@@ -1,4 +1,4 @@
-use crate::{api as gl, api::types::*, resource::Image, OpenGlBackend as R};
+use crate::{api as gl, api::types::*, OpenGlBackend as R};
 use gfx2;
 
 #[derive(Debug)]
@@ -14,53 +14,55 @@ impl Framebuffer {
         let mut obj = 0;
         unsafe {
             gl::CreateFramebuffers(1, &mut obj);
+        }
 
-            // color attachments
-            for (index, img) in color_attachments.iter().enumerate() {
-                let index = index as u32;
-                match img.0.target {
-                    gl::RENDERBUFFER => unsafe {
-                        gl::NamedFramebufferRenderbuffer(
-                            obj,
-                            gl::COLOR_ATTACHMENT0 + index,
-                            gl::RENDERBUFFER,
-                            img.0.obj,
-                        );
-                    },
-                    _ => unsafe {
-                        gl::NamedFramebufferTexture(
-                            obj,
-                            gl::COLOR_ATTACHMENT0 + index,
-                            img.0.obj,
-                            0, // TODO
-                        );
-                    },
-                }
+        // color attachments
+        for (index, img) in color_attachments.iter().enumerate() {
+            let index = index as u32;
+            match img.0.target {
+                gl::RENDERBUFFER => unsafe {
+                    gl::NamedFramebufferRenderbuffer(
+                        obj,
+                        gl::COLOR_ATTACHMENT0 + index,
+                        gl::RENDERBUFFER,
+                        img.0.obj,
+                    );
+                },
+                _ => unsafe {
+                    gl::NamedFramebufferTexture(
+                        obj,
+                        gl::COLOR_ATTACHMENT0 + index,
+                        img.0.obj,
+                        0, // TODO
+                    );
+                },
             }
+        }
 
-            // depth-stencil attachment
-            if let Some(img) = depth_stencil_attachment {
-                match img.0.target {
-                    gl::RENDERBUFFER => unsafe {
-                        gl::NamedFramebufferRenderbuffer(
-                            obj,
-                            gl::DEPTH_ATTACHMENT,
-                            gl::RENDERBUFFER,
-                            img.0.obj,
-                        );
-                    },
-                    _ => unsafe {
-                        gl::NamedFramebufferTexture(
-                            obj,
-                            gl::DEPTH_ATTACHMENT,
-                            img.0.obj,
-                            0, // TODO
-                        );
-                    },
-                }
+        // depth-stencil attachment
+        if let Some(img) = depth_stencil_attachment {
+            match img.0.target {
+                gl::RENDERBUFFER => unsafe {
+                    gl::NamedFramebufferRenderbuffer(
+                        obj,
+                        gl::DEPTH_ATTACHMENT,
+                        gl::RENDERBUFFER,
+                        img.0.obj,
+                    );
+                },
+                _ => unsafe {
+                    gl::NamedFramebufferTexture(
+                        obj,
+                        gl::DEPTH_ATTACHMENT,
+                        img.0.obj,
+                        0, // TODO
+                    );
+                },
             }
+        }
 
-            // enable draw buffers
+        // enable draw buffers
+        unsafe {
             gl::NamedFramebufferDrawBuffers(
                 obj,
                 color_attachments.len() as i32,
@@ -76,10 +78,9 @@ impl Framebuffer {
                 ]
                 .as_ptr(),
             )
-
-            // check framebuffer completeness
         }
 
+        // check framebuffer completeness
         let status = unsafe { gl::CheckNamedFramebufferStatus(obj, gl::DRAW_FRAMEBUFFER) };
 
         if status == gl::FRAMEBUFFER_COMPLETE {

@@ -13,24 +13,18 @@ gfx2-derive = { path = "../derive" }
 gfx2-backend-gl = { path = "../backend_gl" }
 winit = "*"
 glutin = "*"
+pretty_env_logger = "*"
 
 [dependencies]
 bitflags = "*"
 config = "*"
 byteorder = "*"
-num-traits = "*"
-pretty_env_logger = "*"
 log = "*"
-slotmap = { version = "*", features = ["unstable"] }
 time = "*"
-sid_vec = "*"
 regex="*"
 smallvec = "*"
 lazy_static = "*"
-spirv_headers = "*"
 ordered-float = "*"
-unreachable = "*"
-typed-arena = "*"
 fxhash = "*"
 derivative = "*"
 nalgebra-glm = { version = "*", optional = true }

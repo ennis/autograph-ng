@@ -9,7 +9,7 @@
 #pragma descriptor(u0,set=0,binding=0)
 #pragma descriptor(t0-t7,set=0,binding=1)
 
-layout(std140,binding=0) uniform Uniforms {
+layout(std140,set=0,binding=0) uniform Uniforms {
     mat3 transform;
     vec2 resolution;
 };
@@ -28,8 +28,8 @@ void main() {
 #endif
 
 #ifdef _FRAGMENT_
-layout(binding = 0) uniform sampler2D tex;
-layout(binding = 1) uniform sampler2D dithertex;
+layout(set=0, binding = 1) uniform sampler2D tex;
+layout(set=0, binding = 2) uniform sampler2D dithertex;
 layout(location = 0) out vec4 color;
 
 layout(location = 0) in vec2 f_uv;

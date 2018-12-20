@@ -1,5 +1,6 @@
-use std::collections::vec_deque::VecDeque;
 use crate::{api as gl, api::types::*};
+use std::collections::vec_deque::VecDeque;
+use std::time::Duration;
 
 pub struct GpuSyncObject<T> {
     sync: GLsync,
@@ -19,17 +20,17 @@ impl<T> GpuSyncObject<T> {
         GpuSyncObject { sync, obj }
     }
 
-    pub fn wait_into_inner(self) -> Result<T, (GpuSyncError, Self)> {
+    /*pub fn wait_into_inner(self) -> Result<T, (GpuSyncError, Self)> {
         self.wait_into_inner_timeout(FENCE_CLIENT_WAIT_TIMEOUT)
-    }
+    }*/
 
-    pub fn try_wait_into_inner(self) -> Result<T, (GpuSyncError, Self)> {
+    /*pub fn try_wait_into_inner(self) -> Result<T, (GpuSyncError, Self)> {
         self.wait_into_inner_timeout(0)
-    }
+    }*/
 
-    pub fn wait(&self) -> Result<(), GpuSyncError> {
+    /*pub fn wait(&self) -> Result<(), GpuSyncError> {
         self.wait_timeout(FENCE_CLIENT_WAIT_TIMEOUT)
-    }
+    }*/
 
     pub fn try_wait(&self) -> Result<(), GpuSyncError> {
         self.wait_timeout(0)
@@ -41,7 +42,7 @@ impl<T> GpuSyncObject<T> {
     }
 
     //---------------------------------------
-    fn wait_into_inner_timeout(self, timeout: u64) -> Result<T, (GpuSyncError, Self)> {
+    /*fn wait_into_inner_timeout(self, timeout: u64) -> Result<T, (GpuSyncError, Self)> {
         match self.wait_timeout(timeout) {
             Ok(()) => {
                 unsafe {
@@ -51,7 +52,7 @@ impl<T> GpuSyncObject<T> {
             }
             Err(e) => Err((e, self)),
         }
-    }
+    }*/
 
     fn wait_timeout(&self, timeout: u64) -> Result<(), GpuSyncError> {
         let wait_result =
@@ -80,13 +81,7 @@ pub struct Timeline {
     current_value: u64,
 }
 
-const FENCE_CLIENT_WAIT_TIMEOUT: u64 = 1_000_000_000;
-
-#[derive(Copy, Clone, Debug)]
-pub enum Timeout {
-    Infinite,
-    Nanoseconds(u64),
-}
+//pub const DEFAULT_FENCE_CLIENT_WAIT_TIMEOUT: u64 = 1_000_000_000;
 
 impl Timeline {
     pub fn new(init_value: u64) -> Timeline {
@@ -104,16 +99,15 @@ impl Timeline {
     /// Waits for the given value. (implies driver sync)
     /// Timeout is for a single ClientWaitSync only: there may be more than one.
     /// Returns true if value reached, false if timeout. Panics if wait failed.
-    pub fn client_sync(&mut self, value: u64, timeout: Timeout) -> bool {
+    pub fn client_sync(&mut self, value: u64, timeout: Duration) -> bool {
         while self.current_value < value {
             //debug!("client_sync current {} target {}", self.current_value, value);
             if let Some(target) = self.sync_points.front() {
-                let timeout = match timeout {
-                    Timeout::Infinite => FENCE_CLIENT_WAIT_TIMEOUT,
-                    Timeout::Nanoseconds(timeout) => timeout,
-                };
+                let timeout_ns = timeout.as_nanos();
+                assert!(timeout_ns <= u64::max_value().into());
+                let timeout_ns = timeout_ns as u64;
                 let wait_result = unsafe {
-                    gl::ClientWaitSync(target.sync, gl::SYNC_FLUSH_COMMANDS_BIT, timeout)
+                    gl::ClientWaitSync(target.sync, gl::SYNC_FLUSH_COMMANDS_BIT, timeout_ns)
                 };
                 if wait_result == gl::CONDITION_SATISFIED || wait_result == gl::ALREADY_SIGNALED {
                     self.current_value = target.value;
@@ -134,9 +128,5 @@ impl Timeline {
             }
         }
         true
-    }
-
-    pub fn driver_sync(&mut self, _value: u64, _timeout: Timeout) -> bool {
-        unimplemented!()
     }
 }

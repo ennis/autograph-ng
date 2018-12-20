@@ -1,4 +1,4 @@
-use gfx2::{TypeDesc, PrimitiveType};
+use gfx2::{PrimitiveType, TypeDesc};
 use std::cmp::max;
 
 //--------------------------------------------------------------------------------------------------
@@ -23,10 +23,8 @@ fn round_up(value: usize, multiple: usize) -> usize {
     value + multiple - remainder
 }
 
-fn std140_array_align_and_size(elemty: &TypeDesc, size: usize) -> (usize, usize)
-{
-    let (elem_align, elem_size) =
-        std140_align_and_size(elemty);
+fn std140_array_align_and_size(elemty: &TypeDesc, size: usize) -> (usize, usize) {
+    let (elem_align, elem_size) = std140_align_and_size(elemty);
     // alignment = column type align rounded up to vec4 align (16 bytes)
     let base_align = max(16, elem_align);
     let stride = elem_size + align_offset(elem_size, elem_align);
@@ -55,15 +53,13 @@ fn std140_align_and_size(ty: &TypeDesc) -> (usize, usize) {
         TypeDesc::Matrix(primty, rows, cols) => {
             std140_array_align_and_size(&TypeDesc::Vector(primty, rows), cols as usize)
         }
-        TypeDesc::Array(elemty, size) => {
-            match elemty {
-                TypeDesc::Primitive(_) | TypeDesc::Vector(_,_) => {
-                    std140_array_align_and_size(elemty, size)
-                }
-                ty => panic!("unsupported array element type: {:?}", ty)
+        TypeDesc::Array(elemty, size) => match elemty {
+            TypeDesc::Primitive(_) | TypeDesc::Vector(_, _) => {
+                std140_array_align_and_size(elemty, size)
             }
-        }
-        ty => panic!("unsupported type: {:?}", ty)
+            ty => panic!("unsupported array element type: {:?}", ty),
+        },
+        ty => panic!("unsupported type: {:?}", ty),
     }
 }
 

@@ -1,5 +1,5 @@
-use gfx2::{Format, FormatInfo, Dimensions, ImageUsageFlags, MipmapsCount, get_texture_mip_map_count};
 use crate::{api as gl, api::types::*, format::GlFormatInfo};
+use gfx2::{get_texture_mip_map_count, Dimensions, Format, ImageUsageFlags, MipmapsCount};
 use std::cmp::*;
 
 //--------------------------------------------------------------------------------------------------
@@ -148,6 +148,10 @@ impl RawImage {
             MipmapsCount::One => 1,
         };
 
+        if et.array_layers > 1 {
+            unimplemented!("array textures")
+        }
+
         let mut obj = 0;
         unsafe {
             gl::CreateTextures(et.target, 1, &mut obj);
@@ -241,9 +245,9 @@ impl RawImage {
         }
     }
 
-    pub fn is_renderbuffer(&self) -> bool {
+    /*pub fn is_renderbuffer(&self) -> bool {
         self.target == gl::RENDERBUFFER
-    }
+    }*/
 
     pub fn destroy(&self) {
         unsafe {

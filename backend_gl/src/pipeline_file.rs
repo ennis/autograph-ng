@@ -5,26 +5,13 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use gfx2;
-use gfx2::{
-    Arena, Renderer, RendererBackend, ShaderStageFlags, VertexInputBindingDescription,
-};
 use crate::{
     pipeline::{BindingSpace, DescriptorMap, FlatBinding},
-    shader::ShaderModule,
     shader::preprocessor::*,
     OpenGlBackend,
 };
-
-//--------------------------------------------------------------------------------------------------
-struct ShaderSources {
-    vert: Option<String>,
-    frag: Option<String>,
-    geom: Option<String>,
-    tesseval: Option<String>,
-    tessctl: Option<String>,
-    comp: Option<String>,
-}
+use gfx2;
+use gfx2::{Arena, ShaderStageFlags, VertexInputBindingDescription};
 
 struct SpirvModules {
     vert: Option<Vec<u32>>,
@@ -32,7 +19,7 @@ struct SpirvModules {
     geom: Option<Vec<u32>>,
     tesseval: Option<Vec<u32>>,
     tessctl: Option<Vec<u32>>,
-    comp: Option<Vec<u32>>,
+    _comp: Option<Vec<u32>>,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -145,7 +132,7 @@ fn compile_glsl_to_spirv<'a>(
         geom: cgeom.map(|gs| gs.as_binary().into()),
         tessctl: ctessctl.map(|tcs| tcs.as_binary().into()),
         tesseval: ctesseval.map(|tes| tes.as_binary().into()),
-        comp: None,
+        _comp: None,
     })
 }
 

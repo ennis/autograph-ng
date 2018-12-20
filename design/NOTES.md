@@ -993,11 +993,54 @@ Alternative: arena-based GPU synchronization
 - impl BackendAny for T where T: Backend
 - wrapper methods that type-check the passed data
 - there are still issues with descriptor remapping
-    - translate vulkan SPIR-V to GL SPIR-V ? gfx-rs does that
-    - use spirv_cross (thank you very much)
+    - translate vulkan SPIR-V to GL SPIR-V if using the SPIR-V path
+    - otherwise, use spirv_cross (thank you very much)
         
 ### Crate refactor
 - Split into multiple crates
     - renderer: the renderer
     - spirv(renderer): SPIR-V processing tools (Module, Ast)
     - backend_gl(renderer, spirv): OpenGL backend
+- After refactor:
+    - gfx2 is the renderer
+    - gfx2-backend-gl is the OpenGL backend
+    - gfx2-spirv contains SPIR-V manip tools
+    - gfx2-derive are proc derives
+- Move the `pipeline_file` module into a separate crate (or as a module in examples?)
+    - there is nothing backend-specific in there anymore
+- Rename gfx2 to something else?
+    - avoid confusion with gfx-rs
+    - autograph
+- gfx2/autograph is the main crate
+    - autograph_renderer would be the renderer (or autograph_gfx?)
+    
+### Ideas
+- Contrary to popular trend, prefer code-driven approaches to data-driven approaches
+    - or perhaps, consider code as data (nobody knows what data-driven means anyway)
+- usually, data-driven means that there is a _schema_ for the data
+    - the data is stored in files, and need to parse them according to the schema to load the data
+    - as more flexibility is needed, the schema becomes more and more complicated
+- usually, data-driven implies that the data files are hot-reloadable, which is nice
+- approach: prefer hot-reloadable **code**
+    - closer to the application
+    - no schema, no parsing logic
+- furthermore: prefer hot-reloadable **application** code, not scripts
+    - application and modules written in the same, single language
+    - no marshalling/interop layer
+    - relies on the compiler
+- Benefits:
+    - (much) less parsing and validation logic 
+    - type safety
+    - composability
+    - flexibility
+- Drawbacks:
+    - compilation speed 
+    - possibly more verbose than specialized languages
+        - consider EDSLs (with macros?)
+    - also more noise/boilerplate in modules
+        - alleviate with macros?
+- Applications:
+    - type-safe CSS (see kotlin)
+        - need a good approach for EDSLs in rust
+    - GUI widgets 
+    - Graphics pipelines

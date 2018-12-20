@@ -6,20 +6,17 @@
 //!
 #![recursion_limit = "128"]
 
+extern crate darling; // this is a _good crate_
 extern crate proc_macro;
 extern crate proc_macro2;
-#[macro_use]
-extern crate darling; // this is a _good crate_
-#[macro_use]
-extern crate syn;
-#[macro_use]
 extern crate quote;
+extern crate syn;
 
 mod buffer_layout;
 mod descriptor_set_interface;
 
 fn gfx2_name() -> syn::Path {
-    syn::parse_str("gfx2::renderer").unwrap()
+    syn::parse_str("gfx2").unwrap()
 }
 
 #[proc_macro_derive(BufferLayout)]

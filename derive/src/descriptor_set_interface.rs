@@ -1,7 +1,8 @@
+use super::gfx2_name;
 use darling::{util::Flag, FromDeriveInput, FromField};
 use proc_macro2::{Span, TokenStream};
-use syn::{parse_str, AngleBracketedGenericArguments, Attribute, Ident};
-use super::gfx2_name;
+use quote::quote;
+use syn::{parse_str, AngleBracketedGenericArguments, Ident};
 
 /*#[derive(Default, FromMeta)]
 #[darling(default)]
@@ -23,9 +24,9 @@ struct DescriptorSetInterfaceStruct {
 #[derive(FromField)]
 #[darling(attributes(descriptor))]
 struct Descriptor {
-    ident: Option<syn::Ident>,
-    ty: syn::Type,
-    vis: syn::Visibility,
+    //ident: Option<syn::Ident>,
+    //ty: syn::Type,
+    //vis: syn::Visibility,
     #[darling(default)]
     index: Option<u32>,
     #[darling(default)]
@@ -38,14 +39,14 @@ struct Descriptor {
     storage_image: Flag,
 }
 
-
+/*
 fn make_option_tokens<T: quote::ToTokens>(v: &Option<T>) -> TokenStream {
     if let Some(v) = v.as_ref() {
         quote!(Some(#v))
     } else {
         quote!(None)
     }
-}
+}*/
 
 pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     let s = <DescriptorSetInterfaceStruct as FromDeriveInput>::from_derive_input(ast).unwrap();
@@ -131,11 +132,14 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
 
     let field_names = fields.iter().map(|f| f.ident.as_ref().unwrap());
 
-    let do_visit_calls = field_names.zip(binding_indices.iter()).map(|(field_name, binding_index)| {
-        quote! {
-            #gfx::DescriptorInterface::do_visit(&self.#field_name, #binding_index, visitor);
-        }
-    }).collect::<Vec<_>>();
+    let do_visit_calls = field_names
+        .zip(binding_indices.iter())
+        .map(|(field_name, binding_index)| {
+            quote! {
+                #gfx::DescriptorInterface::do_visit(&self.#field_name, #binding_index, visitor);
+            }
+        })
+        .collect::<Vec<_>>();
 
     //----------------------------------------------------------------------------------------------
     let q = if let Some(ref args) = s.arguments {
@@ -160,7 +164,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
         }
     };
 
-    println!("{:?}", q.to_string());
+    //println!("{:?}", q.to_string());
 
     q
 

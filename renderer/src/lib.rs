@@ -21,9 +21,8 @@
 //! `CommandBuffers` are renderer-agnostic.
 //! They contain commands with a sort key that indicates their relative execution order.
 //!
-
 #![feature(const_transmute)]
-#[macro_use]
+
 extern crate log;
 
 // Reexport nalgebra_glm types if requested
@@ -33,13 +32,11 @@ pub use nalgebra_glm as glm;
 use bitflags::bitflags;
 use derivative::Derivative;
 use ordered_float::NotNan;
-use std::cmp::Eq;
-use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::mem;
 use std::ops::Deref;
-use std::sync::Mutex;
 
+mod backend;
 mod buffer;
 mod cmd;
 mod format;
@@ -49,6 +46,7 @@ mod sampler;
 mod sync;
 mod util;
 
+pub use self::backend::*;
 pub use self::cmd::{
     sort_command_buffers, Command, CommandBuffer, CommandInner, DrawIndexedParams, DrawParams,
 };
@@ -568,7 +566,7 @@ pub struct GraphicsPipelineCreateInfo<'a, 'rcx, R: RendererBackend> {
     pub dynamic_state: DynamicStateFlags,
     pub pipeline_layout: &'a PipelineLayoutCreateInfo<'a, 'rcx, R>,
     pub attachment_layout: &'a AttachmentLayoutCreateInfo<'a>,
-    pub additional: &'a R::GraphicsPipelineCreateInfoAdditional,
+    //pub additional: &'a R::GraphicsPipelineCreateInfoAdditional,
 }
 
 pub struct BufferSlice<'a, R: RendererBackend> {
@@ -773,149 +771,6 @@ impl AliasScope {
         let m = self.mask & other.mask;
         (self.value & m) == (other.value & m)
     }
-}
-
-//--------------------------------------------------------------------------------------------------
-pub trait SwapchainBackend: Debug {
-    fn size(&self) -> (u32, u32);
-}
-pub trait BufferBackend: Debug {
-    fn size(&self) -> u64;
-}
-pub trait ImageBackend: Debug {}
-pub trait FramebufferBackend: Debug {}
-pub trait DescriptorSetLayoutBackend: Debug {}
-pub trait ShaderModuleBackend: Debug {}
-pub trait GraphicsPipelineBackend: Debug {}
-pub trait DescriptorSetBackend: Debug {}
-
-/// V2 API
-/// Some associated backend types (such as Framebuffers, or DescriptorSets) conceptually "borrow"
-/// the referenced resources, and as such should have an associated lifetime parameter.
-/// However, this cannot be expressed right now because of the lack of generic associated types
-/// (a.k.a. associated type constructors, or ATCs).
-pub trait RendererBackend: Sync {
-    // XXX the 'static bounds may not be necessary: I put them to avoid specifying complex bounds
-    // in other areas of the library.
-    // That said, without ATCs, the associated types can't
-    // really be bounded by anything other than 'static.
-    type Swapchain: SwapchainBackend + 'static;
-    type Framebuffer: FramebufferBackend + 'static;
-    type Buffer: BufferBackend + 'static;
-    type Image: ImageBackend + 'static;
-    type DescriptorSet: DescriptorSetBackend + 'static;
-    type DescriptorSetLayout: DescriptorSetLayoutBackend + 'static;
-    type ShaderModule: ShaderModuleBackend + 'static;
-    type GraphicsPipeline: GraphicsPipelineBackend + 'static;
-    type GraphicsPipelineCreateInfoAdditional;
-
-    /// Contains resources.
-    type Arena: Sync;
-
-    fn create_arena(&self) -> Self::Arena;
-
-    /// Drops a group of resources in the arena.
-    fn drop_arena(&self, arena: Self::Arena)
-    where
-        Self: Sized;
-
-    fn create_swapchain<'a>(&self, arena: &'a Self::Arena) -> &'a Self::Swapchain
-    where
-        Self: Sized;
-    fn default_swapchain<'rcx>(&'rcx self) -> Option<&'rcx Self::Swapchain>;
-
-    /// Creates an immutable image that cannot be modified by any operation (render, transfer, swaps or otherwise).
-    /// Useful for long-lived texture data.
-    fn create_immutable_image<'a>(
-        &self,
-        arena: &'a Self::Arena,
-        format: Format,
-        dimensions: Dimensions,
-        mipcount: MipmapsCount,
-        samples: u32,
-        usage: ImageUsageFlags,
-        initial_data: &[u8],
-    ) -> &'a Self::Image
-    where
-        Self: Sized;
-
-    /// Creates an image containing uninitialized data.
-    fn create_image<'a>(
-        &self,
-        arena: &'a Self::Arena,
-        scope: AliasScope,
-        format: Format,
-        dimensions: Dimensions,
-        mipcount: MipmapsCount,
-        samples: u32,
-        usage: ImageUsageFlags,
-    ) -> &'a Self::Image
-    where
-        Self: Sized;
-
-    /// Creates a framebuffer.
-    fn create_framebuffer<'a>(
-        &self,
-        arena: &'a Self::Arena,
-        color_attachments: &[Image<'a, Self>],
-        depth_stencil_attachment: Option<Image<'a, Self>>,
-    ) -> &'a Self::Framebuffer
-    where
-        Self: Sized;
-
-    /// Creates an immutable buffer.
-    fn create_immutable_buffer<'a>(
-        &self,
-        arena: &'a Self::Arena,
-        size: u64,
-        data: &[u8],
-    ) -> &'a Self::Buffer
-    where
-        Self: Sized;
-
-    /// Creates a buffer containing uninitialized data.
-    fn create_buffer<'a>(&self, arena: &'a Self::Arena, size: u64) -> &'a Self::Buffer
-    where
-        Self: Sized;
-
-    fn create_shader_module<'a>(
-        &self,
-        arena: &'a Self::Arena,
-        data: &[u8],
-        stage: ShaderStageFlags,
-    ) -> &'a Self::ShaderModule
-    where
-        Self: Sized;
-
-    fn create_graphics_pipeline<'a>(
-        &self,
-        arena: &'a Self::Arena,
-        create_info: &GraphicsPipelineCreateInfo<'_, 'a, Self>,
-    ) -> &'a Self::GraphicsPipeline
-    where
-        Self: Sized;
-
-    fn create_descriptor_set_layout<'a>(
-        &self,
-        arena: &'a Self::Arena,
-        bindings: &[DescriptorSetLayoutBinding<'_>],
-    ) -> &'a Self::DescriptorSetLayout
-    where
-        Self: Sized;
-
-    /// Creates a new descriptor set. See trait documentation for explanation of unsafety.
-    fn create_descriptor_set<'a>(
-        &self,
-        arena: &'a Self::Arena,
-        layout: &Self::DescriptorSetLayout,
-        descriptors: &[Descriptor<'a, Self>],
-    ) -> &'a Self::DescriptorSet
-    where
-        Self: Sized;
-
-    fn submit_frame<'a>(&self, commands: &[Command<'a, Self>])
-    where
-        Self: Sized;
 }
 
 //--------------------------------------------------------------------------------------------------

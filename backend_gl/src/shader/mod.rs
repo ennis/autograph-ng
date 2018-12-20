@@ -4,18 +4,15 @@ use std::fmt;
 use std::mem;
 use std::os::raw::c_void;
 use std::ptr;
-use std::fs::File;
-use byteorder::WriteBytesExt;
 
 //pub mod interface;
 pub mod preprocessor;
 
 pub use self::preprocessor::*;
-use crate::pipeline::{BindingSpace, FlatBinding, DescriptorMap};
 use crate::api as gl;
 use crate::api::types::*;
-use gfx2::{ShaderStageFlags, TypeDesc, PrimitiveType};
-use std::io::BufWriter;
+use crate::pipeline::{BindingSpace, DescriptorMap, FlatBinding};
+use gfx2::{ShaderStageFlags, TypeDesc};
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Debug)]
@@ -180,11 +177,11 @@ impl DescriptorMapBuilder {
                 BindingSpace::AtomicCounterBuffer => unimplemented!(),
                 BindingSpace::Texture => &mut self.next_tex,
                 BindingSpace::Image => &mut self.next_img,
-                _ => panic!("invalid binding space")
+                _ => panic!("invalid binding space"),
             };
             let new = FlatBinding {
                 space,
-                location: *next
+                location: *next,
             };
             *next += 1;
             set[binding] = new;
@@ -193,7 +190,13 @@ impl DescriptorMapBuilder {
     }
 
     pub fn new() -> DescriptorMapBuilder {
-        DescriptorMapBuilder { sets: Vec::new(), next_tex: 0, next_img: 0, next_ssbo: 0, next_ubo: 0 }
+        DescriptorMapBuilder {
+            sets: Vec::new(),
+            next_tex: 0,
+            next_img: 0,
+            next_ssbo: 0,
+            next_ubo: 0,
+        }
     }
 }
 
@@ -213,12 +216,11 @@ impl From<DescriptorMapBuilder> for DescriptorMap {
 /// * Builds image+sampler combinations (unimplemented)
 pub fn translate_spirv_to_gl_flavor(
     spv: &[u32],
-    stage: ShaderStageFlags,
+    _stage: ShaderStageFlags,
     desc_map: &mut DescriptorMapBuilder,
-) -> Vec<u32>
-{
-    use spirv_headers::*;
+) -> Vec<u32> {
     use gfx2_spirv as spirv;
+    use spirv_headers::*;
 
     let m = spirv::Module::from_words(spv).expect("failed to load SPIR-V module");
 
@@ -227,14 +229,18 @@ pub fn translate_spirv_to_gl_flavor(
         let a = spirv::ast::Arenas::new();
         let ast = spirv::ast::Ast::new(&a, &m);
 
-        for (iptr_v, v) in ast.variables() {
+        for (_, v) in ast.variables() {
             debug!("{:?}", v);
-            let has_block_deco = v.has_block_decoration().is_some();
+            //let has_block_deco = v.has_block_decoration().is_some();
             let has_buffer_block_deco = v.has_buffer_block_decoration().is_some();
 
-            let space = if v.storage == StorageClass::Uniform /*&& has_block_deco*/ {
+            let space = if v.storage == StorageClass::Uniform
+            /*&& has_block_deco*/
+            {
                 BindingSpace::UniformBuffer
-            } else if (v.storage == StorageClass::Uniform && has_buffer_block_deco) || (v.storage == StorageClass::StorageBuffer) {
+            } else if (v.storage == StorageClass::Uniform && has_buffer_block_deco)
+                || (v.storage == StorageClass::StorageBuffer)
+            {
                 BindingSpace::ShaderStorageBuffer
             } else if v.storage == StorageClass::UniformConstant {
                 if let &TypeDesc::Pointer(&TypeDesc::Image(_, _)) = v.ty {
@@ -242,13 +248,15 @@ pub fn translate_spirv_to_gl_flavor(
                 } else if let &TypeDesc::Pointer(&TypeDesc::SampledImage(_, _)) = v.ty {
                     BindingSpace::Texture
                 } else {
-                    continue
+                    continue;
                 }
             } else {
-                continue
+                continue;
             };
 
-            let (iptr_ds, ds) = v.descriptor_set_decoration().expect("expected descriptor set decoration");
+            let (iptr_ds, ds) = v
+                .descriptor_set_decoration()
+                .expect("expected descriptor set decoration");
             let (iptr_b, binding) = v.binding_decoration().expect("expected binding decoration");
             let new_binding = desc_map.insert(ds, binding, space);
 
@@ -258,9 +266,12 @@ pub fn translate_spirv_to_gl_flavor(
             m.edit_write_instruction(&spirv::inst::IDecorate {
                 decoration: Decoration::Binding,
                 params: &[new_binding.location],
-                target_id: v.id
+                target_id: v.id,
             });
-            debug!("mapping (set={},binding={}) to ({:?},binding={})", ds, binding, space, new_binding.location);
+            debug!(
+                "mapping (set={},binding={}) to ({:?},binding={})",
+                ds, binding, space, new_binding.location
+            );
         }
         // drop AST
     }

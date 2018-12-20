@@ -1,6 +1,7 @@
-use proc_macro2::{Span, TokenStream};
-use syn::{Ident, Meta, MetaList, NestedMeta};
 use super::gfx2_name;
+use proc_macro2::{Span, TokenStream};
+use quote::quote;
+use syn::{Ident, Meta, NestedMeta};
 
 pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     let gfx = gfx2_name();
@@ -43,10 +44,10 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     for (i, f) in fields.iter().enumerate() {
         //println!("{} => {:?}", i, f.ident);
         let field_ty = &f.ty;
-        let field_name = f
-            .ident
-            .clone()
-            .unwrap_or(Ident::new(&format!("unnamed_{}", i), Span::call_site()));
+        /*let _field_name = f
+        .ident
+        .clone()
+        .unwrap_or(Ident::new(&format!("unnamed_{}", i), Span::call_site()));*/
 
         // field offset item
         if i == 0 {
@@ -76,8 +77,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     quote! {
         #[allow(non_snake_case)]
         mod #private_module_name {
-            use super::#struct_name;
-            use #gfx::BufferLayout;
+            use super::*;
             #(#offset_consts)*
         }
 

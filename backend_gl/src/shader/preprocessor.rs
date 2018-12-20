@@ -7,7 +7,7 @@ use std::io;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use crate::pipeline::{BindingSpace, DescriptorMap, StaticSamplerEntry};
+use crate::pipeline::{BindingSpace, StaticSamplerEntry};
 use gfx2::{
     Filter, Format, PrimitiveTopology, SamplerAddressMode, SamplerDescription, SamplerMipmapMode,
     ShaderStageFlags, VertexInputAttributeDescription,

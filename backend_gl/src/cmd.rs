@@ -1,25 +1,22 @@
 use crate::{api as gl, api::types::*};
 use crate::{
-    buffer::RawBuffer, image::RawImage,
-    descriptor::{DescriptorSet, ShaderResourceBindings},
+    descriptor::ShaderResourceBindings,
     framebuffer::Framebuffer,
     resource::{Buffer, Image, Resources},
     state::StateCache,
     GraphicsPipeline, ImplementationParameters, OpenGlBackend, Swapchain,
 };
 use gfx2;
-use gfx2::{
-    BufferTypeless, Command, CommandInner, IndexType, RendererBackend, ScissorRect, Viewport,
-};
+use gfx2::{BufferTypeless, Command, CommandInner, IndexType, Viewport};
 
 use glutin::GlWindow;
 
 // resources
 pub struct ExecuteCtxt<'a, 'rcx> {
-    resources: &'a mut Resources,
+    _resources: &'a mut Resources,
     state_cache: &'a mut StateCache,
     window: &'a GlWindow,
-    impl_params: &'a ImplementationParameters,
+    _impl_params: &'a ImplementationParameters,
     current_pipeline: Option<&'rcx GraphicsPipeline>,
 }
 
@@ -31,10 +28,10 @@ impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
         impl_params: &'a ImplementationParameters,
     ) -> ExecuteCtxt<'a, 'rcx> {
         ExecuteCtxt {
-            resources,
+            _resources: resources,
             state_cache,
             window,
-            impl_params,
+            _impl_params: impl_params,
             current_pipeline: None,
         }
     }
@@ -330,7 +327,6 @@ impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
             CommandInner::Present { image, swapchain } => {
                 self.cmd_present(image.0, swapchain.0);
             }
-            _ => unimplemented!(),
         }
     }
 }

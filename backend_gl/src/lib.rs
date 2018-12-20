@@ -1,65 +1,55 @@
+#![feature(duration_as_u128)]
+
 #[macro_use]
 extern crate log;
-use glutin::{GlContext, GlWindow};
-use std::cell::Cell;
-use std::collections::VecDeque;
-use std::ffi::CStr;
-use std::mem;
-use std::ops::DerefMut;
-use std::os::raw::c_char;
-use std::ptr;
-use std::slice;
-use std::str;
-use std::sync::Mutex;
-
 mod api;
 mod buffer;
-mod pool;
+mod cmd;
+mod descriptor;
 mod format;
+mod framebuffer;
 mod image;
 mod pipeline;
+pub mod pipeline_file;
+mod pool;
+mod resource;
 mod shader;
 mod state;
 mod sync;
-mod cmd;
-mod descriptor;
-mod framebuffer;
-mod resource;
 mod upload;
+mod util;
 mod window;
-
-// pipeline files
-pub mod pipeline_file;
-
-use config::Config;
-//use sid_vec::{FromIndex, Id, IdVec};
-use ordered_float::NotNan;
-use slotmap::SlotMap;
-use smallvec::SmallVec;
-use gfx2;
-use gfx2::{
-    AliasScope, AttachmentDescription, Descriptor, DescriptorSetLayoutBinding, DescriptorType,
-    Dimensions, Format, GraphicsPipelineCreateInfo, ImageUsageFlags, MipmapsCount, RendererBackend,
-    ShaderStageFlags, Command
-};
 
 use self::api as gl;
 use self::api::types::*;
 use self::cmd::ExecuteCtxt;
-
 use self::{
-    buffer::RawBuffer,
     descriptor::{DescriptorSet, DescriptorSetLayout},
     framebuffer::Framebuffer,
     image::{upload_image_region, RawImage},
     resource::{Arena, Buffer, Image, Resources, SamplerCache},
     shader::{create_shader_from_glsl, ShaderModule},
     state::StateCache,
-    sync::{Timeline, Timeout},
+    sync::Timeline,
 };
+use config::Config;
+use gfx2;
+use gfx2::{
+    AliasScope, Command, Descriptor, DescriptorSetLayoutBinding, Dimensions, Format,
+    GraphicsPipelineCreateInfo, ImageUsageFlags, MipmapsCount, RendererBackend, ShaderStageFlags,
+};
+use glutin::{GlContext, GlWindow};
+use std::ffi::CStr;
+use std::mem;
+use std::os::raw::c_char;
+use std::ptr;
+use std::slice;
+use std::str;
+use std::sync::Mutex;
+use std::time::Duration;
 
 pub use self::pipeline::{
-    create_graphics_pipeline_internal, GraphicsPipeline, GraphicsPipelineCreateInfoAdditional,
+    create_graphics_pipeline_internal, GraphicsPipeline,
 };
 pub use self::pipeline_file::PipelineDescriptionFile;
 pub use self::window::create_backend_and_window;
@@ -125,6 +115,18 @@ impl gfx2::SwapchainBackend for Swapchain {
         *self.size.lock().unwrap()
     }
 }
+
+impl gfx2::GraphicsPipelineBackend for GraphicsPipeline {}
+impl gfx2::ShaderModuleBackend for ShaderModule {}
+impl gfx2::DescriptorSetLayoutBackend for DescriptorSetLayout {}
+impl gfx2::BufferBackend for Buffer {
+    fn size(&self) -> u64 {
+        self.size as u64
+    }
+}
+impl gfx2::ImageBackend for Image {}
+impl gfx2::FramebufferBackend for Framebuffer {}
+//impl renderer::DescriptorSet for DescriptorSet {}
 
 pub struct OpenGlBackend {
     rsrc: Mutex<Resources>,
@@ -203,18 +205,7 @@ impl OpenGlBackend {
 // TODO move this into a function in the spirv module
 const SPIRV_MAGIC: u32 = 0x0723_0203;
 const UPLOAD_DEDICATED_THRESHOLD: usize = 65536;
-
-impl gfx2::GraphicsPipelineBackend for GraphicsPipeline {}
-impl gfx2::ShaderModuleBackend for ShaderModule {}
-impl gfx2::DescriptorSetLayoutBackend for DescriptorSetLayout {}
-impl gfx2::BufferBackend for Buffer {
-    fn size(&self) -> u64 {
-        self.size as u64
-    }
-}
-impl gfx2::ImageBackend for Image {}
-impl gfx2::FramebufferBackend for Framebuffer {}
-//impl renderer::DescriptorSet for DescriptorSet {}
+const FRAME_WAIT_TIMEOUT: Duration = Duration::from_millis(500);
 
 impl RendererBackend for OpenGlBackend {
     type Swapchain = Swapchain;
@@ -225,9 +216,7 @@ impl RendererBackend for OpenGlBackend {
     type DescriptorSetLayout = DescriptorSetLayout;
     type ShaderModule = ShaderModule;
     type GraphicsPipeline = GraphicsPipeline;
-    type GraphicsPipelineCreateInfoAdditional = GraphicsPipelineCreateInfoAdditional;
     type Arena = Arena;
-    //type AttachmentLayoutHandle = AttachmentLayoutHandle;
 
     fn create_arena(&self) -> Self::Arena {
         self.rsrc.lock().unwrap().create_arena()
@@ -435,10 +424,13 @@ impl RendererBackend for OpenGlBackend {
         if *fnum > u64::from(self.max_frames_in_flight) {
             let timeout = !timeline.client_sync(
                 *fnum - u64::from(self.max_frames_in_flight),
-                Timeout::Nanoseconds(1_000_000),
+                FRAME_WAIT_TIMEOUT,
             );
             if timeout {
-                panic!("timeout waiting for frame to finish")
+                panic!(
+                    "timeout ({:?}) waiting for frame to finish",
+                    FRAME_WAIT_TIMEOUT
+                )
             }
         }
 

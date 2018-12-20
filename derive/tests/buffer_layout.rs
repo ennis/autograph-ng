@@ -2,8 +2,7 @@ extern crate gfx2;
 #[macro_use]
 extern crate gfx2_derive;
 
-use gfx2::renderer::backend::gl::OpenGlBackend;
-use gfx2::renderer::{BufferLayout, BufferTypeless, PrimitiveType, RendererBackend, TypeDesc};
+use gfx2::{BufferLayout, BufferTypeless, PrimitiveType, RendererBackend, TypeDesc};
 
 #[repr(C)]
 #[derive(BufferLayout, Copy, Clone)]
@@ -23,7 +22,7 @@ struct TestLayout2 {
 #[test]
 fn test_buffer_layout() {
     assert_eq!(
-        <TestLayout1 as gfx2::renderer::BufferLayout>::TYPE,
+        <TestLayout1 as gfx2::BufferLayout>::TYPE,
         &TypeDesc::Struct(&[
             (0, &TypeDesc::Primitive(PrimitiveType::Int)),
             (4, &TypeDesc::Primitive(PrimitiveType::Int)),
@@ -31,7 +30,27 @@ fn test_buffer_layout() {
     );
 
     assert_eq!(
-        <TestLayout2 as gfx2::renderer::BufferLayout>::TYPE,
+        <TestLayout2 as gfx2::BufferLayout>::TYPE,
+        &TypeDesc::Struct(&[
+            (0, &TypeDesc::Vector(PrimitiveType::Int, 3)),
+            (12, &TypeDesc::Primitive(PrimitiveType::Float)),
+            (16, &TypeDesc::Vector(PrimitiveType::Int, 3)),
+        ])
+    );
+}
+
+#[test]
+fn test_derive_in_function() {
+    #[repr(C)]
+    #[derive(BufferLayout, Copy, Clone)]
+    struct TestLayout3 {
+        a: [i32; 3],
+        b: f32,
+        c: [i32; 3],
+    }
+
+    assert_eq!(
+        <TestLayout3 as gfx2::BufferLayout>::TYPE,
         &TypeDesc::Struct(&[
             (0, &TypeDesc::Vector(PrimitiveType::Int, 3)),
             (12, &TypeDesc::Primitive(PrimitiveType::Float)),

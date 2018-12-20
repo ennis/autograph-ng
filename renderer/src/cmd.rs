@@ -1,11 +1,10 @@
-use std::mem;
 use std::ops::Range;
 
 use crate::sync::*;
 use crate::{
     interface::{PipelineInterface, PipelineInterfaceVisitor},
-    Buffer, BufferTypeless, DescriptorSet, DescriptorSetLayout, Framebuffer, GraphicsPipeline,
-    Image, IndexType, RendererBackend, ScissorRect, Swapchain, Viewport,
+    BufferTypeless, DescriptorSet, Framebuffer, GraphicsPipeline, Image, IndexType,
+    RendererBackend, ScissorRect, Swapchain, Viewport,
 };
 
 pub struct Command<'a, R: RendererBackend> {

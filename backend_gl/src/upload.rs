@@ -1,12 +1,9 @@
 //! Upload buffers
-use std::mem;
-use std::ops::Range;
-use std::ptr;
+use crate::buffer::create_buffer;
+use crate::{api as gl, api::types::*};
+use gfx2::align_offset;
 use std::ptr::copy_nonoverlapping;
 use std::sync::Mutex;
-use crate::{api as gl, api::types::*};
-use crate::{buffer::create_buffer, sync::{Timeline, Timeout}};
-use gfx2::align_offset;
 
 pub struct MappedBuffer {
     buffer: GLuint,

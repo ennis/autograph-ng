@@ -1,8 +1,6 @@
-use super::buffer::{BufferDescription, RawBuffer};
 use super::image::{ImageDescription, RawImage};
 use gfx2::AliasScope;
 use slotmap::new_key_type;
-use std::marker::PhantomData;
 
 //--------------------------------------------------------------------------------------------------
 pub struct AliasedObject<D: Eq + Clone, T> {
@@ -62,7 +60,7 @@ impl<D: Eq + Clone, K: slotmap::Key + Copy, T> Pool<D, K, T> {
     }
 
     pub fn destroy(&mut self, key: K, scope: AliasScope, _callback: impl FnOnce(T)) {
-        let _should_remove = if let Some(mut v) = self.entries.get_mut(key.clone()) {
+        let _should_remove = if let Some(v) = self.entries.get_mut(key.clone()) {
             let pos = v.live_scopes.iter().position(|s| *s == scope);
             if let Some(pos) = pos {
                 v.live_scopes.swap_remove(pos);
@@ -80,7 +78,7 @@ impl<D: Eq + Clone, K: slotmap::Key + Copy, T> Pool<D, K, T> {
         }*/
     }
 
-    fn evict<F: FnMut(T)>(&mut self, _until_frame: u64, _deleter: F) {
+    fn _evict<F: FnMut(T)>(&mut self, _until_frame: u64, _deleter: F) {
         /*self.store.retain(|k, e| {
             if e.last_used_frame > until_frame {
                 let v = mem::replace(&mut e.value, None).unwrap();
@@ -92,13 +90,13 @@ impl<D: Eq + Clone, K: slotmap::Key + Copy, T> Pool<D, K, T> {
         });*/
     }
 
-    pub fn get(&self, key: K) -> Option<&T> {
+    /*pub fn get(&self, key: K) -> Option<&T> {
         self.entries.get(key.clone()).map(|e| &e.object)
     }
 
     pub fn get_mut(&mut self, key: K) -> Option<&mut T> {
         self.entries.get_mut(key.clone()).map(|e| &mut e.object)
-    }
+    }*/
 }
 
 new_key_type! {
@@ -107,4 +105,4 @@ pub struct BufferAliasKey;
 }
 
 pub type ImagePool = Pool<ImageDescription, ImageAliasKey, RawImage>;
-pub type BufferPool = Pool<BufferDescription, BufferAliasKey, RawBuffer>;
+//pub type BufferPool = Pool<BufferDescription, BufferAliasKey, RawBuffer>;
