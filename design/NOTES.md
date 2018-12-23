@@ -980,7 +980,8 @@ Alternative: arena-based GPU synchronization
 - hot-reload modules must be parameterized with a single backend type, or not at all
 - entails recompilation of the main executable if something in a generic function changes
     - a lot of things can be generic: anything with backend types
-        - GraphicsPipelineCreateInfo is generic  
+        - GraphicsPipelineCreateInfo is generic
+- just use the same backend type in each crate (can keep in sync with a shared crate containing a specialization of the renderer)
 ##### Option C: have both
 - Object-safe wrapper around `Renderer`
 - `dyn Renderer<Backend>`
@@ -995,6 +996,17 @@ Alternative: arena-based GPU synchronization
 - there are still issues with descriptor remapping
     - translate vulkan SPIR-V to GL SPIR-V if using the SPIR-V path
     - otherwise, use spirv_cross (thank you very much)
+- Issues:
+    - CommandBuffers: are templated by the backend type
+    - must go through all entries and downcast references
+        - issue: may be slow
+    - faster to do it on-the-fly? But needs a type-erased command buffer impl
+        - this puts the type-erasure layer on top of Renderer<Backend>, not on top of the Backend itself
+        - requires replacement of all references to Renderer<T>
+        - can possibly allow optimizations (native command buffers generated on-the-fly)
+            - e.g. can put commands with the same sortkey in the same native command buffer
+        - sorting logic must also be in the backend... duplication of logic
+            - although the sorting logic is not that complicated
         
 ### Crate refactor
 - Split into multiple crates
@@ -1044,3 +1056,69 @@ Alternative: arena-based GPU synchronization
         - need a good approach for EDSLs in rust
     - GUI widgets 
     - Graphics pipelines
+    
+#### Shader modules
+- compile GLSL to SPIR-V on compilation, with a macro annotating a const &'str:
+    - `#[vertex_shader]`, `#[fragment_shader]`, ..., `#[combined_shader]` 
+    - generate shader info: ` gfx2_shader_info_for_xxx`, `gfx2_combined_shader_info_for_xxx`
+    - also generate typeinfo data, because why not
+    - and statically check against existing interfaces, 'cause why not
+        - basically, typecheck shader interfaces during compilation
+        - lift typedesc 
+    - issue: specialization may change the interface
+    - issue: poor error messages (no const_assert! yet)
+        - so, not a priority currently
+    - possibly, generate interface types 
+        - but not a priority
+    - setup: 
+        - one crate containing the shared interface types
+        - one crate containing the shaders and config (hot-reloadable)
+        - and one crate containing the main application
+    - could possibly merge the interface and hot-reload crates into a single one
+        - if we can ensure that the interface types do not change
+- in main application
+    ```
+    let c = ExtensionCrate::load(&arena);
+    let pipeline = c.load_graphics_pipeline::<Backend>(&arena, "<name or selector>"); // -> GraphicsPipeline
+    ```
+- shader modules should be backend-agnostic 
+- bikeshedding: 
+    - there is already something called `ShaderModule` (shader objects, vulkan shader modules)
+    - crates = 'extension crates'
+    - GraphicsPipelineDefinition
+        - all states + SPIR-V bytecodes, no shader modules
+        - interface type between extension crate and main application
+- duplication: shader compiler crate and shader_compiler_derive
+    - gfx2-shader-compiler crate (internal wrapper around GLSL preprocessor and shaderc)
+        - Compiler
+    - gfx2-shader-macros (gfx2-shader-compiler) (proc macro for compile-time GLSL checking)
+        - static_shader!
+    - gfx2-shader (gfx2-shader-derive) (prelude for hot-reloadable pipeline definitions)
+        - trait Shader
+            - fn spirv(&self) -> &[u32]
+        - static_shader!
+        - 
+        
+
+#### Extension crates
+- hot-reloadable
+- can contain:
+    - shader code
+    - backend-specific (backend-bound) rendering commands
+    - backend-agnostic (unbound) rendering commands
+        - type-erased resources
+        - specialized format?
+
+#### Issue: Arenas
+- currently only usable by the backend
+- but in theory could also be used for other things
+    
+#### Hot-reloadable modules
+- Must have C interface (cdylib)
+- Issue:
+    - backend code is duplicated across plugins
+    - cannot use a dylib since they simply don't work (linker error)
+    - opengl function pointers are not loaded
+        - (easy) solution: use gleam
+        - should be better than global variables
+        - closer to what vulkan does

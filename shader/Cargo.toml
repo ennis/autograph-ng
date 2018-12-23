@@ -1,0 +1,8 @@
+[package]
+name = "gfx2-shader"
+version = "0.1.0"
+authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+gfx2-shader-macros = { path = "../shader_macros" }

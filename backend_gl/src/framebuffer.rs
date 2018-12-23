@@ -2,15 +2,15 @@ use crate::{api as gl, api::types::*, OpenGlBackend as R};
 use gfx2;
 
 #[derive(Debug)]
-pub struct Framebuffer {
+pub struct GlFramebuffer {
     pub obj: GLuint,
 }
 
-impl Framebuffer {
+impl GlFramebuffer {
     pub fn new(
         color_attachments: &[gfx2::Image<R>],
         depth_stencil_attachment: Option<gfx2::Image<R>>,
-    ) -> Result<Framebuffer, GLenum> {
+    ) -> Result<GlFramebuffer, GLenum> {
         let mut obj = 0;
         unsafe {
             gl::CreateFramebuffers(1, &mut obj);
@@ -84,7 +84,7 @@ impl Framebuffer {
         let status = unsafe { gl::CheckNamedFramebufferStatus(obj, gl::DRAW_FRAMEBUFFER) };
 
         if status == gl::FRAMEBUFFER_COMPLETE {
-            Ok(Framebuffer { obj })
+            Ok(GlFramebuffer { obj })
         } else {
             Err(status)
         }

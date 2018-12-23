@@ -67,7 +67,7 @@ impl<'tcx> From<DescriptorSetLayoutBinding<'tcx>> for TypelessDescriptorSetLayou
 }
 
 #[derive(Debug)]
-pub struct DescriptorSetLayout {
+pub struct GlDescriptorSetLayout {
     pub bindings: Vec<TypelessDescriptorSetLayoutBinding>,
 }
 
@@ -96,19 +96,19 @@ pub enum RawDescriptor {
 }
 
 #[derive(Debug)]
-pub struct DescriptorSet {
+pub struct GlDescriptorSet {
     pub descriptors: Vec<RawDescriptor>,
 }
 
-impl gfx2::DescriptorSetBackend for DescriptorSet {}
+impl gfx2::DescriptorSetBackend for GlDescriptorSet {}
 
-impl DescriptorSet {
+impl GlDescriptorSet {
     pub fn from_descriptors_and_layout(
         descriptors: &[Descriptor<OpenGlBackend>],
-        layout: &DescriptorSetLayout,
+        layout: &GlDescriptorSetLayout,
         sampler_cache: &mut SamplerCache,
-    ) -> DescriptorSet {
-        DescriptorSet {
+    ) -> GlDescriptorSet {
+        GlDescriptorSet {
             descriptors: descriptors
                 .iter()
                 .enumerate()

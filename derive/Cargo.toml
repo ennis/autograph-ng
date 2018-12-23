@@ -9,10 +9,10 @@ gfx2 = { path = "../renderer" }
 
 [dependencies]
 log = "*"
-quote = "*"
-syn = "*"
-darling = "*"
-proc-macro2 = "*"
+quote = "0.6.10"
+syn = "0.15.23"
+darling = "0.8.1"
+proc-macro2 = "0.4.24"
 
 [lib]
 proc-macro = true

@@ -11,6 +11,7 @@ use gfx2_derive::{BufferLayout, DescriptorSetInterface};
 
 mod common;
 use self::common::*;
+use libloading as lib;
 
 //--------------------------------------------------------------------------------------------------
 type Backend = gl_backend::OpenGlBackend;
@@ -22,6 +23,16 @@ type Framebuffer<'a> = gfx2::Framebuffer<'a, Backend>;
 type DescriptorSet<'a> = gfx2::DescriptorSet<'a, Backend>;
 type DescriptorSetLayout<'a> = gfx2::DescriptorSetLayout<'a, Backend>;
 type GraphicsPipeline<'a> = gfx2::GraphicsPipeline<'a, Backend>;
+
+//--------------------------------------------------------------------------------------------------
+fn plugin_test<'a>(arena: &'a gl_backend::Arena) -> lib::Result<gl_backend::Buffer<'a, [u8]>> {
+    let lib = lib::Library::new("target/debug/common_shaders.dll")?;
+    unsafe {
+        let func: lib::Symbol<for<'b> unsafe extern fn(&'b gl_backend::Arena) -> gl_backend::Buffer<'b, [u8]>>  = lib.get(b"plugin_entry")?;
+        Ok(func(arena))
+    }
+}
+
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Copy, Clone)]
@@ -144,7 +155,10 @@ fn create_pipelines<'a>(arena: &'a Arena<Backend>) -> PipelineAndLayout<'a> {
 
 //--------------------------------------------------------------------------------------------------
 fn main() {
+    //println!("OUT_DIR={}", env!("OUT_DIR"));
+    println!("CARGO_MANIFEST_DIR={}", env!("CARGO_MANIFEST_DIR"));
     env::set_current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/..")).unwrap();
+    //env::set_current_dir(env!("CARGO_MANIFEST_DIR")).unwrap();
 
     // this creates an event loop, a window, context, and a swapchain associated to the window.
     let app = App::new();
@@ -153,6 +167,7 @@ fn main() {
     // graphics pipelines
     'outer: loop {
         let arena_0 = r.create_arena();
+        let _ = plugin_test(&arena_0);
         // reload pipelines
         let pipeline = create_pipelines(&arena_0);
 

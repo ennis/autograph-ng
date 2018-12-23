@@ -1,0 +1,13 @@
+[package]
+name = "common_shaders"
+version = "0.1.0"
+authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+#gfx2-backend-gl = { path = "../backend_gl" }
+gfx2-shader = { path = "../shader" }
+gfx2 = { path = "../renderer" }

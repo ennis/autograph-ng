@@ -4,9 +4,6 @@ version = "0.1.0"
 authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
 edition = '2018'
 
-[build-dependencies]
-embed-resource = "*"
-
 [dev-dependencies]
 image = "*"
 gfx2-derive = { path = "../derive" }
@@ -14,6 +11,7 @@ gfx2-backend-gl = { path = "../backend_gl" }
 winit = "*"
 glutin = "*"
 pretty_env_logger = "*"
+libloading = "*"
 
 [dependencies]
 bitflags = "*"

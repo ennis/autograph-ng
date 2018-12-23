@@ -16,7 +16,7 @@ use gfx2::{ShaderStageFlags, TypeDesc};
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Debug)]
-pub struct ShaderModule {
+pub struct GlShaderModule {
     pub obj: GLuint,
     pub stage: ShaderStageFlags,
     /// SPIR-V bytecode of this shader. If this is not None, then obj is ignored

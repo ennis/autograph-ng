@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
 edition = '2018'
 
+
 [dependencies]
 byteorder = "*"
 num-traits = "*"
@@ -12,3 +13,4 @@ spirv_headers = "*"
 ordered-float = "*"
 typed-arena = "*"
 gfx2 = { path = "../renderer" }
+

@@ -4,6 +4,10 @@ members = [
     "renderer",
     "backend_gl",
     "spirv",
+    "shader_compiler",
+    "shader_macros",
+    "shader",
+    "common_shaders",
 ]
 
 [profile.release]

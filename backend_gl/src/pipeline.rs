@@ -8,10 +8,10 @@ use crate::{
     format::GlFormatInfo,
     shader::{
         create_specialized_spirv_shader, translate_spirv_to_gl_flavor, DescriptorMapBuilder,
-        ShaderCreationError, ShaderModule,
+        ShaderCreationError, GlShaderModule,
     },
     state::StateCache,
-    Arena, OpenGlBackend,
+    resource::GlArena, OpenGlBackend,
 };
 use gfx2::{
     GraphicsPipelineCreateInfo, LogicOp, PipelineColorBlendAttachmentState,
@@ -143,11 +143,11 @@ impl From<ShaderCreationError> for ProgramCreationError {
 }
 
 fn create_graphics_program(
-    vert: &ShaderModule,
-    frag: Option<&ShaderModule>,
-    geom: Option<&ShaderModule>,
-    tessctl: Option<&ShaderModule>,
-    tesseval: Option<&ShaderModule>,
+    vert: &GlShaderModule,
+    frag: Option<&GlShaderModule>,
+    geom: Option<&GlShaderModule>,
+    tessctl: Option<&GlShaderModule>,
+    tesseval: Option<&GlShaderModule>,
     //user_dm: DescriptorMap,
 ) -> Result<(GLuint, DescriptorMap), ProgramCreationError> {
     let spirv = vert.spirv.is_some();
@@ -297,7 +297,7 @@ pub struct PipelineColorBlendStateOwned {
 }
 
 #[derive(Clone, Debug)]
-pub struct GraphicsPipeline {
+pub struct GlGraphicsPipeline {
     pub(super) rasterization_state: PipelineRasterizationStateCreateInfo,
     pub(super) depth_stencil_state: PipelineDepthStencilStateCreateInfo,
     pub(super) multisample_state: PipelineMultisampleStateCreateInfo,
@@ -309,7 +309,7 @@ pub struct GraphicsPipeline {
     pub(super) vao: GLuint,
 }
 
-impl GraphicsPipeline {
+impl GlGraphicsPipeline {
     pub fn descriptor_map(&self) -> &DescriptorMap {
         &self.descriptor_map
     }
@@ -321,17 +321,16 @@ impl GraphicsPipeline {
 
 //--------------------------------------------------------------------------------------------------
 pub fn create_graphics_pipeline_internal<'a>(
-    arena: &'a Arena,
+    arena: &'a GlArena,
     ci: &GraphicsPipelineCreateInfo<OpenGlBackend>,
-) -> &'a GraphicsPipeline {
+) -> &'a GlGraphicsPipeline {
     let (program, descriptor_map) = {
         let vs = ci.shader_stages.vertex.0;
         let fs = ci.shader_stages.fragment.map(|s| s.0);
         let gs = ci.shader_stages.geometry.map(|s| s.0);
         let tcs = ci.shader_stages.tess_control.map(|s| s.0);
         let tes = ci.shader_stages.tess_eval.map(|s| s.0);
-        create_graphics_program(vs, fs, gs, tcs, tes)
-            .expect("failed to create program")
+        create_graphics_program(vs, fs, gs, tcs, tes).expect("failed to create program")
     };
 
     //assert_eq!(vertex_shader.stage, ShaderStageFlags::VERTEX);
@@ -348,7 +347,7 @@ pub fn create_graphics_pipeline_internal<'a>(
         blend_constants: ci.color_blend_state.blend_constants,
     };
 
-    let g = GraphicsPipeline {
+    let g = GlGraphicsPipeline {
         rasterization_state: *ci.rasterization_state,
         depth_stencil_state: *ci.depth_stencil_state,
         multisample_state: *ci.multisample_state,
@@ -363,7 +362,7 @@ pub fn create_graphics_pipeline_internal<'a>(
     arena.graphics_pipelines.alloc(g)
 }
 
-impl GraphicsPipeline {
+impl GlGraphicsPipeline {
     pub fn bind(&self, state_cache: &mut StateCache) {
         state_cache.set_program(self.program);
         state_cache.set_vertex_array(self.vao);

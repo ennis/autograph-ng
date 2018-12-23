@@ -1,16 +1,16 @@
 use super::{
     api as gl,
     api::types::*,
-    descriptor::{DescriptorSet, DescriptorSetLayout},
-    framebuffer::Framebuffer,
+    descriptor::{GlDescriptorSet, GlDescriptorSetLayout},
+    framebuffer::GlFramebuffer,
     image::{ImageDescription, RawImage},
-    pipeline::GraphicsPipeline,
+    pipeline::GlGraphicsPipeline,
     pool::{BufferAliasKey, ImageAliasKey, ImagePool},
-    shader::ShaderModule,
+    shader::GlShaderModule,
     sync::GpuSyncObject,
     upload::{MappedBuffer, UploadBuffer},
     util::SyncArena,
-    Swapchain,
+    GlSwapchain,
 };
 use fxhash::FxHashMap;
 use gfx2::{
@@ -54,7 +54,7 @@ pub struct AliasInfo<K: slotmap::Key> {
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Debug)]
-pub struct Image {
+pub struct GlImage {
     pub obj: GLuint,
     pub target: GLenum,
     pub should_destroy: bool,
@@ -62,7 +62,7 @@ pub struct Image {
 }
 
 #[derive(Debug)]
-pub struct Buffer {
+pub struct GlBuffer {
     pub obj: GLuint,
     pub should_destroy: bool,
     pub alias_info: Option<AliasInfo<BufferAliasKey>>,
@@ -117,21 +117,21 @@ impl SamplerCache {
 }
 
 //--------------------------------------------------------------------------------------------------
-pub struct Arena {
-    pub swapchains: SyncArena<Swapchain>,
-    pub buffers: SyncArena<Buffer>,
-    pub images: SyncArena<Image>,
-    pub descriptor_sets: SyncArena<DescriptorSet>,
-    pub descriptor_set_layouts: SyncArena<DescriptorSetLayout>,
-    pub shader_modules: SyncArena<ShaderModule>,
-    pub graphics_pipelines: SyncArena<GraphicsPipeline>,
-    pub framebuffers: SyncArena<Framebuffer>,
+pub struct GlArena {
+    pub swapchains: SyncArena<GlSwapchain>,
+    pub buffers: SyncArena<GlBuffer>,
+    pub images: SyncArena<GlImage>,
+    pub descriptor_sets: SyncArena<GlDescriptorSet>,
+    pub descriptor_set_layouts: SyncArena<GlDescriptorSetLayout>,
+    pub shader_modules: SyncArena<GlShaderModule>,
+    pub graphics_pipelines: SyncArena<GlGraphicsPipeline>,
+    pub framebuffers: SyncArena<GlFramebuffer>,
     pub upload_buffer: UploadBuffer,
 }
 
-impl Arena {
-    pub fn new(upload_buffer: UploadBuffer) -> Arena {
-        Arena {
+impl GlArena {
+    pub fn new(upload_buffer: UploadBuffer) -> GlArena {
+        GlArena {
             swapchains: SyncArena::new(),
             buffers: SyncArena::new(),
             images: SyncArena::new(),
@@ -187,12 +187,12 @@ impl Resources {
         }
     }
 
-    pub fn create_arena(&mut self) -> Arena {
-        Arena::new(self.alloc_upload_buffer())
+    pub fn create_arena(&mut self) -> GlArena {
+        GlArena::new(self.alloc_upload_buffer())
     }
 
     // arena can't drop before commands that refer to the objects inside are submitted
-    pub fn drop_arena(&mut self, arena: Arena)
+    pub fn drop_arena(&mut self, arena: GlArena)
     where
         Self: Sized,
     {
@@ -223,14 +223,14 @@ impl Resources {
     //----------------------------------------------------------------------------------------------
     pub fn alloc_aliased_image<'a>(
         &mut self,
-        arena: &'a Arena,
+        arena: &'a GlArena,
         scope: AliasScope,
         format: Format,
         dimensions: Dimensions,
         mipcount: MipmapsCount,
         samples: u32,
         usage: ImageUsageFlags,
-    ) -> &'a Image {
+    ) -> &'a GlImage {
         let desc = ImageDescription::new(format, dimensions, mipcount, samples, usage);
         let (key, raw_img) = self.image_pool.alloc(scope, desc, |d| {
             debug!(
@@ -253,7 +253,7 @@ impl Resources {
             }
         });
 
-        arena.images.alloc(Image {
+        arena.images.alloc(GlImage {
             alias_info: AliasInfo { key, scope }.into(),
             obj: raw_img.obj,
             target: raw_img.target,

@@ -24,11 +24,11 @@ use self::api as gl;
 use self::api::types::*;
 use self::cmd::ExecuteCtxt;
 use self::{
-    descriptor::{DescriptorSet, DescriptorSetLayout},
-    framebuffer::Framebuffer,
+    descriptor::{GlDescriptorSet, GlDescriptorSetLayout},
+    framebuffer::GlFramebuffer,
     image::{upload_image_region, RawImage},
-    resource::{Arena, Buffer, Image, Resources, SamplerCache},
-    shader::{create_shader_from_glsl, ShaderModule},
+    resource::{GlArena, GlBuffer, GlImage, Resources, SamplerCache},
+    shader::{create_shader_from_glsl, GlShaderModule},
     state::StateCache,
     sync::Timeline,
 };
@@ -48,9 +48,7 @@ use std::str;
 use std::sync::Mutex;
 use std::time::Duration;
 
-pub use self::pipeline::{
-    create_graphics_pipeline_internal, GraphicsPipeline,
-};
+pub use self::pipeline::{create_graphics_pipeline_internal, GlGraphicsPipeline};
 pub use self::pipeline_file::PipelineDescriptionFile;
 pub use self::window::create_backend_and_window;
 
@@ -106,26 +104,26 @@ impl ImplementationParameters {
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Debug)]
-pub struct Swapchain {
+pub struct GlSwapchain {
     size: Mutex<(u32, u32)>,
 }
 
-impl gfx2::SwapchainBackend for Swapchain {
+impl gfx2::SwapchainBackend for GlSwapchain {
     fn size(&self) -> (u32, u32) {
         *self.size.lock().unwrap()
     }
 }
 
-impl gfx2::GraphicsPipelineBackend for GraphicsPipeline {}
-impl gfx2::ShaderModuleBackend for ShaderModule {}
-impl gfx2::DescriptorSetLayoutBackend for DescriptorSetLayout {}
-impl gfx2::BufferBackend for Buffer {
+impl gfx2::GraphicsPipelineBackend for GlGraphicsPipeline {}
+impl gfx2::ShaderModuleBackend for GlShaderModule {}
+impl gfx2::DescriptorSetLayoutBackend for GlDescriptorSetLayout {}
+impl gfx2::BufferBackend for GlBuffer {
     fn size(&self) -> u64 {
         self.size as u64
     }
 }
-impl gfx2::ImageBackend for Image {}
-impl gfx2::FramebufferBackend for Framebuffer {}
+impl gfx2::ImageBackend for GlImage {}
+impl gfx2::FramebufferBackend for GlFramebuffer {}
 //impl renderer::DescriptorSet for DescriptorSet {}
 
 pub struct OpenGlBackend {
@@ -136,7 +134,7 @@ pub struct OpenGlBackend {
     sampler_cache: Mutex<SamplerCache>,
     limits: ImplementationParameters,
     window: GlWindow,
-    def_swapchain: Swapchain,
+    def_swapchain: GlSwapchain,
     max_frames_in_flight: u32,
 }
 
@@ -190,7 +188,7 @@ impl OpenGlBackend {
             rsrc: Mutex::new(Resources::new(upload_buffer_size as usize)),
             timeline: Mutex::new(timeline),
             frame_num: Mutex::new(1),
-            def_swapchain: Swapchain {
+            def_swapchain: GlSwapchain {
                 size: Mutex::new(w.get_inner_size().unwrap().into()),
             },
             window: w,
@@ -208,15 +206,15 @@ const UPLOAD_DEDICATED_THRESHOLD: usize = 65536;
 const FRAME_WAIT_TIMEOUT: Duration = Duration::from_millis(500);
 
 impl RendererBackend for OpenGlBackend {
-    type Swapchain = Swapchain;
-    type Buffer = Buffer;
-    type Image = Image;
-    type Framebuffer = Framebuffer;
-    type DescriptorSet = DescriptorSet;
-    type DescriptorSetLayout = DescriptorSetLayout;
-    type ShaderModule = ShaderModule;
-    type GraphicsPipeline = GraphicsPipeline;
-    type Arena = Arena;
+    type Swapchain = GlSwapchain;
+    type Buffer = GlBuffer;
+    type Image = GlImage;
+    type Framebuffer = GlFramebuffer;
+    type DescriptorSet = GlDescriptorSet;
+    type DescriptorSetLayout = GlDescriptorSetLayout;
+    type ShaderModule = GlShaderModule;
+    type GraphicsPipeline = GlGraphicsPipeline;
+    type Arena = GlArena;
 
     fn create_arena(&self) -> Self::Arena {
         self.rsrc.lock().unwrap().create_arena()
@@ -261,7 +259,7 @@ impl RendererBackend for OpenGlBackend {
             );
         }
 
-        arena.images.alloc(Image {
+        arena.images.alloc(GlImage {
             should_destroy: true,
             obj: raw.obj,
             target: raw.target,
@@ -297,7 +295,7 @@ impl RendererBackend for OpenGlBackend {
     ) -> &'a Self::Framebuffer {
         arena
             .framebuffers
-            .alloc(Framebuffer::new(color_att, depth_stencil_att).unwrap())
+            .alloc(GlFramebuffer::new(color_att, depth_stencil_att).unwrap())
     }
 
     //----------------------------------------------------------------------------------------------
@@ -313,7 +311,7 @@ impl RendererBackend for OpenGlBackend {
                 .upload_buffer
                 .write(data, self.limits.uniform_buffer_alignment)
                 .unwrap();
-            arena.buffers.alloc(Buffer {
+            arena.buffers.alloc(GlBuffer {
                 obj,
                 offset,
                 size: size as usize,
@@ -350,7 +348,7 @@ impl RendererBackend for OpenGlBackend {
                 ::std::slice::from_raw_parts(data.as_ptr() as *const u32, data.len() / 4)
             };
 
-            ShaderModule {
+            GlShaderModule {
                 obj: 0,
                 spirv: data_u32.to_vec().into(),
                 stage,
@@ -358,7 +356,7 @@ impl RendererBackend for OpenGlBackend {
         } else {
             let obj = create_shader_from_glsl(stage, data)
                 .expect("failed to compile shader from GLSL source");
-            ShaderModule {
+            GlShaderModule {
                 obj,
                 spirv: None,
                 stage,
@@ -384,7 +382,7 @@ impl RendererBackend for OpenGlBackend {
         bindings: &[DescriptorSetLayoutBinding],
     ) -> &'a Self::DescriptorSetLayout {
         assert_ne!(bindings.len(), 0, "descriptor set layout has no bindings");
-        arena.descriptor_set_layouts.alloc(DescriptorSetLayout {
+        arena.descriptor_set_layouts.alloc(GlDescriptorSetLayout {
             bindings: bindings.iter().map(|b| b.clone().into()).collect(),
         })
     }
@@ -393,12 +391,12 @@ impl RendererBackend for OpenGlBackend {
     fn create_descriptor_set<'a>(
         &self,
         arena: &'a Self::Arena,
-        layout: &DescriptorSetLayout,
+        layout: &GlDescriptorSetLayout,
         descriptors: &[Descriptor<Self>],
     ) -> &'a Self::DescriptorSet {
         let mut sampler_cache = self.sampler_cache.lock().unwrap();
         let descriptor_set =
-            DescriptorSet::from_descriptors_and_layout(descriptors, layout, &mut sampler_cache);
+            GlDescriptorSet::from_descriptors_and_layout(descriptors, layout, &mut sampler_cache);
         arena.descriptor_sets.alloc(descriptor_set)
     }
 
@@ -439,3 +437,12 @@ impl RendererBackend for OpenGlBackend {
         *self.def_swapchain.size.lock().unwrap() = self.window.get_inner_size().unwrap().into();
     }
 }
+
+pub type Buffer<'a, T> = gfx2::Buffer<'a, OpenGlBackend, T>;
+pub type BufferTypeless<'a> = gfx2::BufferTypeless<'a, OpenGlBackend>;
+pub type Image<'a> = gfx2::Image<'a, OpenGlBackend>;
+pub type Framebuffer<'a> = gfx2::Framebuffer<'a, OpenGlBackend>;
+pub type DescriptorSet<'a> = gfx2::DescriptorSet<'a, OpenGlBackend>;
+pub type DescriptorSetLayout<'a> = gfx2::DescriptorSetLayout<'a, OpenGlBackend>;
+pub type GraphicsPipeline<'a> = gfx2::GraphicsPipeline<'a, OpenGlBackend>;
+pub type Arena<'a> = gfx2::Arena<'a, OpenGlBackend>;
