@@ -160,7 +160,7 @@ impl<'a, R: RendererBackend> DescriptorInterface<'a, R> for BufferTypeless<'a, R
         binding_index: u32,
         visitor: &mut impl DescriptorSetInterfaceVisitor<'a, R>,
     ) {
-        visitor.visit_buffer(binding_index, *self, 0, self.0.size() as usize);
+        visitor.visit_buffer(binding_index, *self, 0, self.byte_size() as usize);
     }
 }
 
@@ -173,7 +173,7 @@ impl<'a, R: RendererBackend, T: BufferData + ?Sized + BufferLayout> DescriptorIn
         binding_index: u32,
         visitor: &mut impl DescriptorSetInterfaceVisitor<'a, R>,
     ) {
-        visitor.visit_buffer(binding_index, (*self).into(), 0, self.0.size() as usize);
+        visitor.visit_buffer(binding_index, (*self).into(), 0, self.byte_size() as usize);
     }
 }
 
@@ -199,7 +199,7 @@ impl<'a, R: RendererBackend> DescriptorInterface<'a, R> for SampledImage<'a, R> 
         binding_index: u32,
         visitor: &mut impl DescriptorSetInterfaceVisitor<'a, R>,
     ) {
-        visitor.visit_sampled_image(binding_index, self.0.into(), &self.1);
+        visitor.visit_sampled_image(binding_index, Image(self.0), &self.1);
     }
 }
 

@@ -1,30 +1,27 @@
 use crate::format::Format;
 use crate::image::Dimensions;
 use crate::image::MipmapsCount;
+use crate::shader::ShaderStageFlags;
 use crate::AliasScope;
 use crate::Command;
 use crate::Descriptor;
-use crate::DescriptorSetLayoutBinding;
 use crate::GraphicsPipelineCreateInfo;
-use crate::Image;
 use crate::ImageUsageFlags;
-use crate::ShaderStageFlags;
-//use std::any::Any;
 use std::fmt::Debug;
 
 //--------------------------------------------------------------------------------------------------
-pub trait SwapchainBackend: Debug {
+pub trait Swapchain: Debug {
     fn size(&self) -> (u32, u32);
 }
-pub trait BufferBackend: Debug {
+pub trait Buffer: Debug {
     fn size(&self) -> u64;
 }
-pub trait ImageBackend: Debug {}
-pub trait FramebufferBackend: Debug {}
-pub trait DescriptorSetLayoutBackend: Debug {}
-pub trait ShaderModuleBackend: Debug {}
-pub trait GraphicsPipelineBackend: Debug {}
-pub trait DescriptorSetBackend: Debug {}
+pub trait Image: Debug {}
+pub trait Framebuffer: Debug {}
+pub trait DescriptorSetLayout: Debug {}
+pub trait ShaderModule: Debug {}
+pub trait GraphicsPipeline: Debug {}
+pub trait DescriptorSet: Debug {}
 
 /// V2 API
 /// Some associated backend types (such as Framebuffers, or DescriptorSets) conceptually "borrow"
@@ -37,14 +34,14 @@ pub trait RendererBackend: Sync {
     // That said, without ATCs, the associated types can't
     // really be bounded by anything other than 'static.
     // They don't need to be sized, however, as all we do is take references to them.
-    type Swapchain: ?Sized + SwapchainBackend + 'static;
-    type Framebuffer: ?Sized + FramebufferBackend + 'static;
-    type Buffer: ?Sized + BufferBackend + 'static;
-    type Image: ?Sized + ImageBackend + 'static;
-    type DescriptorSet: ?Sized + DescriptorSetBackend + 'static;
-    type DescriptorSetLayout: ?Sized + DescriptorSetLayoutBackend + 'static;
-    type ShaderModule: ?Sized + ShaderModuleBackend + 'static;
-    type GraphicsPipeline: ?Sized + GraphicsPipelineBackend + 'static;
+    type Swapchain: ?Sized + Swapchain + 'static;
+    type Framebuffer: ?Sized + Framebuffer + 'static;
+    type Buffer: ?Sized + Buffer + 'static;
+    type Image: ?Sized + Image + 'static;
+    type DescriptorSet: ?Sized + DescriptorSet + 'static;
+    type DescriptorSetLayout: ?Sized + DescriptorSetLayout + 'static;
+    type ShaderModule: ?Sized + ShaderModule + 'static;
+    type GraphicsPipeline: ?Sized + GraphicsPipeline + 'static;
 
     /// Contains resources.
     type Arena: Sync;
@@ -94,8 +91,8 @@ pub trait RendererBackend: Sync {
     fn create_framebuffer<'a>(
         &self,
         arena: &'a Self::Arena,
-        color_attachments: &[Image<'a, Self>],
-        depth_stencil_attachment: Option<Image<'a, Self>>,
+        color_attachments: &[crate::Image<'a, Self>],
+        depth_stencil_attachment: Option<crate::Image<'a, Self>>,
     ) -> &'a Self::Framebuffer
     where
         Self: Sized;
@@ -135,7 +132,7 @@ pub trait RendererBackend: Sync {
     fn create_descriptor_set_layout<'a>(
         &self,
         arena: &'a Self::Arena,
-        bindings: &[DescriptorSetLayoutBinding<'_>],
+        bindings: &[crate::DescriptorSetLayoutBinding<'_>],
     ) -> &'a Self::DescriptorSetLayout
     where
         Self: Sized;

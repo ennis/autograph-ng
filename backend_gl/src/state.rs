@@ -1,11 +1,11 @@
-use crate::ImplementationParameters;
+use crate::backend::ImplementationParameters;
 use crate::{api as gl, api::types::*};
 use gfx2::*;
 use ordered_float::NotNan;
 
 pub struct ColorBlendCache {
     all: bool,
-    states: Vec<Option<PipelineColorBlendAttachmentState>>,
+    states: Vec<Option<ColorBlendAttachmentState>>,
 }
 
 pub struct StateCache {
@@ -234,10 +234,10 @@ impl StateCache {
         });
     }
 
-    pub fn set_all_blend(&mut self, state: &PipelineColorBlendAttachmentState) {
-        let bind_all = |state: &PipelineColorBlendAttachmentState| match state {
-            PipelineColorBlendAttachmentState::Disabled => unsafe { gl::Disable(gl::BLEND) },
-            PipelineColorBlendAttachmentState::Enabled {
+    pub fn set_all_blend(&mut self, state: &ColorBlendAttachmentState) {
+        let bind_all = |state: &ColorBlendAttachmentState| match state {
+            ColorBlendAttachmentState::Disabled => unsafe { gl::Disable(gl::BLEND) },
+            ColorBlendAttachmentState::Enabled {
                 src_color_blend_factor,
                 dst_color_blend_factor,
                 color_blend_op,
@@ -278,12 +278,10 @@ impl StateCache {
         }
     }
 
-    pub fn set_blend_separate(&mut self, index: u32, state: &PipelineColorBlendAttachmentState) {
-        let bind_separate = |index: u32, state: &PipelineColorBlendAttachmentState| match state {
-            PipelineColorBlendAttachmentState::Disabled => unsafe {
-                gl::Disablei(gl::BLEND, index)
-            },
-            PipelineColorBlendAttachmentState::Enabled {
+    pub fn set_blend_separate(&mut self, index: u32, state: &ColorBlendAttachmentState) {
+        let bind_separate = |index: u32, state: &ColorBlendAttachmentState| match state {
+            ColorBlendAttachmentState::Disabled => unsafe { gl::Disablei(gl::BLEND, index) },
+            ColorBlendAttachmentState::Enabled {
                 src_color_blend_factor,
                 dst_color_blend_factor,
                 color_blend_op,

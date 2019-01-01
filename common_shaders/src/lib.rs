@@ -1,10 +1,17 @@
 #![feature(proc_macro_hygiene)]
-use gfx2_shader::*;
+#![feature(custom_inner_attributes)]
 
-#[no_mangle]
-pub static BLIT_SHADERS: CombinedShaders = include_combined_shader!("tests/data/shaders/blit.glsl");
+pub mod blit;
 
-#[no_mangle]
-pub extern fn plugin_entry() {
-    println!("loaded plugin");
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct Vertex2DTex {
+    pub pos: [f32; 2],
+    pub tex: [f32; 2],
+}
+
+impl Vertex2DTex {
+    pub fn new(pos: [f32; 2], tex: [f32; 2]) -> Vertex2DTex {
+        Vertex2DTex { pos, tex }
+    }
 }

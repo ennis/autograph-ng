@@ -106,18 +106,7 @@ impl ExtentsAndType {
     }
 }
 
-/*
-bitflags! {
-    #[derive(Default)]
-    pub struct TextureOptions: u8 {
-        ///
-        const SPARSE_STORAGE = 0b00000001;
-    }
-}
-*/
-
 //--------------------------------------------------------------------------------------------------
-
 /// Wrapper for OpenGL textures and renderbuffers.
 #[derive(Copy, Clone, Debug)]
 pub struct RawImage {

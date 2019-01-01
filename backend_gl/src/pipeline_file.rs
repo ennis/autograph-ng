@@ -193,6 +193,7 @@ fn mappings_to_descriptor_map(mappings: &[ParsedDescriptorMapping]) -> Descripto
 }
 
 impl<'rcx> PipelineDescriptionFile<'rcx> {
+    #[deprecated(note = "use gfx2-shader-macros")]
     pub fn load<P: AsRef<Path>>(
         arena: &'rcx Arena<OpenGlBackend>,
         path: P,

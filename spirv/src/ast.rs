@@ -1,6 +1,6 @@
 //use super::parse::SpirvModule;
 use super::{inst::*, IPtr, Module, Std140LayoutBuilder};
-use gfx2::{ImageDataType, PrimitiveType, TypeDesc};
+use gfx2::interface::{ImageDataType, PrimitiveType, TypeDesc};
 use spirv_headers::*;
 use std::collections::HashMap;
 use typed_arena::Arena;

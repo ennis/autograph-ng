@@ -4,10 +4,11 @@ members = [
     "renderer",
     "backend_gl",
     "spirv",
-    "shader_compiler",
     "shader_macros",
-    "shader",
     "common_shaders",
+    "extension_runtime",
+    # for testing
+    "extension_runtime/tests/test_dylib"
 ]
 
 [profile.release]

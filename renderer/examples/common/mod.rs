@@ -6,8 +6,8 @@ use winit;
 // re-export window event handling stuff.
 use gfx2::*;
 use gfx2_backend_gl::{create_backend_and_window, OpenGlBackend};
-use image;
-use image::GenericImageView;
+use ::image;
+use ::image::GenericImageView;
 use std::error;
 use std::fmt;
 use std::path::Path;

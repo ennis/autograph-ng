@@ -5,15 +5,14 @@ authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-log = "*"
+log = "0.4.6"
 quote = "0.6.10"
-syn = { version = "0.15.23", features = ["parsing"] }
+syn = { version = "0.15.23", features = ["full"] }
 darling = "0.8.1"
 proc-macro2 = { version = "0.4.24", features = ["nightly"] }
-gfx2 = { path = "../renderer" }
 lazy_static = "1.2.0"
-shaderc = "*"
-regex="*"
+shaderc = "0.3.12"
+regex= "1.1.0"
 
 [lib]
 proc-macro = true

@@ -1,11 +1,11 @@
-use std::ops::Range;
-
 use crate::sync::*;
 use crate::{
     interface::{PipelineInterface, PipelineInterfaceVisitor},
     BufferTypeless, DescriptorSet, Framebuffer, GraphicsPipeline, Image, IndexType,
     RendererBackend, ScissorRect, Swapchain, Viewport,
 };
+use derivative::Derivative;
+use std::ops::Range;
 
 pub struct Command<'a, R: RendererBackend> {
     pub sortkey: u64,
@@ -47,6 +47,8 @@ pub struct DrawIndexedParams {
     pub first_instance: u32,
 }
 
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""))]
 pub enum CommandInner<'a, R: RendererBackend> {
     // MAIN (LEAD-IN) COMMANDS ---------------------------------------------------------------------
     PipelineBarrier {},
@@ -106,15 +108,15 @@ pub enum CommandInner<'a, R: RendererBackend> {
         first_instance: u32,
     },
 }
-
+/*
 // Explicit clone impl because of #26925
 impl<'a, R: RendererBackend> Clone for CommandInner<'a, R> {
     fn clone(&self) -> Self {
-        // I really don't want to match all variants just to copy bits around.
-        // unsafe { mem::transmute_copy(self) }
-        // yeah, let's not do that after all...
-        // I inadvertantly put a member with a destructor in a variant and chased a use-after-free
-        // for hours.
+        // The initial implementation was `unsafe { mem::transmute_copy(self) }`
+        // and making sure that no variants have destructors.
+        // I proptly forgot about this last point and put a Vec in a variant,
+        // which led to a very hard to debug use-after-free.
+        // So
         match *self {
             CommandInner::PipelineBarrier {} => CommandInner::PipelineBarrier {},
             CommandInner::ClearImageFloat { image, color } => {
@@ -194,6 +196,7 @@ impl<'a, R: RendererBackend> Clone for CommandInner<'a, R> {
         }
     }
 }
+*/
 
 pub struct CommandBuffer<'a, R: RendererBackend> {
     commands: Vec<Command<'a, R>>,

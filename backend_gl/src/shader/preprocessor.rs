@@ -123,7 +123,7 @@ impl From<Vec<Error>> for PreprocessErrors {
 //--------------------------------------------------------------------------------------------------
 
 struct PpFile<'a> {
-    parent: Option<&'a PpFile<'a>>,
+    _parent: Option<&'a PpFile<'a>>,
     path: Option<&'a Path>,
 }
 
@@ -220,7 +220,7 @@ fn preprocess_shader_internal<'a>(
                             .expect("failed to read file");
                         let nextinc = PpFile {
                             path: Some(&inc),
-                            parent: Some(&file),
+                            _parent: Some(&file),
                         };
                         preprocess_shader_internal(&text, result, inc_paths, &nextinc, errs);
 
@@ -516,7 +516,10 @@ pub fn preprocess_pipeline_description_file(
     let mut result = PreprocessResult::new();
     let mut errs = Vec::new();
 
-    let ppfile = PpFile { path, parent: None };
+    let ppfile = PpFile {
+        path,
+        _parent: None,
+    };
 
     preprocess_shader_internal(src, &mut result, inc_paths, &ppfile, &mut errs);
 

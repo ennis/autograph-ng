@@ -1122,3 +1122,12 @@ Alternative: arena-based GPU synchronization
         - (easy) solution: use gleam
         - should be better than global variables
         - closer to what vulkan does
+        
+#### Renderer utils
+- blitting
+- format conversion
+- should be in a reusable library
+- backend-agnostic
+- implement in renderer?
+    - no: impl RenderUtils<'rcx>
+- not a priority

@@ -40,9 +40,29 @@
       <sourceFolder url="file://$MODULE_DIR$/shader_macros/examples" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/shader_macros/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/shader_macros/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/extension_runtime/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/extension_runtime/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/extension_runtime/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/extension_runtime/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/extension_macros/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/extension_macros/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/extension_macros/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/extension_macros/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/extension_runtime/tests/test_dylib/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/extension_runtime/tests/test_dylib/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/extension_runtime/tests/test_dylib/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/extension_runtime/tests/test_dylib/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/extension_runtime/macros/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/extension_runtime/macros/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/extension_runtime/macros/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/extension_runtime/macros/benches" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/backend_gl/target" />
       <excludeFolder url="file://$MODULE_DIR$/common_shaders/target" />
       <excludeFolder url="file://$MODULE_DIR$/derive/target" />
+      <excludeFolder url="file://$MODULE_DIR$/extension_macros/target" />
+      <excludeFolder url="file://$MODULE_DIR$/extension_runtime/macros/target" />
+      <excludeFolder url="file://$MODULE_DIR$/extension_runtime/target" />
+      <excludeFolder url="file://$MODULE_DIR$/extension_runtime/tests/test_dylib/target" />
       <excludeFolder url="file://$MODULE_DIR$/renderer/target" />
       <excludeFolder url="file://$MODULE_DIR$/shader/target" />
       <excludeFolder url="file://$MODULE_DIR$/shader_compiler/target" />

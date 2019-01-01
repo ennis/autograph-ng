@@ -1,23 +1,25 @@
 #[macro_use]
 extern crate log;
 
-use std::env;
+mod common;
 
+use self::common::*;
+use common_shaders::Vertex2DTex;
 use gfx2;
 use gfx2::glm;
+use gfx2::interface::DescriptorSetInterface;
+use gfx2::interface::FragmentOutputDescription;
+use gfx2::interface::PipelineInterface;
+use gfx2::interface::PipelineInterfaceVisitor;
+use gfx2::interface::VertexInputBufferDescription;
 use gfx2::*;
 use gfx2_backend_gl as gl_backend;
-use gfx2_derive::{BufferLayout, DescriptorSetInterface};
-
-mod common;
-use self::common::*;
 use libloading as lib;
+use std::env;
 
 //--------------------------------------------------------------------------------------------------
 type Backend = gl_backend::OpenGlBackend;
 type Buffer<'a, T> = gfx2::Buffer<'a, Backend, T>;
-//type BufferTypeless<'a> = gfx2::BufferTypeless<'a, Backend>;
-//type Image<'a> = gfx2::Image<'a, Backend>;
 type SampledImage<'a> = gfx2::SampledImage<'a, Backend>;
 type Framebuffer<'a> = gfx2::Framebuffer<'a, Backend>;
 type DescriptorSet<'a> = gfx2::DescriptorSet<'a, Backend>;
@@ -28,11 +30,12 @@ type GraphicsPipeline<'a> = gfx2::GraphicsPipeline<'a, Backend>;
 fn plugin_test<'a>(arena: &'a gl_backend::Arena) -> lib::Result<gl_backend::Buffer<'a, [u8]>> {
     let lib = lib::Library::new("target/debug/common_shaders.dll")?;
     unsafe {
-        let func: lib::Symbol<for<'b> unsafe extern fn(&'b gl_backend::Arena) -> gl_backend::Buffer<'b, [u8]>>  = lib.get(b"plugin_entry")?;
+        let func: lib::Symbol<
+            for<'b> unsafe extern "C" fn(&'b gl_backend::Arena) -> gl_backend::Buffer<'b, [u8]>,
+        > = lib.get(b"plugin_entry")?;
         Ok(func(arena))
     }
 }
-
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Copy, Clone)]
@@ -87,57 +90,69 @@ impl<'a> PipelineInterface<'a, Backend> for Blit<'a> {
 }
 
 //--------------------------------------------------------------------------------------------------
+// SHADERS & PIPELINES
+gfx2::include_combined_shader! {BlitShaders, "tests/data/shaders/blit.glsl", vertex, fragment}
+
 struct PipelineAndLayout<'a> {
     blit_pipeline: GraphicsPipeline<'a>,
     descriptor_set_layout: DescriptorSetLayout<'a>,
 }
 
 fn create_pipelines<'a>(arena: &'a Arena<Backend>) -> PipelineAndLayout<'a> {
-    // load pipeline file
-    let file =
-        gl_backend::PipelineDescriptionFile::load(arena, "tests/data/shaders/blit.glsl").unwrap();
-
     let descriptor_set_layout = arena.create_descriptor_set_layout(PerObject::INTERFACE);
 
     let gci = GraphicsPipelineCreateInfo {
-        shader_stages: &GraphicsPipelineShaderStages {
-            vertex: file.modules.vert.unwrap(),
-            geometry: file.modules.geom,
-            fragment: file.modules.frag,
-            tess_eval: file.modules.tesseval,
-            tess_control: file.modules.tessctl,
+        shader_stages: &GraphicsShaderStages {
+            vertex: arena.create_shader_module(BlitShaders::VERTEX, ShaderStageFlags::VERTEX),
+            geometry: None,
+            fragment: Some(
+                arena.create_shader_module(BlitShaders::FRAGMENT, ShaderStageFlags::FRAGMENT),
+            ),
+            tess_eval: None,
+            tess_control: None,
         },
-        vertex_input_state: &PipelineVertexInputStateCreateInfo {
+        vertex_input_state: &VertexInputState {
             bindings: &[VertexInputBindingDescription {
                 binding: 0,
                 stride: 16,
                 input_rate: VertexInputRate::Vertex,
             }],
-            attributes: file.pp.attribs.as_ref().unwrap().as_slice(),
+            attributes: &[
+                VertexInputAttributeDescription {
+                    location: 0,
+                    binding: 0,
+                    format: Format::R32G32_SFLOAT,
+                    offset: 0,
+                },
+                VertexInputAttributeDescription {
+                    location: 1,
+                    binding: 0,
+                    format: Format::R32G32_SFLOAT,
+                    offset: 8,
+                },
+            ],
         },
-        viewport_state: &PipelineViewportStateCreateInfo {
-            viewports: PipelineViewports::Dynamic,
-            scissors: PipelineScissors::Dynamic,
+        viewport_state: &ViewportState {
+            viewports: Viewports::Dynamic,
+            scissors: Scissors::Dynamic,
         },
-        rasterization_state: &PipelineRasterizationStateCreateInfo::DEFAULT,
-        multisample_state: &PipelineMultisampleStateCreateInfo::default(),
-        depth_stencil_state: &PipelineDepthStencilStateCreateInfo::default(),
-        input_assembly_state: &PipelineInputAssemblyStateCreateInfo {
+        rasterization_state: &RasterisationState::DEFAULT,
+        multisample_state: &MultisampleState::default(),
+        depth_stencil_state: &DepthStencilState::default(),
+        input_assembly_state: &InputAssemblyState {
             topology: PrimitiveTopology::TriangleList,
             primitive_restart_enable: false,
         },
-        color_blend_state: &PipelineColorBlendStateCreateInfo {
-            attachments: PipelineColorBlendAttachments::All(
-                &PipelineColorBlendAttachmentState::DISABLED,
-            ),
+        color_blend_state: &ColorBlendState {
+            attachments: ColorBlendAttachments::All(&ColorBlendAttachmentState::DISABLED),
             blend_constants: [0.0.into(); 4],
             logic_op: None,
         },
         dynamic_state: DynamicStateFlags::VIEWPORT,
-        pipeline_layout: &PipelineLayoutCreateInfo {
+        pipeline_layout: &PipelineLayout {
             descriptor_set_layouts: &[descriptor_set_layout],
         },
-        attachment_layout: &AttachmentLayoutCreateInfo {
+        attachment_layout: &AttachmentLayout {
             input_attachments: &[],
             depth_attachment: None,
             color_attachments: &[AttachmentDescription {

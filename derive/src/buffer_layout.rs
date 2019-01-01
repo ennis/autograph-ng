@@ -52,7 +52,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
         // field offset item
         if i == 0 {
             offset_consts.push(quote!{ pub const OFFSET_0: usize = 0; pub const SIZE_0: usize = ::std::mem::size_of::<#field_ty>(); });
-            field_descs.push(quote!{ (#private_module_name::OFFSET_0, <#field_ty as #gfx::BufferLayout>::TYPE) });
+            field_descs.push(quote!{ (#private_module_name::OFFSET_0, <#field_ty as #gfx::interface::BufferLayout>::TYPE) });
         } else {
             let offset0 = Ident::new(&format!("OFFSET_{}", i - 1), Span::call_site());
             let offset1 = Ident::new(&format!("OFFSET_{}", i), Span::call_site());
@@ -67,7 +67,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
               pub const #size1: usize = ::std::mem::size_of::<#field_ty>();});
 
             field_descs.push(quote! {
-               (#private_module_name::#offset1, <#field_ty as #gfx::BufferLayout>::TYPE)
+               (#private_module_name::#offset1, <#field_ty as #gfx::interface::BufferLayout>::TYPE)
             });
         };
     }
@@ -81,8 +81,8 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
             #(#offset_consts)*
         }
 
-        unsafe impl #gfx::BufferLayout for #struct_name {
-            const TYPE: &'static #gfx::TypeDesc<'static> = &#gfx::TypeDesc::Struct(&[#(#field_descs),*]);
+        unsafe impl #gfx::interface::BufferLayout for #struct_name {
+            const TYPE: &'static #gfx::interface::TypeDesc<'static> = &#gfx::interface::TypeDesc::Struct(&[#(#field_descs),*]);
         }
     }
 }

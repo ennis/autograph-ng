@@ -67,7 +67,7 @@ impl<'tcx> From<DescriptorSetLayoutBinding<'tcx>> for TypelessDescriptorSetLayou
 }
 
 #[derive(Debug)]
-pub struct GlDescriptorSetLayout {
+pub struct DescriptorSetLayout {
     pub bindings: Vec<TypelessDescriptorSetLayoutBinding>,
 }
 
@@ -96,19 +96,17 @@ pub enum RawDescriptor {
 }
 
 #[derive(Debug)]
-pub struct GlDescriptorSet {
+pub struct DescriptorSet {
     pub descriptors: Vec<RawDescriptor>,
 }
 
-impl gfx2::DescriptorSetBackend for GlDescriptorSet {}
-
-impl GlDescriptorSet {
+impl DescriptorSet {
     pub fn from_descriptors_and_layout(
         descriptors: &[Descriptor<OpenGlBackend>],
-        layout: &GlDescriptorSetLayout,
+        layout: &DescriptorSetLayout,
         sampler_cache: &mut SamplerCache,
-    ) -> GlDescriptorSet {
-        GlDescriptorSet {
+    ) -> DescriptorSet {
+        DescriptorSet {
             descriptors: descriptors
                 .iter()
                 .enumerate()
@@ -155,20 +153,6 @@ impl GlDescriptorSet {
         map: &DescriptorMap,
         sr: &mut ShaderResourceBindings,
     ) {
-        /*fn bind<A: smallvec::Array>(
-            v: &mut smallvec::SmallVec<A>,
-            index: usize,
-            item: A::Item,
-            default: A::Item,
-        ) where
-            A::Item: Copy,
-        {
-            if index >= v.len() {
-                v.resize(index + 1, default);
-            }
-            v[index] = item;
-        }*/
-
         fn bind<T>(
             v: &mut smallvec::SmallVec<impl smallvec::Array<Item = T>>,
             index: usize,

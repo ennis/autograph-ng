@@ -6,6 +6,12 @@ mod common;
 use self::common::*;
 use gfx2;
 use gfx2::glm;
+use gfx2::interface::DescriptorSetInterface;
+use gfx2::interface::DescriptorSetInterfaceVisitor;
+use gfx2::interface::FragmentOutputDescription;
+use gfx2::interface::PipelineInterface;
+use gfx2::interface::PipelineInterfaceVisitor;
+use gfx2::interface::VertexInputBufferDescription;
 use gfx2::*;
 use gfx2_backend_gl as gl_backend;
 use std::env;
@@ -147,6 +153,9 @@ impl<'a, R: RendererBackend> DescriptorSetInterface<'a, R> for PerObjectUniforms
 }
 
 //--------------------------------------------------------------------------------------------------
+// SHADERS & PIPELINES
+gfx2::include_combined_shader! {DeferredShaders, "tests/data/shaders/deferred.glsl", vertex, fragment}
+
 struct PipelineAndLayout<'a> {
     pipeline: GraphicsPipeline<'a>,
     per_frame_descriptor_set_layout: DescriptorSetLayout<'a>,
@@ -154,45 +163,66 @@ struct PipelineAndLayout<'a> {
 }
 
 fn create_pipelines<'rcx, 'a>(arena: &'a Arena<'rcx, Backend>) -> PipelineAndLayout<'a> {
-    // load pipeline file
-    let file = gl_backend::PipelineDescriptionFile::load(arena, "tests/data/shaders/deferred.glsl")
-        .unwrap();
-
-    let shader_stages = GraphicsPipelineShaderStages {
-        vertex: file.modules.vert.unwrap(),
-        geometry: file.modules.geom,
-        fragment: file.modules.frag,
-        tess_eval: file.modules.tesseval,
-        tess_control: file.modules.tessctl,
+    let shader_stages = GraphicsShaderStages {
+        vertex: arena.create_shader_module(DeferredShaders::VERTEX, ShaderStageFlags::VERTEX),
+        geometry: None,
+        fragment: Some(
+            arena.create_shader_module(DeferredShaders::FRAGMENT, ShaderStageFlags::FRAGMENT),
+        ),
+        tess_eval: None,
+        tess_control: None,
     };
 
-    let vertex_input_state = PipelineVertexInputStateCreateInfo {
+    let vertex_input_state = VertexInputState {
         bindings: &[VertexInputBindingDescription {
             binding: 0,
             stride: 44,
             input_rate: VertexInputRate::Vertex,
         }],
-        attributes: file.pp.attribs.as_ref().unwrap().as_slice(),
+        attributes: &[
+            VertexInputAttributeDescription {
+                location: 0,
+                binding: 0,
+                format: Format::R32G32B32_SFLOAT,
+                offset: 0,
+            },
+            VertexInputAttributeDescription {
+                location: 1,
+                binding: 0,
+                format: Format::R32G32B32_SFLOAT,
+                offset: 12,
+            },
+            VertexInputAttributeDescription {
+                location: 2,
+                binding: 0,
+                format: Format::R32G32B32_SFLOAT,
+                offset: 24,
+            },
+            VertexInputAttributeDescription {
+                location: 3,
+                binding: 0,
+                format: Format::R32G32_SFLOAT,
+                offset: 36,
+            },
+        ],
     };
 
-    let viewport_state = PipelineViewportStateCreateInfo {
-        viewports: PipelineViewports::Dynamic,
-        scissors: PipelineScissors::Dynamic,
+    let viewport_state = ViewportState {
+        viewports: Viewports::Dynamic,
+        scissors: Scissors::Dynamic,
     };
 
-    let rasterization_state = PipelineRasterizationStateCreateInfo::DEFAULT;
-    let depth_stencil_state = PipelineDepthStencilStateCreateInfo::default();
-    let color_blend_state = PipelineColorBlendStateCreateInfo {
-        attachments: PipelineColorBlendAttachments::All(
-            &PipelineColorBlendAttachmentState::DISABLED,
-        ),
+    let rasterization_state = RasterisationState::DEFAULT;
+    let depth_stencil_state = DepthStencilState::default();
+    let color_blend_state = ColorBlendState {
+        attachments: ColorBlendAttachments::All(&ColorBlendAttachmentState::DISABLED),
         blend_constants: [0.0.into(); 4],
         logic_op: None,
     };
 
-    let multisample_state = PipelineMultisampleStateCreateInfo::default();
+    let multisample_state = MultisampleState::default();
 
-    let input_assembly_state = PipelineInputAssemblyStateCreateInfo {
+    let input_assembly_state = InputAssemblyState {
         topology: PrimitiveTopology::TriangleList,
         primitive_restart_enable: false,
     };
@@ -232,11 +262,11 @@ fn create_pipelines<'rcx, 'a>(arena: &'a Arena<'rcx, Backend>) -> PipelineAndLay
         per_object_descriptor_set_layout,
     ];
 
-    let pipeline_layout = PipelineLayoutCreateInfo {
+    let pipeline_layout = PipelineLayout {
         descriptor_set_layouts: descriptor_set_layouts.as_ref(),
     };
 
-    let attachment_layout = AttachmentLayoutCreateInfo {
+    let attachment_layout = AttachmentLayout {
         input_attachments: &[],
         depth_attachment: AttachmentDescription {
             format: Format::D32_SFLOAT,

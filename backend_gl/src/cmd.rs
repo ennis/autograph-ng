@@ -1,10 +1,11 @@
 use crate::{api as gl, api::types::*};
 use crate::{
+    backend::{ImplementationParameters, OpenGlBackend, Swapchain},
     descriptor::ShaderResourceBindings,
-    framebuffer::GlFramebuffer,
-    resource::{GlBuffer, GlImage, Resources},
+    framebuffer::Framebuffer,
+    pipeline::GraphicsPipeline,
+    resource::{Buffer, Image, Resources},
     state::StateCache,
-    pipeline::GlGraphicsPipeline, ImplementationParameters, OpenGlBackend, GlSwapchain,
 };
 use gfx2;
 use gfx2::{BufferTypeless, Command, CommandInner, IndexType, Viewport};
@@ -17,7 +18,7 @@ pub struct ExecuteCtxt<'a, 'rcx> {
     state_cache: &'a mut StateCache,
     window: &'a GlWindow,
     _impl_params: &'a ImplementationParameters,
-    current_pipeline: Option<&'rcx GlGraphicsPipeline>,
+    current_pipeline: Option<&'rcx GraphicsPipeline>,
 }
 
 impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
@@ -36,7 +37,7 @@ impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
         }
     }
 
-    pub fn cmd_clear_image_float(&mut self, image: &GlImage, color: &[f32; 4]) {
+    pub fn cmd_clear_image_float(&mut self, image: &Image, color: &[f32; 4]) {
         if image.target == gl::RENDERBUFFER {
             // create temporary framebuffer
             let mut tmpfb = 0;
@@ -68,7 +69,7 @@ impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
 
     pub fn cmd_clear_depth_stencil_image(
         &mut self,
-        image: &GlImage,
+        image: &Image,
         depth: f32,
         stencil: Option<u8>,
     ) {
@@ -138,7 +139,7 @@ impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
         self.state_cache.set_images(&sr.images);
     }
 
-    pub fn cmd_present(&mut self, image: &GlImage, _swapchain: &GlSwapchain) {
+    pub fn cmd_present(&mut self, image: &Image, _swapchain: &Swapchain) {
         // only handle default swapchain for now
         //assert_eq!(swapchain, 0, "invalid swapchain handle");
         // make a framebuffer and bind the image to it
@@ -184,11 +185,11 @@ impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
         self.window.swap_buffers().expect("swap_buffers error")
     }
 
-    fn cmd_set_framebuffer(&mut self, fb: &'rcx GlFramebuffer) {
+    fn cmd_set_framebuffer(&mut self, fb: &'rcx Framebuffer) {
         self.state_cache.set_draw_framebuffer(fb.obj);
     }
 
-    fn cmd_set_graphics_pipeline(&mut self, pipeline: &'rcx GlGraphicsPipeline) {
+    fn cmd_set_graphics_pipeline(&mut self, pipeline: &'rcx GraphicsPipeline) {
         // switching pipelines
         self.current_pipeline = Some(pipeline);
         pipeline.bind(self.state_cache);
@@ -218,7 +219,7 @@ impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
         self.state_cache.set_viewports(viewports);
     }
 
-    fn cmd_set_index_buffer(&mut self, index_buffer: &'rcx GlBuffer, offset: usize, ty: IndexType) {
+    fn cmd_set_index_buffer(&mut self, index_buffer: &'rcx Buffer, offset: usize, ty: IndexType) {
         self.state_cache
             .set_index_buffer(index_buffer.obj, offset, ty);
     }

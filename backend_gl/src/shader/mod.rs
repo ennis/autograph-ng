@@ -12,11 +12,11 @@ pub use self::preprocessor::*;
 use crate::api as gl;
 use crate::api::types::*;
 use crate::pipeline::{BindingSpace, DescriptorMap, FlatBinding};
-use gfx2::{ShaderStageFlags, TypeDesc};
+use gfx2::{interface::TypeDesc, ShaderStageFlags};
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Debug)]
-pub struct GlShaderModule {
+pub struct ShaderModule {
     pub obj: GLuint,
     pub stage: ShaderStageFlags,
     /// SPIR-V bytecode of this shader. If this is not None, then obj is ignored
