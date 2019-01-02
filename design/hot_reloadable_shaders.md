@@ -184,10 +184,12 @@ println!("{}", a.0.get());
 }
 ```
 
-#### Move to gfx-rs
-* consider replacing the backend with gfx-rs
-	* or actually test a gfx-rs backend?
-	* not sure that's worth it
-
+#### Issue: heap-allocated data across dylibs
+* a.k.a. everything is broken
+	* cannot append to a Vec: may reallocate
+	* cannot allocate in an Arena: may reallocate
+	* cannot use box, etc.
+* somehow, change the global allocator of the dylib?
+* dyn Objects are the only way (call functions from the main application)
 
 

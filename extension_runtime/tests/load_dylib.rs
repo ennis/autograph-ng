@@ -9,8 +9,8 @@ fn test_compile() {
     let lib = libloading::Library::new("target/debug/deps/test_dylib.dll").unwrap();
 
     let hot = load_module!(&lib, test_dylib::hot).unwrap();
-    let r = hot.simple(42);
-    assert_eq!(r, 43);
+    let r = (hot.simple)(42);
+    assert_eq!(r, Box::new(43));
 
     // ideally:
     // auto-resolve path to dylib in development context:
