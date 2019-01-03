@@ -56,7 +56,7 @@ pub use self::util::*;
 pub use gfx2_derive::{BufferLayout, DescriptorSetInterface};
 pub use gfx2_shader_macros::{
     glsl_compute, glsl_fragment, glsl_geometry, glsl_tess_control, glsl_tess_eval, glsl_vertex,
-    include_combined_shader, shader_module
+    include_combined_shader, shader_module,
 };
 
 //--------------------------------------------------------------------------------------------------

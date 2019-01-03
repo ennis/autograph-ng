@@ -18,9 +18,8 @@ pub struct Blit<'a, R: RendererBackend> {
 
 //
 #[gfx2::shader_module]
-pub mod hot_reload
-{
-    pub const VERTEX: &'static [u8] = gfx2::glsl_vertex!{ r"
+pub mod hot_reload {
+    pub const VERTEX: &'static [u8] = gfx2::glsl_vertex! { r"
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_ARB_shading_language_420pack : enable
@@ -41,8 +40,7 @@ void main() {
 }
 " };
 
-
-    pub const FRAGMENT: &'static [u8] = gfx2::glsl_fragment!{
+    pub const FRAGMENT: &'static [u8] = gfx2::glsl_fragment! {
 r"
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
@@ -62,8 +60,7 @@ void main() {
     color = vec4(tmp, 1.0);
 }
 "
-};
-
+    };
 
     #[no_mangle]
     pub extern "C" fn plugin_entry<'a>(a: &'a i32, b: &i32) -> &'a i32 {

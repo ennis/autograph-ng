@@ -2,19 +2,19 @@
 extern crate proc_macro;
 extern crate proc_macro2;
 
+use proc_macro2::Span;
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
 use shaderc;
 use std::fs::File;
+use std::io::Read;
 use std::path::Path;
 use syn;
-use syn::Token;
-use syn::TypeBareFn;
-use proc_macro2::Span;
-use std::io::Read;
 use syn::parse::ParseStream;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
+use syn::Token;
+use syn::TypeBareFn;
 
 mod preprocessor;
 
@@ -31,7 +31,7 @@ pub fn shader_module(
     //src
 
     // parse a whole module
-    let m : syn::ItemMod = syn::parse_macro_input!(src as syn::ItemMod);
+    let m: syn::ItemMod = syn::parse_macro_input!(src as syn::ItemMod);
     let mut stub_fields = Vec::new();
 
     if let Some((_, ref contents)) = m.content {
@@ -47,21 +47,21 @@ pub fn shader_module(
                     let inputs = &itemfn.decl.inputs;
                     let output = &itemfn.decl.output;
                     let ident = &itemfn.ident;
-                    let tytk = quote!{
+                    let tytk = quote! {
                         #ident: &'lib for<#(#lifetimes),*> #unsafety #abi fn(#inputs) #output
                     };
                     println!("{}", tytk.to_string());
                     stub_fields.push(tytk);
-                },
+                }
                 syn::Item::Const(itemconst) => {
                     let ty = &itemconst.ty;
                     let ident = &itemconst.ident;
-                    let tytk = quote!{
+                    let tytk = quote! {
                         #ident: &'lib #ty,
                     };
                     stub_fields.push(tytk);
                 }
-                _ => {},
+                _ => {}
             }
         }
     }
@@ -73,7 +73,7 @@ pub fn shader_module(
     );
     let items = m.content.as_ref().unwrap().1.iter();
 
-    let q = quote!{
+    let q = quote! {
         mod #mod_name {
             #(#items)*
 
@@ -92,13 +92,7 @@ fn compile_shader(
 ) -> proc_macro::TokenStream {
     // parse a string literal
     let litstr = syn::parse_macro_input!(src as syn::LitStr);
-    compile_glsl_shader(
-        &litstr.value(),
-        &litstr.span(),
-        "<embedded GLSL>",
-        stage,
-    )
-    .into()
+    compile_glsl_shader(&litstr.value(), &litstr.span(), "<embedded GLSL>", stage).into()
 }
 
 #[proc_macro]

@@ -1,19 +1,19 @@
 #![feature(proc_macro_diagnostic)]
-#![recursion_limit="128"]
+#![recursion_limit = "128"]
 extern crate proc_macro;
 extern crate proc_macro2;
 
 use darling::usage::{LifetimeSet, Purpose, UsesLifetimes};
 use proc_macro2::Span;
-use quote::quote;
+use quote::{quote, quote_spanned};
 use syn;
+use syn::spanned::Spanned;
 //use syn::parse::ParseStream;
 //use syn::Token;
 
 macro_rules! format_ident {
     ($($arg:tt)*) => { syn::Ident::new(&format!($($arg)*), Span::call_site()) };
 }
-
 
 /*
 struct LoadModule {
@@ -74,57 +74,61 @@ pub fn hot_reload_module(
                         // skip functions with generic type parameters, these are not hot-reloadable
                         continue;
                     }
-                    let lifetimes = itemfn
+                    let static_lifetime = syn::parse_quote!{ 'static };
+
+                    // extract argument types ------------------------------------------------------
+                    let mut argtypes = Vec::new();
+                    // generate new names
+                    let mut argnames = Vec::new();
+                    for (i, arg) in inputs.iter().enumerate() {
+                        match arg {
+                            syn::FnArg::SelfRef(_) => unimplemented!("methods"),
+                            syn::FnArg::SelfValue(_) => unimplemented!("methods"),
+                            syn::FnArg::Captured(syn::ArgCaptured { ty, .. }) => {
+                                let an = format_ident!("arg{}", i);
+                                // clone ty because darling lacks an impl of UsesLifetimes for &T where T: UsesLifetimes
+                                argtypes.push(ty.clone());
+                                argnames.push(an);
+                            }
+                            syn::FnArg::Inferred(_) => panic!("inferred arg on fn item"),
+                            syn::FnArg::Ignored(_) => panic!("ignored arg on fn item"),
+                        }
+                    }
+
+                    // extract lifetimes in signature ----------------------------------------------
+                    let mut lifetimes_and_static = itemfn
                         .decl
                         .generics
                         .lifetimes()
                         .map(|lt| lt.lifetime.clone())
                         .collect::<LifetimeSet>();
-                    let lifetimes = &lifetimes;
-                    let output_lifetimes = itemfn
+                    lifetimes_and_static.insert(static_lifetime);
+
+                    // input+output lifetimes in the signature, potentially including 'static
+                    let mut lifetimes = argtypes
+                        .uses_lifetimes(&Purpose::Declare.into(), &lifetimes_and_static);
+                    lifetimes.extend(itemfn
                         .decl
                         .output
-                        .uses_lifetimes(&Purpose::Declare.into(), lifetimes);
-
-                    println!("lifetime set={:?}", lifetimes);
-                    println!("output lifetime set={:?}", output_lifetimes);
+                        .uses_lifetimes(&Purpose::Declare.into(), &lifetimes_and_static));
+                    let lifetimes = &lifetimes;
 
                     // Add our lifetime bounds -----------------------------------------------------
                     let mut adjusted_generics: syn::Generics = itemfn.decl.generics.clone();
 
-                    // issue: bounding the output lifetimes is useful only for preventing an output
-                    // reference of living too long, and risk referencing data that has been unloaded.
-                    // In practice, this can happen only when the function returns a &'static reference
-                    // instead of a reference to the input data.
-                    // In combination with the 'DLLsafe' marker trait, this would fully prevent
-                    // a &'static ref from leaking beyond the lifetime of the lib.
-                    // Without this, would need to analyze the body of the function to see if a &'static ref
-                    // is passed.
-                    //
-                    // However, the current mechanism is restrictive in many cases (e.g. returning a borrow from
-                    // the input will reduce the valid lifetime).
-                    // Also, the 'lib bound may over-constrain invariant lifetimes appearing in input position:
-                    // => bad.
-                    //
-                    // TL;DR: bounding the output lifetimes is not the solution.
-                    //
-                    // what else can we do?
-                    // -> analyze the body of the function: untractable
-                    //    &0, &CONSTANT_ITEM, ...
-                    // -> check that the return type does not contain pointers
-                    //    that end up in the address range of the loaded module
-                    //    -> most promising
-                    //    -> checks can be removed in release mode
-                    //
-                    // Issue with lifetime elision: cannot elide since generated method has another &self
-                    // -> idea: remove the shims, directly expose function pointers
-                    // ->
-
-                    let bounded = false;
+                    let bounded = true;
                     if bounded {
-                        if !output_lifetimes.is_empty() {
-                            adjusted_generics.make_where_clause().predicates.push(syn::parse_quote! {'__lib: #(#output_lifetimes)+*});
+                        if !lifetimes.is_empty() {
+                            // constrain *all* lifetimes, not only those in output position:
+                            // we may have something like &mut Vec<&'a i32>,with 'a appearing only
+                            // in input position. Without putting the bound on 'a,
+                            // we can smuggle a ref that outlives the dylib.
+                            adjusted_generics
+                                .make_where_clause()
+                                .predicates
+                                .push(syn::parse_quote! {'__lib: #(#lifetimes)+*});
                         }
+
                     }
 
                     // generate shim ---------------------------------------------------------------
@@ -138,37 +142,41 @@ pub fn hot_reload_module(
                     // In this context the lifetimes are already fixed so there is no need to spell
                     // a higher-ranked fn type.
 
-                    let mut renamed_inputs = Vec::new();
-                    let mut argnames = Vec::new();
-                    for (i,arg) in inputs.iter().enumerate() {
-                        match arg {
-                            syn::FnArg::SelfRef(_) => { unimplemented!("methods") },
-                            syn::FnArg::SelfValue(_) => { unimplemented!("methods") },
-                            syn::FnArg::Captured(syn::ArgCaptured { ty, .. }) => {
-                                let an = format_ident!("arg{}", i);
-                                renamed_inputs.push(quote!{#an: #ty});
-                                argnames.push(an);
-                            },
-                            syn::FnArg::Inferred(_) => {
-                                panic!("inferred arg on fn item")
-                            },
-                            syn::FnArg::Ignored(_) => {
-                                panic!("ignored arg on fn item")
-                            },
+                    // add DylibSafe bounds on argument types
+                    if bounded {
+                       /* /*let mut mkbound = |ty: &syn::Type| {
+                            adjusted_generics.make_where_clause().predicates.push(
+                                syn::parse2::<syn::WherePredicate>(quote_spanned! {ty.span() => #ty: gfx2_extension_runtime::DylibSafe }).unwrap())
+                        };*/
+                        let mut allty = Vec::new();
+                        for ty in argtypes.iter() {
+                            //mkbound(ty);
+                            allty.push(quote_spanned!{ ty.span() => #ty })
                         }
+                        match output {
+                            syn::ReturnType::Type(_, ty) => {
+                                allty.push(quote_spanned!{ ty.span() => #ty });
+                            }
+                            syn::ReturnType::Default => {}
+                        }
+
+                        adjusted_generics.make_where_clause().predicates.push(
+                            syn::parse_quote!{(#(#allty),*): gfx2_extension_runtime::DylibSafe })*/
                     }
 
+                    // generate shims
                     let fnptr_ident = format_ident!("fnptr_{}", ident.to_string());
-
+                    let argnames0 = &argnames;
+                    let argnames1 = &argnames;
                     let where_clause = &adjusted_generics.where_clause;
 
                     let shim = quote! {
-                        pub #unsafety fn #ident #adjusted_generics (&self, #(#renamed_inputs),*) #output
+                        pub #unsafety fn #ident #adjusted_generics (&self, #(#argnames0: #argtypes),*) #output
                             #where_clause
                         {
                             // the lifetimes contained in inputs and outputs
                             // are fixed in this context, no need for a higher-ranked type.
-                            (unsafe {::std::mem::transmute::<_, fn(#inputs) #output>(*self.#fnptr_ident) }) (#(#argnames),*)
+                            (unsafe {::std::mem::transmute::<_, fn(#inputs) #output>(*self.#fnptr_ident) }) (#(#argnames1),*)
                         }
                     };
 
@@ -195,8 +203,10 @@ pub fn hot_reload_module(
         let fnptrs = &fnptrs;
 
         let content = match m.content {
-            Some((_, ref items)) => { quote! {#(#items)*} },
-            None => quote!{}
+            Some((_, ref items)) => {
+                quote! {#(#items)*}
+            }
+            None => quote! {},
         };
 
         quote! {

@@ -4,10 +4,10 @@ use pretty_env_logger;
 use std::cell::RefCell;
 use winit;
 // re-export window event handling stuff.
+use ::image::GenericImageView;
 use gfx2::*;
 use gfx2_backend_gl::{create_backend_and_window, OpenGlBackend};
-use ::image;
-use ::image::GenericImageView;
+use image;
 use std::error;
 use std::fmt;
 use std::path::Path;

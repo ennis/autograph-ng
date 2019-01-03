@@ -1,7 +1,6 @@
 use gfx2_extension_runtime::load_module;
-use test_dylib;
 use std::env;
-
+use test_dylib;
 
 #[test]
 fn test_compile() {
@@ -9,6 +8,9 @@ fn test_compile() {
     let lib = libloading::Library::new("target/debug/deps/test_dylib.dll").unwrap();
 
     let hot = load_module!(&lib, test_dylib::hot).unwrap();
+    let mut test_vec = Vec::new();
+    hot.push(&mut test_vec);
+    assert_eq!(&test_vec[..], &[&42]);
     let r = hot.simple(42);
     assert_eq!(r, 43);
 
@@ -17,5 +19,4 @@ fn test_compile() {
     //let hot = load_dev_module!(test_dylib::hot).unwrap();
     // find target directory? debug/release?
     // then it's deps/module-name
-
 }
