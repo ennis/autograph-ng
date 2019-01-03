@@ -3,9 +3,76 @@
 #![feature(fn_traits)]
 use gfx2_extension_runtime::hot_reload_module;
 
-#[hot_reload_module]
+//#[hot_reload_module]
 pub mod hot {
-       #[no_mangle]
+    #[doc(hidden)]
+    pub mod __load {
+        use std::ops::Deref;
+
+        #[derive(Copy,Clone)]
+        pub struct FnWrap<'lib, T>(T, ::std::marker::PhantomData<&'lib ()>);
+
+        impl<'lib, T, Args> FnOnce<Args> for FnWrap<'lib, T> where T: FnOnce<Args>
+        {
+            type Output = <T as FnOnce<Args>>::Output;
+            extern "rust-call" fn call_once(self, args: Args) -> Self::Output { FnOnce::call_once(self.0, args) }
+        }
+
+        pub struct DllShims<'__lib> {
+            pub push: FnWrap<'__lib, for <'a, 'b> fn(&'a mut Vec<&'b i32>)>,
+        }
+
+        impl<'lib> DllShims<'lib> {
+            fn test(&self) {
+                let mut v = Vec::new();
+                (&self.push)(&mut v);
+            }
+            pub fn load(lib: &'lib ::libloading::Library) -> ::libloading::Result<Self> {
+                Ok(Self {
+                    push: FnWrap(unsafe { *lib.get(stringify!(push).as_bytes())? }, ::std::marker::PhantomData),
+                })
+            }
+        }
+
+        /*impl<'__lib> DllShims<'__lib> {
+            pub fn shorten_lifetime<'a, 'b, 'min>(&self, arg0: &'a i32, arg1: &'b i32) -> &'min i32
+                where
+                    'a: 'min,
+                    'b: 'min,
+                    '__lib: 'a + 'b + 'min,
+            {
+                (unsafe {
+                    ::std::mem::transmute::<_, fn(a: &'a i32, b: &'b i32) -> &'min i32>(
+                        *self.fnptr_shorten_lifetime,
+                    )
+                })(arg0, arg1)
+            }
+            pub fn push<'a, 'b>(&self, arg0: &'a mut Vec<&'b i32>)
+                where
+                    '__lib: 'a + 'b,
+            {
+                (unsafe {
+                    ::std::mem::transmute::<_, fn(v: &'a mut Vec<&'b i32>)>(*self.fnptr_push)
+                })(arg0)
+            }
+            pub fn simple(&self, arg0: i32) -> i32
+            {
+                (unsafe { ::std::mem::transmute::<_, fn(a: i32) -> i32>(*self.fnptr_simple) })(arg0)
+            }
+
+            pub fn load(lib: &'__lib ::libloading::Library) -> ::libloading::Result<Self> {
+                Ok(Self {
+                    fnptr_shorten_lifetime: unsafe {
+                        lib.get(stringify!(shorten_lifetime).as_bytes())?
+                    },
+                    fnptr_push: unsafe { lib.get(stringify!(push).as_bytes())? },
+                    fnptr_simple: unsafe { lib.get(stringify!(simple).as_bytes())? },
+                })
+            }
+        }*/
+    }
+
+    #[no_mangle]
     pub extern "C" fn shorten_lifetime<'a, 'b, 'min>(a: &'a i32, b: &'b i32) -> &'min i32
     where
         'a: 'min,
