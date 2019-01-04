@@ -22,7 +22,7 @@ mod preprocessor;
 fn gfx2_name() -> syn::Path {
     syn::parse_str("gfx2").unwrap()
 }*/
-
+/*
 #[proc_macro_attribute]
 pub fn shader_module(
     _attribs: proc_macro::TokenStream,
@@ -84,7 +84,7 @@ pub fn shader_module(
         }
     };
     q.into()
-}
+}*/
 
 fn compile_shader(
     src: proc_macro::TokenStream,

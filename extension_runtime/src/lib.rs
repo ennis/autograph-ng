@@ -84,7 +84,6 @@
 //!
 //!
 //!
-//!
 //! ## Current solution
 //!
 //! Warn the user in the documentation about not returning types that hide &'static refs.
@@ -93,103 +92,70 @@
 //!
 //! At some point, may switch to opt-in unloading, and keep dylibs in memory otherwise.
 //!
-#![feature(optin_builtin_traits)]
-#![feature(on_unimplemented)]
+//! New issue: cannot elide constants.
+//! A simple 'syntactical un-elision' may work: (&str => &'lib str).
+//!
+#![feature(fn_traits)]
+#![feature(unboxed_closures)]
 pub use gfx2_extension_macros::hot_reload_module;
+use libloading::Library;
 use std::marker::PhantomData;
-use std::cell::Cell;
+use std::ops::Deref;
 
-//pub unsafe auto trait DylibSafe {}
+#[derive(Clone)]
+#[doc(hidden)]
+pub struct FnWrap<'lib, T>(pub T, pub ::std::marker::PhantomData<&'lib ()>);
 
-#[rustc_on_unimplemented(
-    message = "`{Self}` cannot be moved across hot-reloadable libraries safely",
-    label = "`{Self}` cannot be moved across hot-reloadable libraries safely"
-)]
-pub trait DylibSafe {}
-
-impl DylibSafe for u8 {}
-impl DylibSafe for u16 {}
-impl DylibSafe for u32 {}
-impl DylibSafe for u64 {}
-impl DylibSafe for u128 {}
-impl DylibSafe for i8 {}
-impl DylibSafe for i16 {}
-impl DylibSafe for i32 {}
-impl DylibSafe for i64 {}
-impl DylibSafe for i128 {}
-impl DylibSafe for f32 {}
-impl DylibSafe for f64 {}
-impl DylibSafe for char {}
-impl DylibSafe for str {}
-impl<T: DylibSafe> DylibSafe for [T] {}
-
-// impl for references
-// note: this surprisingly says that &'static is DylibSafe, but this is not a problem, as long
-// as the lifetime is syntactically present in the spelled-out type.
-//
-// XXX: what about type aliases?
-// type A = &'static i32;   // welp.
-// A is DylibSafe, but 'static is not syntactically present in the function signature
-// -> Conclusion: this cannot work
-
-// tuples
-macro_rules! dylibsafe_tuple_impl {
-    ($($t:ident),*) => {
-        impl<$($t: DylibSafe),*> DylibSafe for ($($t,)*) {}
-    };
+impl<'lib, T, Args> FnOnce<Args> for FnWrap<'lib, T>
+where
+    T: FnOnce<Args>,
+{
+    type Output = <T as FnOnce<Args>>::Output;
+    extern "rust-call" fn call_once(self, args: Args) -> Self::Output {
+        FnOnce::call_once(self.0, args)
+    }
 }
 
-//dylibsafe_tuple_impl!{T0}
-dylibsafe_tuple_impl!{T0,T1}
-dylibsafe_tuple_impl!{T0,T1,T2}
-dylibsafe_tuple_impl!{T0,T1,T2,T3}
-dylibsafe_tuple_impl!{T0,T1,T2,T3,T4}
-dylibsafe_tuple_impl!{T0,T1,T2,T3,T4,T5}
-dylibsafe_tuple_impl!{T0,T1,T2,T3,T4,T5,T6}
-dylibsafe_tuple_impl!{T0,T1,T2,T3,T4,T5,T6,T7}
-dylibsafe_tuple_impl!{T0,T1,T2,T3,T4,T5,T6,T7,T8}
-dylibsafe_tuple_impl!{T0,T1,T2,T3,T4,T5,T6,T7,T8,T9}
-dylibsafe_tuple_impl!{T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10}
-dylibsafe_tuple_impl!{T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11}
+impl<'lib, T, Args> FnMut<Args> for FnWrap<'lib, T>
+where
+    T: FnOnce<Args> + Clone,
+{
+    extern "rust-call" fn call_mut(&mut self, args: Args) -> Self::Output {
+        FnOnce::call_once(self.0.clone(), args)
+    }
+}
 
-// std containers
-impl<T: DylibSafe> DylibSafe for Vec<T> {}
-
-
-/*impl<T> DylibSafe for T where Cell<T>: DylibSafe0 {}
-pub unsafe auto trait DylibSafe0 {}
-impl<T: ?Sized> !DylibSafe for Cell<&'static T> {}
-impl<T: ?Sized> !DylibSafe for Cell<&'static mut T> {}
-*/
-
-// the thing is that &'static T <: &'a T
-// Fix lifetimes somehow?
-
-// see if there is an impl of DylibSafe for &'a T, for all 'a
-// -> negative impl for 'a = 'static
-// -> disables default impl
-//
-// -> can detect if something contains a ref
-// -> can detect if something is 'static
-// -> if something contains a ref and is provably 'static => fail!
-// -> or impl if NoRefs OR not 'static
-// -> HasReferences + 'static (or !HasReferences OR not static)
-//
-// DylibSafe if NoRefs
-// OR not 'static
-// unimpl if HasRefs
-//
-// T: 'a (may be 'static)
-// -> goal: have 'a inferred to be the longest lifetime possible, independently of the 'lib: 'a bound
-// if T is U<'b> then 'a = 'b, else T: 'static
-// output bounded by same 'a
-// and 'lib: 'a
-
+impl<'lib, T, Args> Fn<Args> for FnWrap<'lib, T>
+where
+    T: FnOnce<Args> + Clone,
+{
+    extern "rust-call" fn call(&self, args: Args) -> Self::Output {
+        FnOnce::call_once(self.0.clone(), args)
+    }
+}
 
 #[macro_export]
 macro_rules! load_module {
     ($lib:expr, $m:path) => {{
         use $m as m;
-        m::__load::DllShims::load($lib)
+        m::__load::FnPtrs::load($lib)
+    }};
+}
+
+#[macro_export]
+macro_rules! load_dev_dylib {
+    ($crate_name:path) => {{
+        use std::env::consts::{DLL_PREFIX, DLL_SUFFIX};
+        #[cfg(debug_assertions)]
+        let subdir = "debug";
+        #[cfg(not(debug_assertions))]
+        let subdir = "release";
+        libloading::Library::new(format!(
+            "target/{}/deps/{}{}{}",
+            subdir,
+            DLL_PREFIX,
+            stringify!($crate_name),
+            DLL_SUFFIX
+        ))
     }};
 }

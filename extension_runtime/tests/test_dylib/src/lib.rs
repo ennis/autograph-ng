@@ -5,22 +5,9 @@ use gfx2_extension_runtime::hot_reload_module;
 
 #[hot_reload_module]
 pub mod hot {
-       #[no_mangle]
-    pub extern "C" fn shorten_lifetime<'a, 'b, 'min>(a: &'a i32, b: &'b i32) -> &'min i32
-    where
-        'a: 'min,
-        'b: 'min,
-    {
-        if *a > *b {
-            a
-        } else {
-            b
-        }
-    }
 
     #[no_mangle]
     pub extern "C" fn push<'a, 'b>(v: &'a mut Vec<&'b i32>) {
-        // even if this is static, this is still safe, because of the added bound
         v.push(&42);
     }
 
@@ -29,6 +16,9 @@ pub mod hot {
         eprintln!("you called? {}", a);
         a + 1
     }
+
+    #[no_mangle]
+    pub const STR: &str = "hello";
 }
 /*
 pub mod hot2 {

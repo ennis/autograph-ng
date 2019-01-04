@@ -4,7 +4,6 @@ extern crate log;
 mod common;
 
 use self::common::*;
-use common_shaders::Vertex2DTex;
 use gfx2;
 use gfx2::glm;
 use gfx2::interface::DescriptorSetInterface;
@@ -14,7 +13,6 @@ use gfx2::interface::PipelineInterfaceVisitor;
 use gfx2::interface::VertexInputBufferDescription;
 use gfx2::*;
 use gfx2_backend_gl as gl_backend;
-use libloading as lib;
 use std::env;
 
 //--------------------------------------------------------------------------------------------------
@@ -25,17 +23,6 @@ type Framebuffer<'a> = gfx2::Framebuffer<'a, Backend>;
 type DescriptorSet<'a> = gfx2::DescriptorSet<'a, Backend>;
 type DescriptorSetLayout<'a> = gfx2::DescriptorSetLayout<'a, Backend>;
 type GraphicsPipeline<'a> = gfx2::GraphicsPipeline<'a, Backend>;
-
-//--------------------------------------------------------------------------------------------------
-fn plugin_test<'a>(arena: &'a gl_backend::Arena) -> lib::Result<gl_backend::Buffer<'a, [u8]>> {
-    let lib = lib::Library::new("target/debug/common_shaders.dll")?;
-    unsafe {
-        let func: lib::Symbol<
-            for<'b> unsafe extern "C" fn(&'b gl_backend::Arena) -> gl_backend::Buffer<'b, [u8]>,
-        > = lib.get(b"plugin_entry")?;
-        Ok(func(arena))
-    }
-}
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Copy, Clone)]
@@ -182,7 +169,6 @@ fn main() {
     // graphics pipelines
     'outer: loop {
         let arena_0 = r.create_arena();
-        let _ = plugin_test(&arena_0);
         // reload pipelines
         let pipeline = create_pipelines(&arena_0);
 
