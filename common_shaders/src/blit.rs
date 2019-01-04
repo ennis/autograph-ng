@@ -17,7 +17,6 @@ pub struct Blit<'a, R: RendererBackend> {
 }
 
 //
-#[gfx2::shader_module]
 pub mod hot_reload {
     pub const VERTEX: &'static [u8] = gfx2::glsl_vertex! { r"
 #version 450

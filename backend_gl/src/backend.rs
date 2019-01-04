@@ -154,9 +154,11 @@ impl OpenGlBackend {
             );
         }
 
-        let upload_buffer_size = cfg.get::<u64>("gfx.default_upload_buffer_size").unwrap();
+        let upload_buffer_size = cfg
+            .get::<u64>("gfx.default_upload_buffer_size")
+            .unwrap_or(4 * 1024 * 1024);
         assert!(upload_buffer_size <= usize::max_value() as u64);
-        let max_frames_in_flight = cfg.get::<u32>("gfx.max_frames_in_flight").unwrap();
+        let max_frames_in_flight = cfg.get::<u32>("gfx.max_frames_in_flight").unwrap_or(2);
 
         let timeline = Timeline::new(0);
 

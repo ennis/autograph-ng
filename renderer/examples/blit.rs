@@ -27,17 +27,6 @@ type DescriptorSetLayout<'a> = gfx2::DescriptorSetLayout<'a, Backend>;
 type GraphicsPipeline<'a> = gfx2::GraphicsPipeline<'a, Backend>;
 
 //--------------------------------------------------------------------------------------------------
-fn plugin_test<'a>(arena: &'a gl_backend::Arena) -> lib::Result<gl_backend::Buffer<'a, [u8]>> {
-    let lib = lib::Library::new("target/debug/common_shaders.dll")?;
-    unsafe {
-        let func: lib::Symbol<
-            for<'b> unsafe extern "C" fn(&'b gl_backend::Arena) -> gl_backend::Buffer<'b, [u8]>,
-        > = lib.get(b"plugin_entry")?;
-        Ok(func(arena))
-    }
-}
-
-//--------------------------------------------------------------------------------------------------
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct Vertex {
@@ -182,7 +171,6 @@ fn main() {
     // graphics pipelines
     'outer: loop {
         let arena_0 = r.create_arena();
-        let _ = plugin_test(&arena_0);
         // reload pipelines
         let pipeline = create_pipelines(&arena_0);
 

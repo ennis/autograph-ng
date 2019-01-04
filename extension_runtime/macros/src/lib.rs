@@ -15,31 +15,118 @@ macro_rules! format_ident {
     ($($arg:tt)*) => { syn::Ident::new(&format!($($arg)*), Span::call_site()) };
 }
 
-/*
-struct LoadModule {
-    lib: syn::Expr,
-    path: syn::Path,
-}
-
-impl syn::parse::Parse for LoadModule {
-    fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        let lib: syn::Expr = input.parse()?;
-        input.parse::<Token![,]>()?;
-        let path: syn::Path = input.parse()?;
-        Ok(LoadModule {lib, path})
+fn rewrite_lifetimes_in_path(path: &syn::Path, l: &syn::Lifetime) -> syn::Path
+{
+    syn::Path {
+        segments: path.segments.pairs().map(|p| {
+            let arguments = match &p.value().arguments {
+                syn::PathArguments::AngleBracketed(abga) =>
+                    syn::PathArguments::AngleBracketed(syn::AngleBracketedGenericArguments {
+                        args: abga.args.pairs().map(|p| {
+                            let new_arg = match p.value() {
+                                syn::GenericArgument::Lifetime(_) => syn::GenericArgument::Lifetime(l.clone()),
+                                syn::GenericArgument::Type(ty) => syn::GenericArgument::Type(rewrite_lifetimes(ty, l)),
+                                &other => other.clone()
+                            };
+                            syn::punctuated::Pair::new(new_arg, p.punct().cloned().cloned())
+                        }).collect(),
+                        ..abga.clone()
+                    }),
+                syn::PathArguments::Parenthesized(pga) => {
+                    // TODO ???
+                    syn::PathArguments::Parenthesized(pga.clone())
+                },
+                other => other.clone()
+            };
+            let new_seg = syn::PathSegment {
+                arguments,
+                ident: p.value().ident.clone(),
+            };
+            syn::punctuated::Pair::new(new_seg, p.punct().cloned().cloned())
+        }).collect(),
+        ..path.clone()
     }
 }
 
-#[proc_macro]
-pub fn load_module(src: proc_macro::TokenStream) -> proc_macro::TokenStream
-{
-    // expr, module path
-    let LoadModule { lib, path } = syn::parse_macro_input!(src as LoadModule);
-    let q = quote! {
-        #path::__load::DllShims::load(#lib)
-    };
-    q.into()
-}*/
+// Replace all lifetimes appearing in the type, and add the lifetime to any reference type
+// found.
+fn rewrite_lifetimes(ty: &syn::Type, l: &syn::Lifetime) -> syn::Type {
+    match ty {
+        syn::Type::Slice(tyslice) => {
+            // slices &[T]
+            syn::Type::Slice(syn::TypeSlice {
+                elem: Box::new(rewrite_lifetimes(&tyslice.elem, l)),
+                ..tyslice.clone()
+            })
+        }
+        syn::Type::Array(tyarray) => {
+            // arrays []
+            syn::Type::Array(syn::TypeArray {
+                elem: Box::new(rewrite_lifetimes(&tyarray.elem, l)),
+                ..tyarray.clone()
+            })
+        }
+        syn::Type::Ptr(typtr) => {
+            syn::Type::Ptr(syn::TypePtr {
+                elem: Box::new(rewrite_lifetimes(&typtr.elem, l)),
+                ..typtr.clone()
+            })
+        },
+        syn::Type::Reference(tyref) => {
+            syn::Type::Reference(syn::TypeReference {
+                elem: Box::new(rewrite_lifetimes(&tyref.elem, l)),
+                lifetime: Some(l.clone()),
+                ..tyref.clone()
+            })
+        },
+        syn::Type::BareFn(tybarefn) => {
+            // TODO?
+            ty.clone()
+        },
+        syn::Type::Never(_) => {
+            ty.clone()
+        },
+        syn::Type::Tuple(tytuple) => {
+            syn::Type::Tuple(syn::TypeTuple {
+                elems: tytuple.elems.pairs().map(|p| {
+                    syn::punctuated::Pair::new(rewrite_lifetimes(p.value(), l), p.punct().cloned().cloned())  // hmmm
+                }).collect(),
+                ..tytuple.clone()
+            })
+        },
+        syn::Type::Path(typath) => {
+            syn::Type::Path(syn::TypePath {
+                path: rewrite_lifetimes_in_path(&typath.path, l),
+                qself: typath.qself.clone(),
+            })
+        },
+        syn::Type::TraitObject(tytraitobj) => {
+            syn::Type::TraitObject(syn::TypeTraitObject {
+                bounds: tytraitobj.bounds.pairs().map(|p| {
+                    let r = match p.value() {
+                        syn::TypeParamBound::Trait(traitbound) => {
+                            syn::TypeParamBound::Trait(syn::TraitBound {
+                                path: rewrite_lifetimes_in_path(&traitbound.path, l),
+                                ..traitbound.clone()
+                            })
+                        },
+                        syn::TypeParamBound::Lifetime(_) => {
+                            syn::TypeParamBound::Lifetime(l.clone())
+                        }
+                    };
+                    syn::punctuated::Pair::new(r, p.punct().cloned().cloned())
+                }).collect(),
+                ..tytraitobj.clone()
+            })
+        },
+        syn::Type::ImplTrait(tyslice) => unimplemented!(),
+        syn::Type::Paren(tyslice) => unimplemented!(),
+        syn::Type::Group(tyslice) => unimplemented!(),
+        syn::Type::Infer(tyslice) => unimplemented!(),
+        syn::Type::Macro(tyslice) => unimplemented!(),
+        syn::Type::Verbatim(tyslice) => unimplemented!(),
+    }
+}
 
 #[proc_macro_attribute]
 pub fn hot_reload_module(
@@ -52,8 +139,10 @@ pub fn hot_reload_module(
     let m: syn::ItemMod = syn::parse_macro_input!(src as syn::ItemMod);
 
     let mut shims = Vec::new();
-    let mut symnames = Vec::new();
+    let mut fnsymnames = Vec::new();
     let mut fnptrs = Vec::new();
+    let mut varsymnames = Vec::new();
+    let mut varptrtys = Vec::new();
 
     // Collect hot-reloadable items and generate signatures ----------------------------------------
     if let Some((_, ref contents)) = m.content {
@@ -105,6 +194,7 @@ pub fn hot_reload_module(
                     lifetimes_and_static.insert(static_lifetime);
 
                     // input+output lifetimes in the signature, potentially including 'static
+                    // (easy way to get an error if 'static syntactically appears in the signature)
                     let mut lifetimes = argtypes
                         .uses_lifetimes(&Purpose::Declare.into(), &lifetimes_and_static);
                     lifetimes.extend(itemfn
@@ -181,12 +271,22 @@ pub fn hot_reload_module(
                     };
 
                     shims.push(shim);
-                    symnames.push(ident);
+                    fnsymnames.push(ident);
                     fnptrs.push(fnptr_ident);
                 }
-                syn::Item::Const(itemconst) => {
-                    let _ty = &itemconst.ty;
-                    let _ident = &itemconst.ident;
+                syn::Item::Static(itemstatic) => {
+                    let ty = &itemstatic.ty;
+                    let ident = &itemstatic.ident;
+                    // replace all lifetimes with 'lib (all lifetimes should be 'static anyway, except higher-ranked ones).
+                    // this also performs limited 'syntactical' un-elision by adding '__lib in all
+                    // positions where a lifetime is known to be elided.
+                    // (it won't add the bound on types with an elided lifetime param since there is
+                    // no way to syntactically know that there should be a lifetime there: this will generate
+                    // an error later in the process anyway)
+                    let lib_lifetime : syn::Lifetime = syn::parse_quote!{ '__lib };
+                    let ty2 = rewrite_lifetimes(ty, &lib_lifetime);
+                    varptrtys.push(ty2);
+                    varsymnames.push(ident);
                 }
                 _ => {}
             }
@@ -201,6 +301,8 @@ pub fn hot_reload_module(
         let attrs = m.attrs;
         //let wrapper_name = format_ident!("DllShimsFor_{}", mod_name.to_string());
         let fnptrs = &fnptrs;
+        let varsymnames = &varsymnames;
+        let varsymnames0 = varsymnames;
 
         let content = match m.content {
             Some((_, ref items)) => {
@@ -214,14 +316,18 @@ pub fn hot_reload_module(
                 #[doc(hidden)]
                 pub mod __load {
                     pub struct DllShims<'__lib> {
+                        // function pointers
                         #(#fnptrs: ::libloading::Symbol<'__lib, *const ::std::ffi::c_void>,)*
+                        // variable pointers (public)
+                        #(pub #varsymnames: &'__lib #varptrtys ,)*
                     }
                     impl<'__lib> DllShims<'__lib> {
                         #(#shims)*
 
                         pub fn load(lib: &'__lib ::libloading::Library) -> ::libloading::Result<Self> {
                             Ok(Self {
-                                #(#fnptrs: unsafe { lib.get(stringify!(#symnames).as_bytes())? },)*
+                                #(#fnptrs: unsafe { lib.get(stringify!(#fnsymnames).as_bytes())? },)*
+                                #(#varsymnames: unsafe { *lib.get(stringify!(#varsymnames0).as_bytes())? },)*
                             })
                         }
                     }

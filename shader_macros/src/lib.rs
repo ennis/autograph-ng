@@ -4,7 +4,7 @@ extern crate proc_macro2;
 
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
-use quote::{quote, quote_spanned};
+use quote::quote;
 use shaderc;
 use std::fs::File;
 use std::io::Read;
@@ -12,9 +12,7 @@ use std::path::Path;
 use syn;
 use syn::parse::ParseStream;
 use syn::punctuated::Punctuated;
-use syn::spanned::Spanned;
 use syn::Token;
-use syn::TypeBareFn;
 
 mod preprocessor;
 
@@ -22,7 +20,7 @@ mod preprocessor;
 fn gfx2_name() -> syn::Path {
     syn::parse_str("gfx2").unwrap()
 }*/
-
+/*
 #[proc_macro_attribute]
 pub fn shader_module(
     _attribs: proc_macro::TokenStream,
@@ -84,7 +82,7 @@ pub fn shader_module(
         }
     };
     q.into()
-}
+}*/
 
 fn compile_shader(
     src: proc_macro::TokenStream,
