@@ -1,6 +1,7 @@
 use super::Vertex2DTex;
 use gfx2::glm;
 use gfx2::*;
+use gfx2_extension_runtime::hot_reload_module;
 
 #[derive(BufferLayout, Copy, Clone)]
 #[repr(C)]
@@ -16,9 +17,10 @@ pub struct Blit<'a, R: RendererBackend> {
     pub vertex_buffer: Buffer<'a, R, [Vertex2DTex]>,
 }
 
-//
-pub mod hot_reload {
-    pub const VERTEX: &'static [u8] = gfx2::glsl_vertex! { r"
+#[hot_reload_module]
+pub mod hot {
+    #[no_mangle]
+    pub static VERTEX: &[u8] = gfx2::glsl_vertex! { r"
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_ARB_shading_language_420pack : enable
@@ -39,7 +41,8 @@ void main() {
 }
 " };
 
-    pub const FRAGMENT: &'static [u8] = gfx2::glsl_fragment! {
+    #[no_mangle]
+    pub static FRAGMENT: &[u8] = gfx2::glsl_fragment! {
 r"
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
@@ -55,16 +58,9 @@ void main() {
     vec2 dithercoords = gl_FragCoord.xy / textureSize(dithertex,0);
     vec4 dither = 1.0 * texture(dithertex, dithercoords);
     vec3 tmp = vec3(f_uv, 0.0);
-    tmp += 1.0/64.0 * (dither.rgb - 0.5);
+    tmp += 1.0/32.0 * (dither.rgb - 0.5);
     color = vec4(tmp, 1.0);
 }
 "
-    };
-
-    #[no_mangle]
-    pub extern "C" fn plugin_entry<'a>(a: &'a i32, b: &i32) -> &'a i32 {
-        println!("loaded plugin");
-        unimplemented!()
-    }
-
+        };
 }

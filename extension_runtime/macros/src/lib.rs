@@ -5,9 +5,8 @@ extern crate proc_macro2;
 
 use darling::usage::{LifetimeSet, Purpose, UsesLifetimes};
 use proc_macro2::Span;
-use quote::{quote, quote_spanned};
+use quote::quote;
 use syn;
-use syn::spanned::Spanned;
 //use syn::parse::ParseStream;
 //use syn::Token;
 
@@ -15,35 +14,47 @@ macro_rules! format_ident {
     ($($arg:tt)*) => { syn::Ident::new(&format!($($arg)*), Span::call_site()) };
 }
 
-fn rewrite_lifetimes_in_path(path: &syn::Path, l: &syn::Lifetime) -> syn::Path
-{
+fn rewrite_lifetimes_in_path(path: &syn::Path, l: &syn::Lifetime) -> syn::Path {
     syn::Path {
-        segments: path.segments.pairs().map(|p| {
-            let arguments = match &p.value().arguments {
-                syn::PathArguments::AngleBracketed(abga) =>
-                    syn::PathArguments::AngleBracketed(syn::AngleBracketedGenericArguments {
-                        args: abga.args.pairs().map(|p| {
-                            let new_arg = match p.value() {
-                                syn::GenericArgument::Lifetime(_) => syn::GenericArgument::Lifetime(l.clone()),
-                                syn::GenericArgument::Type(ty) => syn::GenericArgument::Type(rewrite_lifetimes(ty, l)),
-                                &other => other.clone()
-                            };
-                            syn::punctuated::Pair::new(new_arg, p.punct().cloned().cloned())
-                        }).collect(),
-                        ..abga.clone()
-                    }),
-                syn::PathArguments::Parenthesized(pga) => {
-                    // TODO ???
-                    syn::PathArguments::Parenthesized(pga.clone())
-                },
-                other => other.clone()
-            };
-            let new_seg = syn::PathSegment {
-                arguments,
-                ident: p.value().ident.clone(),
-            };
-            syn::punctuated::Pair::new(new_seg, p.punct().cloned().cloned())
-        }).collect(),
+        segments: path
+            .segments
+            .pairs()
+            .map(|p| {
+                let arguments = match &p.value().arguments {
+                    syn::PathArguments::AngleBracketed(abga) => {
+                        syn::PathArguments::AngleBracketed(syn::AngleBracketedGenericArguments {
+                            args: abga
+                                .args
+                                .pairs()
+                                .map(|p| {
+                                    let new_arg = match p.value() {
+                                        syn::GenericArgument::Lifetime(_) => {
+                                            syn::GenericArgument::Lifetime(l.clone())
+                                        }
+                                        syn::GenericArgument::Type(ty) => {
+                                            syn::GenericArgument::Type(rewrite_lifetimes(ty, l))
+                                        }
+                                        &other => other.clone(),
+                                    };
+                                    syn::punctuated::Pair::new(new_arg, p.punct().cloned().cloned())
+                                })
+                                .collect(),
+                            ..abga.clone()
+                        })
+                    }
+                    syn::PathArguments::Parenthesized(pga) => {
+                        // TODO ???
+                        syn::PathArguments::Parenthesized(pga.clone())
+                    }
+                    other => other.clone(),
+                };
+                let new_seg = syn::PathSegment {
+                    arguments,
+                    ident: p.value().ident.clone(),
+                };
+                syn::punctuated::Pair::new(new_seg, p.punct().cloned().cloned())
+            })
+            .collect(),
         ..path.clone()
     }
 }
@@ -66,65 +77,66 @@ fn rewrite_lifetimes(ty: &syn::Type, l: &syn::Lifetime) -> syn::Type {
                 ..tyarray.clone()
             })
         }
-        syn::Type::Ptr(typtr) => {
-            syn::Type::Ptr(syn::TypePtr {
-                elem: Box::new(rewrite_lifetimes(&typtr.elem, l)),
-                ..typtr.clone()
-            })
-        },
-        syn::Type::Reference(tyref) => {
-            syn::Type::Reference(syn::TypeReference {
-                elem: Box::new(rewrite_lifetimes(&tyref.elem, l)),
-                lifetime: Some(l.clone()),
-                ..tyref.clone()
-            })
-        },
-        syn::Type::BareFn(tybarefn) => {
+        syn::Type::Ptr(typtr) => syn::Type::Ptr(syn::TypePtr {
+            elem: Box::new(rewrite_lifetimes(&typtr.elem, l)),
+            ..typtr.clone()
+        }),
+        syn::Type::Reference(tyref) => syn::Type::Reference(syn::TypeReference {
+            elem: Box::new(rewrite_lifetimes(&tyref.elem, l)),
+            lifetime: Some(l.clone()),
+            ..tyref.clone()
+        }),
+        syn::Type::BareFn(_tybarefn) => {
             // TODO?
             ty.clone()
-        },
-        syn::Type::Never(_) => {
-            ty.clone()
-        },
+        }
+        syn::Type::Never(_) => ty.clone(),
         syn::Type::Tuple(tytuple) => {
             syn::Type::Tuple(syn::TypeTuple {
-                elems: tytuple.elems.pairs().map(|p| {
-                    syn::punctuated::Pair::new(rewrite_lifetimes(p.value(), l), p.punct().cloned().cloned())  // hmmm
-                }).collect(),
+                elems: tytuple
+                    .elems
+                    .pairs()
+                    .map(|p| {
+                        syn::punctuated::Pair::new(
+                            rewrite_lifetimes(p.value(), l),
+                            p.punct().cloned().cloned(),
+                        ) // hmmm
+                    })
+                    .collect(),
                 ..tytuple.clone()
             })
-        },
-        syn::Type::Path(typath) => {
-            syn::Type::Path(syn::TypePath {
-                path: rewrite_lifetimes_in_path(&typath.path, l),
-                qself: typath.qself.clone(),
-            })
-        },
-        syn::Type::TraitObject(tytraitobj) => {
-            syn::Type::TraitObject(syn::TypeTraitObject {
-                bounds: tytraitobj.bounds.pairs().map(|p| {
+        }
+        syn::Type::Path(typath) => syn::Type::Path(syn::TypePath {
+            path: rewrite_lifetimes_in_path(&typath.path, l),
+            qself: typath.qself.clone(),
+        }),
+        syn::Type::TraitObject(tytraitobj) => syn::Type::TraitObject(syn::TypeTraitObject {
+            bounds: tytraitobj
+                .bounds
+                .pairs()
+                .map(|p| {
                     let r = match p.value() {
                         syn::TypeParamBound::Trait(traitbound) => {
                             syn::TypeParamBound::Trait(syn::TraitBound {
                                 path: rewrite_lifetimes_in_path(&traitbound.path, l),
                                 ..traitbound.clone()
                             })
-                        },
+                        }
                         syn::TypeParamBound::Lifetime(_) => {
                             syn::TypeParamBound::Lifetime(l.clone())
                         }
                     };
                     syn::punctuated::Pair::new(r, p.punct().cloned().cloned())
-                }).collect(),
-                ..tytraitobj.clone()
-            })
-        },
-        syn::Type::ImplTrait(tyslice) => unimplemented!(),
-        syn::Type::Paren(tyslice) => unimplemented!(),
-        syn::Type::Group(tyslice) => unimplemented!(),
-        syn::Type::Infer(tyslice) => unimplemented!(),
-        syn::Type::Macro(tyslice) => unimplemented!(),
-        syn::Type::Verbatim(tyslice) => unimplemented!(),
+                })
+                .collect(),
+            ..tytraitobj.clone()
+        }),
+        syn::Type::ImplTrait(_tyslice) => unimplemented!(),
+        syn::Type::Paren(_tyslice) => unimplemented!(),
+        syn::Type::Group(_tyslice) => unimplemented!(),
+        syn::Type::Infer(_tyslice) => unimplemented!(),
+        syn::Type::Macro(_tyslice) => unimplemented!(),
+        syn::Type::Verbatim(_tyslice) => unimplemented!(),
     }
 }
 
@@ -163,7 +175,7 @@ pub fn hot_reload_module(
                         // skip functions with generic type parameters, these are not hot-reloadable
                         continue;
                     }
-                    let static_lifetime = syn::parse_quote!{ 'static };
+                    let static_lifetime = syn::parse_quote! { 'static };
 
                     // extract argument types ------------------------------------------------------
                     let mut argtypes = Vec::new();
@@ -195,12 +207,14 @@ pub fn hot_reload_module(
 
                     // input+output lifetimes in the signature, potentially including 'static
                     // (easy way to get an error if 'static syntactically appears in the signature)
-                    let mut lifetimes = argtypes
-                        .uses_lifetimes(&Purpose::Declare.into(), &lifetimes_and_static);
-                    lifetimes.extend(itemfn
-                        .decl
-                        .output
-                        .uses_lifetimes(&Purpose::Declare.into(), &lifetimes_and_static));
+                    let mut lifetimes =
+                        argtypes.uses_lifetimes(&Purpose::Declare.into(), &lifetimes_and_static);
+                    lifetimes.extend(
+                        itemfn
+                            .decl
+                            .output
+                            .uses_lifetimes(&Purpose::Declare.into(), &lifetimes_and_static),
+                    );
                     let lifetimes = &lifetimes;
 
                     // Add our lifetime bounds -----------------------------------------------------
@@ -218,7 +232,6 @@ pub fn hot_reload_module(
                                 .predicates
                                 .push(syn::parse_quote! {'__lib: #(#lifetimes)+*});
                         }
-
                     }
 
                     // generate shim ---------------------------------------------------------------
@@ -234,24 +247,24 @@ pub fn hot_reload_module(
 
                     // add DylibSafe bounds on argument types
                     if bounded {
-                       /* /*let mut mkbound = |ty: &syn::Type| {
+                        /* /*let mut mkbound = |ty: &syn::Type| {
                             adjusted_generics.make_where_clause().predicates.push(
                                 syn::parse2::<syn::WherePredicate>(quote_spanned! {ty.span() => #ty: gfx2_extension_runtime::DylibSafe }).unwrap())
                         };*/
                         let mut allty = Vec::new();
                         for ty in argtypes.iter() {
-                            //mkbound(ty);
-                            allty.push(quote_spanned!{ ty.span() => #ty })
+                        //mkbound(ty);
+                        allty.push(quote_spanned!{ ty.span() => #ty })
                         }
                         match output {
-                            syn::ReturnType::Type(_, ty) => {
-                                allty.push(quote_spanned!{ ty.span() => #ty });
-                            }
-                            syn::ReturnType::Default => {}
+                        syn::ReturnType::Type(_, ty) => {
+                        allty.push(quote_spanned!{ ty.span() => #ty });
+                        }
+                        syn::ReturnType::Default => {}
                         }
 
                         adjusted_generics.make_where_clause().predicates.push(
-                            syn::parse_quote!{(#(#allty),*): gfx2_extension_runtime::DylibSafe })*/
+                        syn::parse_quote!{(#(#allty),*): gfx2_extension_runtime::DylibSafe })*/
                     }
 
                     // generate shims
@@ -283,7 +296,7 @@ pub fn hot_reload_module(
                     // (it won't add the bound on types with an elided lifetime param since there is
                     // no way to syntactically know that there should be a lifetime there: this will generate
                     // an error later in the process anyway)
-                    let lib_lifetime : syn::Lifetime = syn::parse_quote!{ '__lib };
+                    let lib_lifetime: syn::Lifetime = syn::parse_quote! { '__lib };
                     let ty2 = rewrite_lifetimes(ty, &lib_lifetime);
                     varptrtys.push(ty2);
                     varsymnames.push(ident);
@@ -324,10 +337,10 @@ pub fn hot_reload_module(
                     impl<'__lib> DllShims<'__lib> {
                         #(#shims)*
 
-                        pub fn load(lib: &'__lib ::libloading::Library) -> ::libloading::Result<Self> {
+                        pub fn load(lib: &'__lib ::gfx2_extension_runtime::Dylib) -> ::libloading::Result<Self> {
                             Ok(Self {
-                                #(#fnptrs: unsafe { lib.get(stringify!(#fnsymnames).as_bytes())? },)*
-                                #(#varsymnames: unsafe { *lib.get(stringify!(#varsymnames0).as_bytes())? },)*
+                                #(#fnptrs: unsafe { lib.get(stringify!(#fnsymnames))? },)*
+                                #(#varsymnames: unsafe { *lib.get(stringify!(#varsymnames0))? },)*
                             })
                         }
                     }
@@ -338,7 +351,7 @@ pub fn hot_reload_module(
         }
     };
 
-    println!("{}", r.to_string());
+    //println!("{}", r.to_string());
     r.into()
 }
 

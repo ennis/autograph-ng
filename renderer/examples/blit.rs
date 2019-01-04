@@ -4,7 +4,6 @@ extern crate log;
 mod common;
 
 use self::common::*;
-use common_shaders::Vertex2DTex;
 use gfx2;
 use gfx2::glm;
 use gfx2::interface::DescriptorSetInterface;
@@ -14,7 +13,7 @@ use gfx2::interface::PipelineInterfaceVisitor;
 use gfx2::interface::VertexInputBufferDescription;
 use gfx2::*;
 use gfx2_backend_gl as gl_backend;
-use libloading as lib;
+use gfx2_extension_runtime::{load_dev_dylib, load_module};
 use std::env;
 
 //--------------------------------------------------------------------------------------------------
@@ -80,23 +79,19 @@ impl<'a> PipelineInterface<'a, Backend> for Blit<'a> {
 
 //--------------------------------------------------------------------------------------------------
 // SHADERS & PIPELINES
-gfx2::include_combined_shader! {BlitShaders, "tests/data/shaders/blit.glsl", vertex, fragment}
-
 struct PipelineAndLayout<'a> {
     blit_pipeline: GraphicsPipeline<'a>,
     descriptor_set_layout: DescriptorSetLayout<'a>,
 }
 
-fn create_pipelines<'a>(arena: &'a Arena<Backend>) -> PipelineAndLayout<'a> {
+fn create_pipelines<'a>(arena: &'a Arena<Backend>, vs: &[u8], fs: &[u8]) -> PipelineAndLayout<'a> {
     let descriptor_set_layout = arena.create_descriptor_set_layout(PerObject::INTERFACE);
 
     let gci = GraphicsPipelineCreateInfo {
         shader_stages: &GraphicsShaderStages {
-            vertex: arena.create_shader_module(BlitShaders::VERTEX, ShaderStageFlags::VERTEX),
+            vertex: arena.create_shader_module(vs, ShaderStageFlags::VERTEX),
             geometry: None,
-            fragment: Some(
-                arena.create_shader_module(BlitShaders::FRAGMENT, ShaderStageFlags::FRAGMENT),
-            ),
+            fragment: Some(arena.create_shader_module(fs, ShaderStageFlags::FRAGMENT)),
             tess_eval: None,
             tess_control: None,
         },
@@ -171,8 +166,11 @@ fn main() {
     // graphics pipelines
     'outer: loop {
         let arena_0 = r.create_arena();
+        // reload shader crate
+        let shader_lib = load_dev_dylib!(common_shaders).unwrap();
+        let shader_mod = load_module!(&shader_lib, common_shaders::blit::hot).unwrap();
         // reload pipelines
-        let pipeline = create_pipelines(&arena_0);
+        let pipeline = create_pipelines(&arena_0, shader_mod.VERTEX, shader_mod.FRAGMENT);
 
         let image = arena_0
             .create_image(
@@ -185,7 +183,7 @@ fn main() {
             )
             .into_sampled(SamplerDescription::NEAREST_MIPMAP_NEAREST);
 
-        let dither = common::load_image_2d(&arena_0, "tests/data/img/dither.png")
+        let dither = common::load_image_2d(&arena_0, "tests/data/img/HDR_RGB_0.png")
             .unwrap()
             .into_sampled(SamplerDescription::WRAP_NEAREST_MIPMAP_NEAREST);
 
@@ -243,6 +241,10 @@ fn main() {
                     }
                     _ => {}
                 });
+
+                if shader_lib.should_reload() {
+                    reload_shaders = true;
+                }
 
                 let arena_2 = r.create_arena();
                 let uniforms = arena_2.upload(&Uniforms {

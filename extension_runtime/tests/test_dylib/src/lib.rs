@@ -33,4 +33,3 @@ pub mod hot {
     #[no_mangle]
     pub static STRING: &str = "Hello!";
 }
-

@@ -93,12 +93,98 @@
 //!
 //! At some point, may switch to opt-in unloading, and keep dylibs in memory otherwise.
 //!
-#![feature(optin_builtin_traits)]
-#![feature(on_unimplemented)]
 pub use gfx2_extension_macros::hot_reload_module;
-use std::marker::PhantomData;
-use std::cell::Cell;
+use libloading::{Library, Symbol};
+use log::debug;
+use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::time;
+use std::sync::mpsc::{channel, Receiver};
+use notify::{Watcher, DebouncedEvent, RecommendedWatcher};
 
+pub struct Dylib {
+    tmppath: PathBuf,
+    libname: String,    // for logging only
+    lib: Option<Library>,
+    events: Receiver<DebouncedEvent>,
+    _watcher: RecommendedWatcher
+}
+
+impl Dylib {
+    /// Copy the dylib in a temporary location before loading (some OSes lock the library file
+    /// while it's loaded)
+    pub fn copy_and_load<P: AsRef<Path>>(libpath: P) -> std::io::Result<Dylib> {
+        let mut tmppath = env::temp_dir();
+        let libname = libpath
+            .as_ref()
+            .file_name()
+            .ok_or(std::io::ErrorKind::NotFound)?
+            .to_str()
+            .expect("lib name was not valid UTF-8");
+        // generate a unique id
+        // taken from https://github.com/irh/rust-hot-reloading
+        let unique_name = {
+            let timestamp = time::SystemTime::now()
+                .duration_since(time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let index = libname.rfind('.').unwrap_or(libname.len());
+            let (before, after) = libname.split_at(index);
+            format!("{}-{}{}", before, timestamp, after)
+        };
+        tmppath.push(unique_name);
+        debug!(
+            "copying dylib: {} -> {}",
+            libpath.as_ref().display(),
+            tmppath.display()
+        );
+        // copy file
+        fs::copy(libpath.as_ref(), &tmppath)?;
+        // crate watcher
+        let (tx, rx) = channel();
+        let mut watcher = notify::watcher(tx, time::Duration::from_secs(1)).expect("failed to create watcher");
+        watcher.watch(libpath.as_ref(), notify::RecursiveMode::NonRecursive).expect("failed to watch library");
+
+        // load library
+        let lib = Library::new(&tmppath)?;
+
+        Ok(Dylib {
+            lib: lib.into(),
+            tmppath,
+            libname: libname.to_string(),
+            events: rx,
+            _watcher: watcher
+        })
+    }
+
+    pub unsafe fn get<T>(&self, symname: &str) -> std::io::Result<Symbol<T>> {
+        self.lib.as_ref().unwrap().get(symname.as_bytes())
+    }
+
+    pub fn should_reload(&self) -> bool {
+        self.events.try_iter().any(|ev| match ev {
+            DebouncedEvent::Write(_) => {
+                debug!("detected write on {}", self.libname);
+                true
+            },
+            _ => false
+        })
+    }
+}
+
+impl Drop for Dylib {
+    fn drop(&mut self) {
+        // force lib to drop, as otherwise the file may still be locked
+        self.lib = None;
+        fs::remove_file(&self.tmppath).unwrap_or_else(|_| {
+            panic!(
+                "failed to delete temporary library file at {}",
+                self.tmppath.display()
+            )
+        });
+    }
+}
 
 #[macro_export]
 macro_rules! load_module {
@@ -116,7 +202,7 @@ macro_rules! load_dev_dylib {
         let subdir = "debug";
         #[cfg(not(debug_assertions))]
         let subdir = "release";
-        libloading::Library::new(format!(
+        $crate::Dylib::copy_and_load(&format!(
             "target/{}/deps/{}{}{}",
             subdir,
             DLL_PREFIX,
@@ -125,4 +211,3 @@ macro_rules! load_dev_dylib {
         ))
     }};
 }
-

@@ -1,6 +1,4 @@
 #![feature(proc_macro_hygiene)]
-#![feature(custom_inner_attributes)]
-
 pub mod blit;
 
 #[derive(Copy, Clone)]

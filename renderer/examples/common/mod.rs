@@ -115,8 +115,8 @@ impl App {
     }
 
     pub fn poll_events<F>(&self, mut callback: F) -> bool
-        where
-            F: FnMut(winit::Event),
+    where
+        F: FnMut(winit::Event),
     {
         let mut should_close = false;
         self.events_loop.borrow_mut().poll_events(|event| {
