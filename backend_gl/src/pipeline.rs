@@ -5,11 +5,12 @@ use std::fmt;
 use crate::{
     api as gl,
     api::types::*,
+    api::Gl,
     format::GlFormatInfo,
-    resource::Arena,
+    resource::GlArena,
     shader::{
         create_specialized_spirv_shader, translate_spirv_to_gl_flavor, DescriptorMapBuilder,
-        ShaderCreationError, ShaderModule,
+        ShaderCreationError, GlShaderModule,
     },
     state::StateCache,
     OpenGlBackend,
@@ -68,40 +69,40 @@ pub struct StaticSamplerEntry {
 }
 
 //--------------------------------------------------------------------------------------------------
-fn create_vertex_array_object(attribs: &[VertexInputAttributeDescription]) -> GLuint {
+fn create_vertex_array_object(gl: &Gl, attribs: &[VertexInputAttributeDescription]) -> GLuint {
     let mut vao = 0;
     unsafe {
-        gl::CreateVertexArrays(1, &mut vao);
+        gl.CreateVertexArrays(1, &mut vao);
     }
 
     for a in attribs.iter() {
         unsafe {
-            gl::EnableVertexArrayAttrib(vao, a.location);
+            gl.EnableVertexArrayAttrib(vao, a.location);
             let fmtinfo = a.format.get_format_info();
             let normalized = fmtinfo.is_normalized() as u8;
             let size = fmtinfo.num_components() as i32;
             let glfmt = GlFormatInfo::from_format(a.format);
             let ty = glfmt.upload_ty;
 
-            gl::VertexArrayAttribFormat(vao, a.location, size, ty, normalized, a.offset);
-            gl::VertexArrayAttribBinding(vao, a.location, a.binding);
+            gl.VertexArrayAttribFormat(vao, a.location, size, ty, normalized, a.offset);
+            gl.VertexArrayAttribBinding(vao, a.location, a.binding);
         }
     }
 
     vao
 }
 
-fn link_program(obj: GLuint) -> Result<GLuint, String> {
+fn link_program(gl: &Gl, obj: GLuint) -> Result<GLuint, String> {
     unsafe {
-        gl::LinkProgram(obj);
+        gl.LinkProgram(obj);
         let mut status = 0;
         let mut log_size = 0;
-        gl::GetProgramiv(obj, gl::LINK_STATUS, &mut status);
-        gl::GetProgramiv(obj, gl::INFO_LOG_LENGTH, &mut log_size);
+        gl.GetProgramiv(obj, gl::LINK_STATUS, &mut status);
+        gl.GetProgramiv(obj, gl::INFO_LOG_LENGTH, &mut log_size);
         //trace!("LINK_STATUS: log_size: {}, status: {}", log_size, status);
         if status != gl::TRUE as GLint {
             let mut log_buf = Vec::with_capacity(log_size as usize);
-            gl::GetProgramInfoLog(
+            gl.GetProgramInfoLog(
                 obj,
                 log_size,
                 &mut log_size,
@@ -134,11 +135,12 @@ impl From<ShaderCreationError> for ProgramCreationError {
 }
 
 fn create_graphics_program(
-    vert: &ShaderModule,
-    frag: Option<&ShaderModule>,
-    geom: Option<&ShaderModule>,
-    tessctl: Option<&ShaderModule>,
-    tesseval: Option<&ShaderModule>,
+    gl: &Gl,
+    vert: &GlShaderModule,
+    frag: Option<&GlShaderModule>,
+    geom: Option<&GlShaderModule>,
+    tessctl: Option<&GlShaderModule>,
+    tesseval: Option<&GlShaderModule>,
     //user_dm: DescriptorMap,
 ) -> Result<(GLuint, DescriptorMap), ProgramCreationError> {
     let spirv = vert.spirv.is_some();
@@ -166,31 +168,31 @@ fn create_graphics_program(
 
         let vs = {
             let vert = translate_spirv_to_gl_flavor(vert, ShaderStageFlags::VERTEX, &mut dmb);
-            create_specialized_spirv_shader(ShaderStageFlags::VERTEX, "main", &vert)?
+            create_specialized_spirv_shader(gl, ShaderStageFlags::VERTEX, "main", &vert)?
         };
 
         let fs = if let Some(s) = frag {
             let s = translate_spirv_to_gl_flavor(s, ShaderStageFlags::FRAGMENT, &mut dmb);
-            create_specialized_spirv_shader(ShaderStageFlags::FRAGMENT, "main", &s)?.into()
+            create_specialized_spirv_shader(gl, ShaderStageFlags::FRAGMENT, "main", &s)?.into()
         } else {
             None
         };
 
         let gs = if let Some(s) = geom {
             let s = translate_spirv_to_gl_flavor(s, ShaderStageFlags::GEOMETRY, &mut dmb);
-            create_specialized_spirv_shader(ShaderStageFlags::GEOMETRY, "main", &s)?.into()
+            create_specialized_spirv_shader(gl, ShaderStageFlags::GEOMETRY, "main", &s)?.into()
         } else {
             None
         };
         let tcs = if let Some(s) = tessctl {
             let s = translate_spirv_to_gl_flavor(s, ShaderStageFlags::TESS_CONTROL, &mut dmb);
-            create_specialized_spirv_shader(ShaderStageFlags::TESS_CONTROL, "main", &s)?.into()
+            create_specialized_spirv_shader(gl, ShaderStageFlags::TESS_CONTROL, "main", &s)?.into()
         } else {
             None
         };
         let tes = if let Some(s) = tesseval {
             let s = translate_spirv_to_gl_flavor(s, ShaderStageFlags::TESS_EVAL, &mut dmb);
-            create_specialized_spirv_shader(ShaderStageFlags::TESS_EVAL, "main", &s)?.into()
+            create_specialized_spirv_shader(gl, ShaderStageFlags::TESS_EVAL, "main", &s)?.into()
         } else {
             None
         };
@@ -213,39 +215,39 @@ fn create_graphics_program(
 
     // create program, attach shaders, and link program
     unsafe {
-        let program = gl::CreateProgram();
+        let program = gl.CreateProgram();
 
-        gl::AttachShader(program, vs);
+        gl.AttachShader(program, vs);
         if let Some(s) = fs {
-            gl::AttachShader(program, s);
+            gl.AttachShader(program, s);
         }
         if let Some(s) = gs {
-            gl::AttachShader(program, s);
+            gl.AttachShader(program, s);
         }
         if let Some(s) = tcs {
-            gl::AttachShader(program, s);
+            gl.AttachShader(program, s);
         }
         if let Some(s) = tes {
-            gl::AttachShader(program, s);
+            gl.AttachShader(program, s);
         }
 
-        link_program(program).map_err(|log| {
+        link_program(gl, program).map_err(|log| {
             // cleanup
-            gl::DeleteProgram(program);
+            gl.DeleteProgram(program);
             // the SPIR-V path has generated new shader objects: don't leak them
             if spirv {
-                gl::DeleteShader(vs);
+                gl.DeleteShader(vs);
                 if let Some(s) = fs {
-                    gl::DeleteShader(s);
+                    gl.DeleteShader(s);
                 }
                 if let Some(s) = gs {
-                    gl::DeleteShader(s);
+                    gl.DeleteShader(s);
                 }
                 if let Some(s) = tcs {
-                    gl::DeleteShader(s);
+                    gl.DeleteShader(s);
                 }
                 if let Some(s) = tes {
-                    gl::DeleteShader(s);
+                    gl.DeleteShader(s);
                 }
             }
 
@@ -254,18 +256,18 @@ fn create_graphics_program(
 
         if spirv {
             // cleanup
-            gl::DeleteShader(vs);
+            gl.DeleteShader(vs);
             if let Some(s) = fs {
-                gl::DeleteShader(s);
+                gl.DeleteShader(s);
             }
             if let Some(s) = gs {
-                gl::DeleteShader(s);
+                gl.DeleteShader(s);
             }
             if let Some(s) = tcs {
-                gl::DeleteShader(s);
+                gl.DeleteShader(s);
             }
             if let Some(s) = tes {
-                gl::DeleteShader(s);
+                gl.DeleteShader(s);
             }
         }
 
@@ -288,7 +290,7 @@ pub struct PipelineColorBlendStateOwned {
 }
 
 #[derive(Clone, Debug)]
-pub struct GraphicsPipeline {
+pub struct GlGraphicsPipeline {
     pub(super) rasterization_state: RasterisationState,
     pub(super) depth_stencil_state: DepthStencilState,
     pub(super) multisample_state: MultisampleState,
@@ -300,7 +302,7 @@ pub struct GraphicsPipeline {
     pub(super) vao: GLuint,
 }
 
-impl GraphicsPipeline {
+impl GlGraphicsPipeline {
     pub fn descriptor_map(&self) -> &DescriptorMap {
         &self.descriptor_map
     }
@@ -312,20 +314,21 @@ impl GraphicsPipeline {
 
 //--------------------------------------------------------------------------------------------------
 pub fn create_graphics_pipeline_internal<'a>(
-    arena: &'a Arena,
+    gl: &Gl,
+    arena: &'a GlArena,
     ci: &GraphicsPipelineCreateInfo<OpenGlBackend>,
-) -> &'a GraphicsPipeline {
+) -> &'a GlGraphicsPipeline {
     let (program, descriptor_map) = {
         let vs = ci.shader_stages.vertex.0;
         let fs = ci.shader_stages.fragment.map(|s| s.0);
         let gs = ci.shader_stages.geometry.map(|s| s.0);
         let tcs = ci.shader_stages.tess_control.map(|s| s.0);
         let tes = ci.shader_stages.tess_eval.map(|s| s.0);
-        create_graphics_program(vs, fs, gs, tcs, tes).expect("failed to create program")
+        create_graphics_program(gl, vs, fs, gs, tcs, tes).expect("failed to create program")
     };
 
     //assert_eq!(vertex_shader.stage, ShaderStageFlags::VERTEX);
-    let vao = create_vertex_array_object(ci.vertex_input_state.attributes);
+    let vao = create_vertex_array_object(gl, ci.vertex_input_state.attributes);
 
     let color_blend_state = PipelineColorBlendStateOwned {
         logic_op: ci.color_blend_state.logic_op,
@@ -338,7 +341,7 @@ pub fn create_graphics_pipeline_internal<'a>(
         blend_constants: ci.color_blend_state.blend_constants,
     };
 
-    let g = GraphicsPipeline {
+    let g = GlGraphicsPipeline {
         rasterization_state: *ci.rasterization_state,
         depth_stencil_state: *ci.depth_stencil_state,
         multisample_state: *ci.multisample_state,
@@ -353,18 +356,18 @@ pub fn create_graphics_pipeline_internal<'a>(
     arena.graphics_pipelines.alloc(g)
 }
 
-impl GraphicsPipeline {
-    pub fn bind(&self, state_cache: &mut StateCache) {
-        state_cache.set_program(self.program);
-        state_cache.set_vertex_array(self.vao);
-        state_cache.set_cull_mode(self.rasterization_state.cull_mode);
-        state_cache.set_polygon_mode(self.rasterization_state.polygon_mode);
-        state_cache.set_stencil_test(&self.depth_stencil_state.stencil_test);
+impl GlGraphicsPipeline {
+    pub fn bind(&self, gl: &Gl, state_cache: &mut StateCache) {
+        state_cache.set_program(gl, self.program);
+        state_cache.set_vertex_array(gl, self.vao);
+        state_cache.set_cull_mode(gl, self.rasterization_state.cull_mode);
+        state_cache.set_polygon_mode(gl, self.rasterization_state.polygon_mode);
+        state_cache.set_stencil_test(gl, &self.depth_stencil_state.stencil_test);
         match self.color_blend_state.attachments {
-            PipelineColorBlendAttachmentsOwned::All(ref state) => state_cache.set_all_blend(state),
+            PipelineColorBlendAttachmentsOwned::All(ref state) => state_cache.set_all_blend(gl, state),
             PipelineColorBlendAttachmentsOwned::Separate(ref states) => {
                 for (i, s) in states.iter().enumerate() {
-                    state_cache.set_blend_separate(i as u32, s);
+                    state_cache.set_blend_separate(gl, i as u32, s);
                 }
             }
         }

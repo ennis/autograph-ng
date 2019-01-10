@@ -1,5 +1,6 @@
 use crate::api as gl;
 use crate::api::types::*;
+use crate::api::Gl;
 use std::ptr;
 
 //--------------------------------------------------------------------------------------------------
@@ -17,11 +18,11 @@ pub struct BufferDescription {
 }
 
 //--------------------------------------------------------------------------------------------------
-pub fn create_buffer(byte_size: usize, flags: GLenum, initial_data: Option<&[u8]>) -> GLuint {
+pub fn create_buffer(gl: &Gl, byte_size: usize, flags: GLenum, initial_data: Option<&[u8]>) -> GLuint {
     let mut obj: GLuint = 0;
     unsafe {
-        gl::CreateBuffers(1, &mut obj);
-        gl::NamedBufferStorage(
+        gl.CreateBuffers(1, &mut obj);
+        gl.NamedBufferStorage(
             obj,
             byte_size as isize,
             if let Some(data) = initial_data {

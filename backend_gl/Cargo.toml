@@ -32,3 +32,6 @@ fxhash = "0.2.1"
 derivative = "1.0.2"
 gfx2 = { path = "../renderer" }
 gfx2-spirv = { path = "../spirv" }
+
+[target.'cfg(windows)'.dependencies]
+winapi = "0.3.6"

@@ -11,12 +11,13 @@ pub mod preprocessor;
 pub use self::preprocessor::*;
 use crate::api as gl;
 use crate::api::types::*;
+use crate::api::Gl;
 use crate::pipeline::{BindingSpace, DescriptorMap, FlatBinding};
 use gfx2::{interface::TypeDesc, ShaderStageFlags};
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Debug)]
-pub struct ShaderModule {
+pub struct GlShaderModule {
     pub obj: GLuint,
     pub stage: ShaderStageFlags,
     /// SPIR-V bytecode of this shader. If this is not None, then obj is ignored
@@ -49,11 +50,13 @@ pub fn shader_stage_flags_to_glenum(stage: ShaderStageFlags) -> GLenum {
     }
 }
 
-fn get_shader_info_log(obj: GLuint) -> String {
+fn get_shader_info_log(
+    gl: &Gl,
+    obj: GLuint) -> String {
     unsafe {
         let mut log_size = 0;
         let mut log_buf = Vec::with_capacity(log_size as usize);
-        gl::GetShaderInfoLog(
+        gl.GetShaderInfoLog(
             obj,
             log_size,
             &mut log_size,
@@ -65,26 +68,27 @@ fn get_shader_info_log(obj: GLuint) -> String {
 }
 
 pub fn create_shader_from_glsl(
+    gl: &Gl,
     stage: ShaderStageFlags,
     source: &[u8],
 ) -> Result<GLuint, ShaderCreationError> {
     let stage = shader_stage_flags_to_glenum(stage);
     unsafe {
-        let obj = gl::CreateShader(stage);
+        let obj = gl.CreateShader(stage);
         let sources = [source.as_ptr() as *const i8];
         let lengths = [source.len() as GLint];
-        gl::ShaderSource(
+        gl.ShaderSource(
             obj,
             1,
             &sources[0] as *const *const i8,
             &lengths[0] as *const GLint,
         );
-        gl::CompileShader(obj);
+        gl.CompileShader(obj);
         let mut status = 0;
-        gl::GetShaderiv(obj, gl::COMPILE_STATUS, &mut status);
+        gl.GetShaderiv(obj, gl::COMPILE_STATUS, &mut status);
         if status != gl::TRUE as GLint {
-            let log = get_shader_info_log(obj);
-            gl::DeleteShader(obj);
+            let log = get_shader_info_log(gl, obj);
+            gl.DeleteShader(obj);
             Err(ShaderCreationError(log))
         } else {
             Ok(obj)
@@ -93,6 +97,7 @@ pub fn create_shader_from_glsl(
 }
 
 pub fn create_specialized_spirv_shader(
+    gl: &Gl,
     stage: ShaderStageFlags,
     entry_point: &str,
     bytecode: &[u32],
@@ -101,8 +106,8 @@ pub fn create_specialized_spirv_shader(
     let entry_point = CString::new(entry_point).unwrap();
 
     unsafe {
-        let shader = gl::CreateShader(stage);
-        gl::ShaderBinary(
+        let shader = gl.CreateShader(stage);
+        gl.ShaderBinary(
             1,
             &shader,
             gl::SHADER_BINARY_FORMAT_SPIR_V,
@@ -110,12 +115,12 @@ pub fn create_specialized_spirv_shader(
             mem::size_of_val(bytecode) as i32,
         );
 
-        gl::SpecializeShader(shader, entry_point.as_ptr(), 0, ptr::null(), ptr::null());
+        gl.SpecializeShader(shader, entry_point.as_ptr(), 0, ptr::null(), ptr::null());
         let mut status = 0;
-        gl::GetShaderiv(shader, gl::COMPILE_STATUS, &mut status);
+        gl.GetShaderiv(shader, gl::COMPILE_STATUS, &mut status);
         if status != gl::TRUE as GLint {
-            gl::DeleteShader(shader);
-            let log = get_shader_info_log(shader);
+            gl.DeleteShader(shader);
+            let log = get_shader_info_log(gl, shader);
             Err(ShaderCreationError(log))
         } else {
             Ok(shader)

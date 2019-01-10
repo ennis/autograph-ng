@@ -1,4 +1,4 @@
-use crate::{api as gl, api::types::*};
+use crate::{api as gl, api::types::*, api::Gl};
 use std::collections::vec_deque::VecDeque;
 use std::time::Duration;
 
@@ -15,8 +15,8 @@ pub enum GpuSyncError {
 }
 
 impl<T> GpuSyncObject<T> {
-    pub fn new(obj: T) -> GpuSyncObject<T> {
-        let sync = unsafe { gl::FenceSync(gl::SYNC_GPU_COMMANDS_COMPLETE, 0) };
+    pub fn new(gl: &Gl, obj: T) -> GpuSyncObject<T> {
+        let sync = unsafe { gl.FenceSync(gl::SYNC_GPU_COMMANDS_COMPLETE, 0) };
         GpuSyncObject { sync, obj }
     }
 
@@ -32,12 +32,12 @@ impl<T> GpuSyncObject<T> {
         self.wait_timeout(FENCE_CLIENT_WAIT_TIMEOUT)
     }*/
 
-    pub fn try_wait(&self) -> Result<(), GpuSyncError> {
-        self.wait_timeout(0)
+    pub fn try_wait(&self, gl: &Gl) -> Result<(), GpuSyncError> {
+        self.wait_timeout(gl, 0)
     }
 
-    pub unsafe fn into_inner_unsynchronized(self) -> T {
-        gl::DeleteSync(self.sync);
+    pub unsafe fn into_inner_unsynchronized(self, gl: &Gl) -> T {
+        gl.DeleteSync(self.sync);
         self.obj
     }
 
@@ -54,9 +54,9 @@ impl<T> GpuSyncObject<T> {
         }
     }*/
 
-    fn wait_timeout(&self, timeout: u64) -> Result<(), GpuSyncError> {
+    fn wait_timeout(&self, gl: &Gl, timeout: u64) -> Result<(), GpuSyncError> {
         let wait_result =
-            unsafe { gl::ClientWaitSync(self.sync, gl::SYNC_FLUSH_COMMANDS_BIT, timeout) };
+            unsafe { gl.ClientWaitSync(self.sync, gl::SYNC_FLUSH_COMMANDS_BIT, timeout) };
 
         if wait_result == gl::CONDITION_SATISFIED || wait_result == gl::ALREADY_SIGNALED {
             Ok(())
@@ -91,15 +91,15 @@ impl Timeline {
         }
     }
 
-    pub fn signal(&mut self, value: u64) {
-        let sync = unsafe { gl::FenceSync(gl::SYNC_GPU_COMMANDS_COMPLETE, 0) };
+    pub fn signal(&mut self, gl: &Gl, value: u64) {
+        let sync = unsafe { gl.FenceSync(gl::SYNC_GPU_COMMANDS_COMPLETE, 0) };
         self.sync_points.push_back(SyncPoint { sync, value });
     }
 
     /// Waits for the given value. (implies driver sync)
     /// Timeout is for a single ClientWaitSync only: there may be more than one.
     /// Returns true if value reached, false if timeout. Panics if wait failed.
-    pub fn client_sync(&mut self, value: u64, timeout: Duration) -> bool {
+    pub fn client_sync(&mut self, gl: &Gl, value: u64, timeout: Duration) -> bool {
         while self.current_value < value {
             //debug!("client_sync current {} target {}", self.current_value, value);
             if let Some(target) = self.sync_points.front() {
@@ -107,7 +107,7 @@ impl Timeline {
                 assert!(timeout_ns <= u64::max_value().into());
                 let timeout_ns = timeout_ns as u64;
                 let wait_result = unsafe {
-                    gl::ClientWaitSync(target.sync, gl::SYNC_FLUSH_COMMANDS_BIT, timeout_ns)
+                    gl.ClientWaitSync(target.sync, gl::SYNC_FLUSH_COMMANDS_BIT, timeout_ns)
                 };
                 if wait_result == gl::CONDITION_SATISFIED || wait_result == gl::ALREADY_SIGNALED {
                     self.current_value = target.value;
@@ -124,7 +124,7 @@ impl Timeline {
 
             let sp = self.sync_points.pop_front().unwrap();
             unsafe {
-                gl::DeleteSync(sp.sync);
+                gl.DeleteSync(sp.sync);
             }
         }
         true

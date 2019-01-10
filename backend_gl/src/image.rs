@@ -1,4 +1,4 @@
-use crate::{api as gl, api::types::*, format::GlFormatInfo};
+use crate::{api as gl, api::types::*, api::Gl, format::GlFormatInfo};
 use gfx2::{get_texture_mip_map_count, Dimensions, Format, ImageUsageFlags, MipmapsCount};
 use std::cmp::*;
 
@@ -117,6 +117,7 @@ pub struct RawImage {
 
 impl RawImage {
     pub fn new_texture(
+        gl: &Gl,
         format: Format,
         dimensions: &Dimensions,
         mipmaps: MipmapsCount,
@@ -143,7 +144,7 @@ impl RawImage {
 
         let mut obj = 0;
         unsafe {
-            gl::CreateTextures(et.target, 1, &mut obj);
+            gl.CreateTextures(et.target, 1, &mut obj);
 
             /*if desc.options.contains(SPARSE_STORAGE) {
                 gl::TextureParameteri(obj, gl::TEXTURE_SPARSE_ARB, gl::TRUE as i32);
@@ -151,11 +152,11 @@ impl RawImage {
 
             match et.target {
                 gl::TEXTURE_1D => {
-                    gl::TextureStorage1D(obj, mipcount as i32, glfmt.internal_fmt, et.width as i32);
+                    gl.TextureStorage1D(obj, mipcount as i32, glfmt.internal_fmt, et.width as i32);
                 }
                 gl::TEXTURE_2D => {
                     if samples > 1 {
-                        gl::TextureStorage2DMultisample(
+                        gl.TextureStorage2DMultisample(
                             obj,
                             samples as i32,
                             glfmt.internal_fmt,
@@ -164,7 +165,7 @@ impl RawImage {
                             true as u8,
                         );
                     } else {
-                        gl::TextureStorage2D(
+                        gl.TextureStorage2D(
                             obj,
                             mipcount as i32,
                             glfmt.internal_fmt,
@@ -174,7 +175,7 @@ impl RawImage {
                     }
                 }
                 gl::TEXTURE_3D => {
-                    gl::TextureStorage3D(
+                    gl.TextureStorage3D(
                         obj,
                         1,
                         glfmt.internal_fmt,
@@ -186,11 +187,11 @@ impl RawImage {
                 _ => unimplemented!("texture type"),
             };
 
-            gl::TextureParameteri(obj, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
-            gl::TextureParameteri(obj, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
-            gl::TextureParameteri(obj, gl::TEXTURE_WRAP_R, gl::CLAMP_TO_EDGE as i32);
-            gl::TextureParameteri(obj, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
-            gl::TextureParameteri(obj, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
+            gl.TextureParameteri(obj, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
+            gl.TextureParameteri(obj, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
+            gl.TextureParameteri(obj, gl::TEXTURE_WRAP_R, gl::CLAMP_TO_EDGE as i32);
+            gl.TextureParameteri(obj, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
+            gl.TextureParameteri(obj, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
         }
 
         RawImage {
@@ -200,17 +201,17 @@ impl RawImage {
         }
     }
 
-    pub fn new_renderbuffer(format: Format, dimensions: &Dimensions, samples: u32) -> RawImage {
+    pub fn new_renderbuffer(gl: &Gl, format: Format, dimensions: &Dimensions, samples: u32) -> RawImage {
         let et = ExtentsAndType::from_dimensions(&dimensions);
         let glfmt = GlFormatInfo::from_format(format);
 
         let mut obj = 0;
 
         unsafe {
-            gl::CreateRenderbuffers(1, &mut obj);
+            gl.CreateRenderbuffers(1, &mut obj);
 
             if samples > 1 {
-                gl::NamedRenderbufferStorageMultisample(
+                gl.NamedRenderbufferStorageMultisample(
                     obj,
                     samples as i32,
                     glfmt.internal_fmt,
@@ -218,7 +219,7 @@ impl RawImage {
                     et.height as i32,
                 );
             } else {
-                gl::NamedRenderbufferStorage(
+                gl.NamedRenderbufferStorage(
                     obj,
                     glfmt.internal_fmt,
                     et.width as i32,
@@ -238,12 +239,12 @@ impl RawImage {
         self.target == gl::RENDERBUFFER
     }*/
 
-    pub fn destroy(&self) {
+    pub fn destroy(&self, gl: &Gl) {
         unsafe {
             if self.target == gl::RENDERBUFFER {
-                gl::DeleteRenderbuffers(1, &self.obj);
+                gl.DeleteRenderbuffers(1, &self.obj);
             } else {
-                gl::DeleteTextures(1, &self.obj);
+                gl.DeleteTextures(1, &self.obj);
             }
         }
     }
@@ -251,6 +252,7 @@ impl RawImage {
 
 /// Texture upload
 pub unsafe fn upload_image_region(
+    gl: &Gl,
     target: GLenum,
     img: GLuint,
     fmt: Format,
@@ -270,12 +272,12 @@ pub unsafe fn upload_image_region(
     let glfmt = GlFormatInfo::from_format(fmt);
 
     let mut prev_unpack_alignment = 0;
-    gl::GetIntegerv(gl::UNPACK_ALIGNMENT, &mut prev_unpack_alignment);
-    gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
+    gl.GetIntegerv(gl::UNPACK_ALIGNMENT, &mut prev_unpack_alignment);
+    gl.PixelStorei(gl::UNPACK_ALIGNMENT, 1);
 
     match target {
         gl::TEXTURE_1D => {
-            gl::TextureSubImage1D(
+            gl.TextureSubImage1D(
                 img,
                 mip_level,
                 offset.0 as i32,
@@ -286,7 +288,7 @@ pub unsafe fn upload_image_region(
             );
         }
         gl::TEXTURE_2D => {
-            gl::TextureSubImage2D(
+            gl.TextureSubImage2D(
                 img,
                 mip_level,
                 offset.0 as i32,
@@ -299,7 +301,7 @@ pub unsafe fn upload_image_region(
             );
         }
         gl::TEXTURE_3D => {
-            gl::TextureSubImage3D(
+            gl.TextureSubImage3D(
                 img,
                 mip_level,
                 offset.0 as i32,
@@ -316,5 +318,5 @@ pub unsafe fn upload_image_region(
         _ => unimplemented!(),
     };
 
-    gl::PixelStorei(gl::UNPACK_ALIGNMENT, prev_unpack_alignment);
+    gl.PixelStorei(gl::UNPACK_ALIGNMENT, prev_unpack_alignment);
 }

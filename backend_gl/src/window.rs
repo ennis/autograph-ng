@@ -1,10 +1,18 @@
-use super::OpenGlBackend;
-
+use super::{OpenGlBackend, SwapchainInner};
 use config::Config;
 use glutin;
 use winit::{EventsLoop, WindowBuilder};
+use glutin::GlContext;
 
-impl OpenGlBackend {}
+impl SwapchainInner for glutin::GlWindow {
+    fn size(&self) -> (u32, u32) {
+        self.get_inner_size().unwrap().into()
+    }
+
+    fn present(&self) {
+        self.swap_buffers().expect("failed to swap buffers")
+    }
+}
 
 pub fn create_backend_and_window(
     cfg: &Config,
@@ -22,5 +30,15 @@ pub fn create_backend_and_window(
     let window = glutin::GlWindow::new(window_builder, context_builder, events_loop)
         .expect("unable to create window");
 
-    OpenGlBackend::with_gl_window(cfg, window)
+    // Make current the OpenGL context associated to the window
+    // and load function pointers
+    unsafe { window.make_current() }.unwrap();
+
+    let glfns = crate::api::Gl::load_with(|symbol| {
+        let ptr = window.get_proc_address(symbol) as *const _;
+        //debug!("getProcAddress {} -> {:?}", symbol, ptr);
+        ptr
+    });
+
+    OpenGlBackend::with_gl(cfg, glfns, Box::new(window))
 }

@@ -1,13 +1,14 @@
 use super::{
     api as gl,
     api::types::*,
-    backend::Swapchain,
-    descriptor::{DescriptorSet, DescriptorSetLayout},
-    framebuffer::Framebuffer,
+    api::Gl,
+    GlSwapchain,
+    descriptor::{GlDescriptorSet, GlDescriptorSetLayout},
+    framebuffer::GlFramebuffer,
     image::{ImageDescription, RawImage},
-    pipeline::GraphicsPipeline,
+    pipeline::GlGraphicsPipeline,
     pool::{BufferAliasKey, ImageAliasKey, ImagePool},
-    shader::ShaderModule,
+    shader::GlShaderModule,
     sync::GpuSyncObject,
     upload::{MappedBuffer, UploadBuffer},
     util::SyncArena,
@@ -54,7 +55,7 @@ pub struct AliasInfo<K: slotmap::Key> {
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Debug)]
-pub struct Image {
+pub struct GlImage {
     pub obj: GLuint,
     pub target: GLenum,
     pub should_destroy: bool,
@@ -62,7 +63,7 @@ pub struct Image {
 }
 
 #[derive(Debug)]
-pub struct Buffer {
+pub struct GlBuffer {
     pub obj: GLuint,
     pub should_destroy: bool,
     pub alias_info: Option<AliasInfo<BufferAliasKey>>,
@@ -82,31 +83,31 @@ impl SamplerCache {
         }
     }
 
-    pub fn get_sampler(&mut self, desc: &SamplerDescription) -> GLuint {
+    pub fn get_sampler(&mut self, gl: &Gl, desc: &SamplerDescription) -> GLuint {
         *self.samplers.entry(desc.clone()).or_insert_with(|| unsafe {
             let mut obj = 0;
-            gl::GenSamplers(1, &mut obj);
-            gl::SamplerParameteri(
+            gl.GenSamplers(1, &mut obj);
+            gl.SamplerParameteri(
                 obj,
                 gl::TEXTURE_MIN_FILTER,
                 min_filter_to_glenum(desc.min_filter, desc.mipmap_mode) as i32,
             );
-            gl::SamplerParameteri(
+            gl.SamplerParameteri(
                 obj,
                 gl::TEXTURE_MAG_FILTER,
                 mag_filter_to_glenum(desc.mag_filter) as i32,
             );
-            gl::SamplerParameteri(
+            gl.SamplerParameteri(
                 obj,
                 gl::TEXTURE_WRAP_R,
                 address_mode_to_glenum(desc.addr_u) as i32,
             );
-            gl::SamplerParameteri(
+            gl.SamplerParameteri(
                 obj,
                 gl::TEXTURE_WRAP_S,
                 address_mode_to_glenum(desc.addr_v) as i32,
             );
-            gl::SamplerParameteri(
+            gl.SamplerParameteri(
                 obj,
                 gl::TEXTURE_WRAP_T,
                 address_mode_to_glenum(desc.addr_w) as i32,
@@ -117,21 +118,21 @@ impl SamplerCache {
 }
 
 //--------------------------------------------------------------------------------------------------
-pub struct Arena {
-    pub swapchains: SyncArena<Swapchain>,
-    pub buffers: SyncArena<Buffer>,
-    pub images: SyncArena<Image>,
-    pub descriptor_sets: SyncArena<DescriptorSet>,
-    pub descriptor_set_layouts: SyncArena<DescriptorSetLayout>,
-    pub shader_modules: SyncArena<ShaderModule>,
-    pub graphics_pipelines: SyncArena<GraphicsPipeline>,
-    pub framebuffers: SyncArena<Framebuffer>,
+pub struct GlArena {
+    pub swapchains: SyncArena<GlSwapchain>,
+    pub buffers: SyncArena<GlBuffer>,
+    pub images: SyncArena<GlImage>,
+    pub descriptor_sets: SyncArena<GlDescriptorSet>,
+    pub descriptor_set_layouts: SyncArena<GlDescriptorSetLayout>,
+    pub shader_modules: SyncArena<GlShaderModule>,
+    pub graphics_pipelines: SyncArena<GlGraphicsPipeline>,
+    pub framebuffers: SyncArena<GlFramebuffer>,
     pub upload_buffer: UploadBuffer,
 }
 
-impl Arena {
-    pub fn new(upload_buffer: UploadBuffer) -> Arena {
-        Arena {
+impl GlArena {
+    pub fn new(upload_buffer: UploadBuffer) -> GlArena {
+        GlArena {
             swapchains: SyncArena::new(),
             buffers: SyncArena::new(),
             images: SyncArena::new(),
@@ -165,21 +166,21 @@ impl Resources {
         }
     }
 
-    pub fn alloc_upload_buffer(&mut self) -> UploadBuffer {
-        self.reclaim_upload_buffers();
+    pub fn alloc_upload_buffer(&mut self, gl: &Gl) -> UploadBuffer {
+        self.reclaim_upload_buffers(gl);
         if self.upload_buffers.is_empty() {
-            UploadBuffer::new(MappedBuffer::new(self.upload_buffer_size))
+            UploadBuffer::new(MappedBuffer::new(gl, self.upload_buffer_size))
         } else {
             UploadBuffer::new(self.upload_buffers.pop().unwrap())
         }
     }
 
-    pub fn reclaim_upload_buffers(&mut self) {
+    pub fn reclaim_upload_buffers(&mut self, gl: &Gl) {
         while !self.upload_buffers_in_use.is_empty() {
-            let ready = self.upload_buffers_in_use.front().unwrap().try_wait();
+            let ready = self.upload_buffers_in_use.front().unwrap().try_wait(gl);
             if ready.is_ok() {
                 let buffers = self.upload_buffers_in_use.pop_front().unwrap();
-                let mut buffers = unsafe { buffers.into_inner_unsynchronized() };
+                let mut buffers = unsafe { buffers.into_inner_unsynchronized(gl) };
                 self.upload_buffers.append(&mut buffers);
             } else {
                 break;
@@ -187,12 +188,12 @@ impl Resources {
         }
     }
 
-    pub fn create_arena(&mut self) -> Arena {
-        Arena::new(self.alloc_upload_buffer())
+    pub fn create_arena(&mut self, gl: &Gl) -> GlArena {
+        GlArena::new(self.alloc_upload_buffer(gl))
     }
 
     // arena can't drop before commands that refer to the objects inside are submitted
-    pub fn drop_arena(&mut self, arena: Arena)
+    pub fn drop_arena(&mut self,  gl: &Gl, arena: GlArena)
     where
         Self: Sized,
     {
@@ -203,12 +204,12 @@ impl Resources {
                     obj: image.obj,
                     target: image.target,
                 }
-                .destroy()
+                .destroy(gl)
             } else {
                 if let Some(ref alias_info) = image.alias_info {
                     self.image_pool
                         .destroy(alias_info.key, alias_info.scope, |image| {
-                            image.destroy();
+                            image.destroy(gl);
                         });
                 } else {
                     // not owned, and not in a pool: maybe an alias or an image view?
@@ -217,20 +218,21 @@ impl Resources {
         });
 
         self.upload_buffers_in_use
-            .push_back(GpuSyncObject::new(vec![arena.upload_buffer.into_inner()]));
+            .push_back(GpuSyncObject::new(gl, vec![arena.upload_buffer.into_inner()]));
     }
 
     //----------------------------------------------------------------------------------------------
     pub fn alloc_aliased_image<'a>(
         &mut self,
-        arena: &'a Arena,
+        gl: &Gl,
+        arena: &'a GlArena,
         scope: AliasScope,
         format: Format,
         dimensions: Dimensions,
         mipcount: MipmapsCount,
         samples: u32,
         usage: ImageUsageFlags,
-    ) -> &'a Image {
+    ) -> &'a GlImage {
         let desc = ImageDescription::new(format, dimensions, mipcount, samples, usage);
         let (key, raw_img) = self.image_pool.alloc(scope, desc, |d| {
             debug!(
@@ -242,6 +244,7 @@ impl Resources {
             {
                 // will be used as storage or sampled image
                 RawImage::new_texture(
+                    gl,
                     d.format,
                     &d.dimensions,
                     MipmapsCount::Specific(d.mipcount),
@@ -249,11 +252,11 @@ impl Resources {
                 )
             } else {
                 // only used as color attachments: can use a renderbuffer instead
-                RawImage::new_renderbuffer(d.format, &d.dimensions, d.samples)
+                RawImage::new_renderbuffer(gl, d.format, &d.dimensions, d.samples)
             }
         });
 
-        arena.images.alloc(Image {
+        arena.images.alloc(GlImage {
             alias_info: AliasInfo { key, scope }.into(),
             obj: raw_img.obj,
             target: raw_img.target,

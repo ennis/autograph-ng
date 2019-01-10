@@ -1,6 +1,6 @@
 extern crate gl_generator;
 
-use gl_generator::{Api, Fallbacks, GlobalGenerator, Profile, Registry};
+use gl_generator::{Api, Fallbacks, StructGenerator, Profile, Registry};
 use std::env;
 use std::fs::File;
 use std::path::Path;
@@ -16,7 +16,7 @@ fn main() {
         Fallbacks::All,
         ["GL_ARB_sparse_texture"],
     )
-    .write_bindings(GlobalGenerator, &mut file)
+    .write_bindings(StructGenerator, &mut file)
     .unwrap();
 
     //embed_resource::compile("hidpi.rc");

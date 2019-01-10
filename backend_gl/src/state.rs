@@ -1,5 +1,5 @@
-use crate::backend::ImplementationParameters;
-use crate::{api as gl, api::types::*};
+use crate::ImplementationParameters;
+use crate::{api as gl, api::types::*, api::Gl};
 use gfx2::*;
 use ordered_float::NotNan;
 
@@ -216,27 +216,27 @@ impl StateCache {
         };
     }
 
-    pub fn set_program(&mut self, program: GLuint) {
+    pub fn set_program(&mut self, gl: &Gl, program: GLuint) {
         self.program.update_cached(program, || unsafe {
-            gl::UseProgram(program);
+            gl.UseProgram(program);
         });
     }
 
-    pub fn set_vertex_array(&mut self, vertex_array: GLuint) {
+    pub fn set_vertex_array(&mut self, gl: &Gl, vertex_array: GLuint) {
         self.vertex_array.update_cached(vertex_array, || unsafe {
-            gl::BindVertexArray(vertex_array);
+            gl.BindVertexArray(vertex_array);
         });
     }
 
-    pub fn set_draw_framebuffer(&mut self, framebuffer: GLuint) {
+    pub fn set_draw_framebuffer(&mut self, gl: &Gl, framebuffer: GLuint) {
         self.framebuffer.update_cached(framebuffer, || unsafe {
-            gl::BindFramebuffer(gl::DRAW_FRAMEBUFFER, framebuffer);
+            gl.BindFramebuffer(gl::DRAW_FRAMEBUFFER, framebuffer);
         });
     }
 
-    pub fn set_all_blend(&mut self, state: &ColorBlendAttachmentState) {
+    pub fn set_all_blend(&mut self, gl: &Gl, state: &ColorBlendAttachmentState) {
         let bind_all = |state: &ColorBlendAttachmentState| match state {
-            ColorBlendAttachmentState::Disabled => unsafe { gl::Disable(gl::BLEND) },
+            ColorBlendAttachmentState::Disabled => unsafe { gl.Disable(gl::BLEND) },
             ColorBlendAttachmentState::Enabled {
                 src_color_blend_factor,
                 dst_color_blend_factor,
@@ -246,12 +246,12 @@ impl StateCache {
                 alpha_blend_op,
                 color_write_mask: _,
             } => unsafe {
-                gl::Enable(gl::BLEND);
-                gl::BlendEquationSeparate(
+                gl.Enable(gl::BLEND);
+                gl.BlendEquationSeparate(
                     blend_op_to_gl(*color_blend_op),
                     blend_op_to_gl(*alpha_blend_op),
                 );
-                gl::BlendFuncSeparate(
+                gl.BlendFuncSeparate(
                     blend_factor_to_gl(*src_color_blend_factor),
                     blend_factor_to_gl(*dst_color_blend_factor),
                     blend_factor_to_gl(*src_alpha_blend_factor),
@@ -278,9 +278,9 @@ impl StateCache {
         }
     }
 
-    pub fn set_blend_separate(&mut self, index: u32, state: &ColorBlendAttachmentState) {
+    pub fn set_blend_separate(&mut self, gl: &Gl, index: u32, state: &ColorBlendAttachmentState) {
         let bind_separate = |index: u32, state: &ColorBlendAttachmentState| match state {
-            ColorBlendAttachmentState::Disabled => unsafe { gl::Disablei(gl::BLEND, index) },
+            ColorBlendAttachmentState::Disabled => unsafe { gl.Disablei(gl::BLEND, index) },
             ColorBlendAttachmentState::Enabled {
                 src_color_blend_factor,
                 dst_color_blend_factor,
@@ -290,13 +290,13 @@ impl StateCache {
                 alpha_blend_op,
                 color_write_mask: _,
             } => unsafe {
-                gl::Enablei(gl::BLEND, index);
-                gl::BlendEquationSeparatei(
+                gl.Enablei(gl::BLEND, index);
+                gl.BlendEquationSeparatei(
                     index,
                     blend_op_to_gl(*color_blend_op),
                     blend_op_to_gl(*alpha_blend_op),
                 );
-                gl::BlendFuncSeparatei(
+                gl.BlendFuncSeparatei(
                     index,
                     blend_factor_to_gl(*src_color_blend_factor),
                     blend_factor_to_gl(*dst_color_blend_factor),
@@ -320,7 +320,7 @@ impl StateCache {
         }
     }
 
-    pub fn set_viewports(&mut self, viewports: &[Viewport]) {
+    pub fn set_viewports(&mut self, gl: &Gl, viewports: &[Viewport]) {
         let mut should_update_viewports = false;
         let mut should_update_depth_ranges = false;
 
@@ -385,11 +385,11 @@ impl StateCache {
 
         unsafe {
             if should_update_viewports {
-                gl::ViewportArrayv(0, self.max_viewports as i32, viewports.as_ptr() as *const _);
+                gl.ViewportArrayv(0, self.max_viewports as i32, viewports.as_ptr() as *const _);
             }
 
             if should_update_depth_ranges {
-                gl::DepthRangeArrayv(
+                gl.DepthRangeArrayv(
                     0,
                     self.max_viewports as i32,
                     depth_ranges.as_ptr() as *const _,
@@ -398,100 +398,100 @@ impl StateCache {
         }
     }
 
-    pub fn set_depth_test_enable(&mut self, depth_test_enable: bool) {
+    pub fn set_depth_test_enable(&mut self, gl: &Gl, depth_test_enable: bool) {
         self.depth_test_enabled
             .update_cached(depth_test_enable, || unsafe {
                 if depth_test_enable {
-                    gl::Enable(gl::DEPTH_TEST);
+                    gl.Enable(gl::DEPTH_TEST);
                 } else {
-                    gl::Disable(gl::DEPTH_TEST);
+                    gl.Disable(gl::DEPTH_TEST);
                 }
             })
     }
 
-    pub fn set_depth_write_enable(&mut self, depth_write_enable: bool) {
+    pub fn set_depth_write_enable(&mut self, gl: &Gl, depth_write_enable: bool) {
         self.depth_write_enabled
             .update_cached(depth_write_enable, || unsafe {
                 if depth_write_enable {
-                    gl::DepthMask(gl::TRUE);
+                    gl.DepthMask(gl::TRUE);
                 } else {
-                    gl::DepthMask(gl::FALSE);
+                    gl.DepthMask(gl::FALSE);
                 }
             })
     }
 
     //pub fn set_depth_bounds_test(&mut self, )
 
-    pub fn set_depth_compare_op(&mut self, depth_compare_op: CompareOp) {
+    pub fn set_depth_compare_op(&mut self, gl: &Gl, depth_compare_op: CompareOp) {
         self.depth_compare_op
             .update_cached(depth_compare_op, || unsafe {
-                gl::DepthFunc(compare_op_to_gl(depth_compare_op));
+                gl.DepthFunc(compare_op_to_gl(depth_compare_op));
             })
     }
 
-    fn set_cull_enable(&mut self, cull_enable: bool) {
+    fn set_cull_enable(&mut self, gl: &Gl, cull_enable: bool) {
         self.cull_enable.update_cached(cull_enable, || unsafe {
             if cull_enable {
-                gl::Enable(gl::CULL_FACE);
+                gl.Enable(gl::CULL_FACE);
             } else {
-                gl::Disable(gl::CULL_FACE);
+                gl.Disable(gl::CULL_FACE);
             }
         });
     }
 
-    pub fn set_cull_mode(&mut self, cull_mode: CullModeFlags) {
+    pub fn set_cull_mode(&mut self, gl: &Gl, cull_mode: CullModeFlags) {
         if cull_mode == CullModeFlags::NONE {
-            self.set_cull_enable(false);
+            self.set_cull_enable(gl,false);
         } else {
-            self.set_cull_enable(true);
+            self.set_cull_enable(gl,true);
         }
 
         self.cull_mode.update_cached(cull_mode, || unsafe {
             if cull_mode.contains(CullModeFlags::FRONT_AND_BACK) {
-                gl::CullFace(gl::FRONT_AND_BACK);
+                gl.CullFace(gl::FRONT_AND_BACK);
             } else if cull_mode.contains(CullModeFlags::FRONT) {
-                gl::CullFace(gl::FRONT);
+                gl.CullFace(gl::FRONT);
             } else if cull_mode.contains(CullModeFlags::BACK) {
-                gl::CullFace(gl::BACK);
+                gl.CullFace(gl::BACK);
             }
         });
     }
 
-    pub fn set_polygon_mode(&mut self, polygon_mode: PolygonMode) {
+    pub fn set_polygon_mode(&mut self, gl: &Gl, polygon_mode: PolygonMode) {
         self.polygon_mode.update_cached(polygon_mode, || unsafe {
             match polygon_mode {
-                PolygonMode::Fill => gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL),
-                PolygonMode::Line => gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE),
+                PolygonMode::Fill => gl.PolygonMode(gl::FRONT_AND_BACK, gl::FILL),
+                PolygonMode::Line => gl.PolygonMode(gl::FRONT_AND_BACK, gl::LINE),
             }
         });
     }
 
-    pub fn set_stencil_test_enabled(&mut self, enabled: bool) {
+    pub fn set_stencil_test_enabled(&mut self, gl: &Gl, enabled: bool) {
         self.stencil_test_enabled.update_cached(enabled, || unsafe {
             if enabled {
-                gl::Enable(gl::STENCIL_TEST);
+                gl.Enable(gl::STENCIL_TEST);
             } else {
-                gl::Disable(gl::STENCIL_TEST);
+                gl.Disable(gl::STENCIL_TEST);
             }
         });
     }
 
     /// Does not implicitly enable stencil test.
-    pub fn set_stencil_op(&mut self, front: &StencilOpState, back: &StencilOpState) {
+    pub fn set_stencil_op(&mut self, gl: &Gl, front: &StencilOpState, back: &StencilOpState) {
         let bind_stencil = |face: GLenum, state: &StencilOpState| unsafe {
-            gl::StencilFuncSeparate(
+            gl.StencilFuncSeparate(
                 face,
                 compare_op_to_gl(state.compare_op),
                 state.reference as i32,
                 state.compare_mask,
             );
-            gl::StencilOpSeparate(
+            gl.StencilOpSeparate(
                 face,
                 stencil_op_to_gl(state.fail_op),
                 stencil_op_to_gl(state.depth_fail_op),
                 stencil_op_to_gl(state.pass_op),
             );
-            gl::StencilMaskSeparate(face, state.write_mask);
+            gl.StencilMaskSeparate(face, state.write_mask);
         };
 
         self.stencil_front.update_cached(*front, || {
@@ -502,18 +502,19 @@ impl StateCache {
         });
     }
 
-    pub fn set_stencil_test(&mut self, stencil_test: &StencilTest) {
+    pub fn set_stencil_test(&mut self, gl: &Gl, stencil_test: &StencilTest) {
         match stencil_test {
-            StencilTest::Disabled => self.set_stencil_test_enabled(false),
+            StencilTest::Disabled => self.set_stencil_test_enabled(gl,false),
             StencilTest::Enabled { front, back } => {
-                self.set_stencil_test_enabled(true);
-                self.set_stencil_op(front, back);
+                self.set_stencil_test_enabled(gl,true);
+                self.set_stencil_op(gl, front, back);
             }
         }
     }
 
     pub fn set_uniform_buffers(
         &mut self,
+        gl: &Gl,
         buffers: &[GLuint],
         buffer_offsets: &[GLintptr],
         buffer_sizes: &[GLintptr],
@@ -523,7 +524,7 @@ impl StateCache {
         unsafe {
             let count = buffers.len();
             if count != 0 {
-                gl::BindBuffersRange(
+                gl.BindBuffersRange(
                     gl::UNIFORM_BUFFER,
                     0,
                     count as i32,
@@ -537,6 +538,7 @@ impl StateCache {
 
     pub fn set_shader_storage_buffers(
         &mut self,
+        gl: &Gl,
         buffers: &[GLuint],
         buffer_offsets: &[GLintptr],
         buffer_sizes: &[GLintptr],
@@ -546,7 +548,7 @@ impl StateCache {
         unsafe {
             let count = buffers.len();
             if count != 0 {
-                gl::BindBuffersRange(
+                gl.BindBuffersRange(
                     gl::SHADER_STORAGE_BUFFER,
                     0,
                     count as i32,
@@ -558,26 +560,27 @@ impl StateCache {
         }
     }
 
-    pub fn set_samplers(&mut self, samplers: &[GLuint]) {
+    pub fn set_samplers(&mut self, gl: &Gl, samplers: &[GLuint]) {
         // passthrough, for now
         // may do a comparison, or a quick diff in the future
-        unsafe { gl::BindSamplers(0, samplers.len() as i32, samplers.as_ptr()) }
+        unsafe { gl.BindSamplers(0, samplers.len() as i32, samplers.as_ptr()) }
     }
 
-    pub fn set_textures(&mut self, textures: &[GLuint]) {
+    pub fn set_textures(&mut self, gl: &Gl, textures: &[GLuint]) {
         // passthrough, for now
         // may do a comparison, or a quick diff in the future
-        unsafe { gl::BindTextures(0, textures.len() as i32, textures.as_ptr()) }
+        unsafe { gl.BindTextures(0, textures.len() as i32, textures.as_ptr()) }
     }
 
-    pub fn set_images(&mut self, images: &[GLuint]) {
+    pub fn set_images(&mut self, gl: &Gl, images: &[GLuint]) {
         // passthrough, for now
         // may do a comparison, or a quick diff in the future
-        unsafe { gl::BindImageTextures(0, images.len() as i32, images.as_ptr()) }
+        unsafe { gl.BindImageTextures(0, images.len() as i32, images.as_ptr()) }
     }
 
     pub fn set_vertex_buffers(
         &mut self,
+        gl: &Gl,
         buffers: &[GLuint],
         buffer_offsets: &[GLintptr],
         buffer_strides: &[GLsizei],
@@ -587,7 +590,7 @@ impl StateCache {
         unsafe {
             let count = buffers.len();
             if count != 0 {
-                gl::BindVertexBuffers(
+                gl.BindVertexBuffers(
                     0,
                     count as i32,
                     buffers.as_ptr(),
@@ -598,9 +601,9 @@ impl StateCache {
         }
     }
 
-    pub fn set_index_buffer(&mut self, buffer: GLuint, offset: usize, ty: IndexType) {
+    pub fn set_index_buffer(&mut self, gl: &Gl, buffer: GLuint, offset: usize, ty: IndexType) {
         self.index_buffer.update_cached(buffer, || unsafe {
-            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, buffer);
+            gl.BindBuffer(gl::ELEMENT_ARRAY_BUFFER, buffer);
         });
 
         self.index_buffer_offset = Some(offset);
@@ -612,6 +615,7 @@ impl StateCache {
 
     pub fn draw(
         &mut self,
+        gl: &Gl,
         topo: PrimitiveTopology,
         vertex_count: u32,
         instance_count: u32,
@@ -620,7 +624,7 @@ impl StateCache {
     ) {
         let mode = topology_to_gl(topo);
         unsafe {
-            gl::DrawArraysInstancedBaseInstance(
+            gl.DrawArraysInstancedBaseInstance(
                 mode,
                 first_vertex as i32,
                 vertex_count as i32,
@@ -632,6 +636,7 @@ impl StateCache {
 
     pub fn draw_indexed(
         &mut self,
+        gl: &Gl,
         topo: PrimitiveTopology,
         index_count: u32,
         instance_count: u32,
@@ -650,7 +655,7 @@ impl StateCache {
             _ => unreachable!(),
         };
         unsafe {
-            gl::DrawElementsInstancedBaseVertexBaseInstance(
+            gl.DrawElementsInstancedBaseVertexBaseInstance(
                 mode,
                 index_count as i32,
                 ty,

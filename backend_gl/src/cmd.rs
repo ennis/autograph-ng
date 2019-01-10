@@ -1,62 +1,61 @@
-use crate::{api as gl, api::types::*};
+use crate::{api as gl, api::types::*, api::Gl};
 use crate::{
-    backend::{ImplementationParameters, OpenGlBackend, Swapchain},
+    ImplementationParameters, OpenGlBackend, GlSwapchain, SwapchainInner,
     descriptor::ShaderResourceBindings,
-    framebuffer::Framebuffer,
-    pipeline::GraphicsPipeline,
-    resource::{Buffer, Image, Resources},
+    framebuffer::GlFramebuffer,
+    pipeline::GlGraphicsPipeline,
+    resource::{GlBuffer, GlImage, Resources},
     state::StateCache,
 };
 use gfx2;
 use gfx2::{BufferTypeless, Command, CommandInner, IndexType, Viewport};
-
 use glutin::GlWindow;
 
 // resources
 pub struct ExecuteCtxt<'a, 'rcx> {
     _resources: &'a mut Resources,
     state_cache: &'a mut StateCache,
-    window: &'a GlWindow,
+    gl: &'a Gl,
     _impl_params: &'a ImplementationParameters,
-    current_pipeline: Option<&'rcx GraphicsPipeline>,
+    current_pipeline: Option<&'rcx GlGraphicsPipeline>,
 }
 
 impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
     pub fn new(
+        gl: &'a Gl,
         resources: &'a mut Resources,
         state_cache: &'a mut StateCache,
-        window: &'a GlWindow,
         impl_params: &'a ImplementationParameters,
     ) -> ExecuteCtxt<'a, 'rcx> {
         ExecuteCtxt {
             _resources: resources,
             state_cache,
-            window,
+            gl,
             _impl_params: impl_params,
             current_pipeline: None,
         }
     }
 
-    pub fn cmd_clear_image_float(&mut self, image: &Image, color: &[f32; 4]) {
+    pub fn cmd_clear_image_float(&mut self, image: &GlImage, color: &[f32; 4]) {
         if image.target == gl::RENDERBUFFER {
             // create temporary framebuffer
             let mut tmpfb = 0;
             unsafe {
-                gl::CreateFramebuffers(1, &mut tmpfb);
-                gl::NamedFramebufferRenderbuffer(
+                self.gl.CreateFramebuffers(1, &mut tmpfb);
+                self.gl.NamedFramebufferRenderbuffer(
                     tmpfb,
                     gl::COLOR_ATTACHMENT0,
                     gl::RENDERBUFFER,
                     image.obj,
                 );
-                gl::NamedFramebufferDrawBuffers(tmpfb, 1, (&[gl::COLOR_ATTACHMENT0]).as_ptr());
-                gl::ClearNamedFramebufferfv(tmpfb, gl::COLOR, 0, color.as_ptr());
-                gl::DeleteFramebuffers(1, &tmpfb);
+                self.gl.NamedFramebufferDrawBuffers(tmpfb, 1, (&[gl::COLOR_ATTACHMENT0]).as_ptr());
+                self.gl.ClearNamedFramebufferfv(tmpfb, gl::COLOR, 0, color.as_ptr());
+                self.gl.DeleteFramebuffers(1, &tmpfb);
             }
         } else {
             // TODO specify which level to clear in command
             unsafe {
-                gl::ClearTexImage(
+                self.gl.ClearTexImage(
                     image.obj,
                     0,
                     gl::RGBA,
@@ -69,7 +68,7 @@ impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
 
     pub fn cmd_clear_depth_stencil_image(
         &mut self,
-        image: &Image,
+        image: &GlImage,
         depth: f32,
         stencil: Option<u8>,
     ) {
@@ -78,8 +77,8 @@ impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
             // create temporary framebuffer
             let mut tmpfb = 0;
             unsafe {
-                gl::CreateFramebuffers(1, &mut tmpfb);
-                gl::NamedFramebufferRenderbuffer(
+                self.gl.CreateFramebuffers(1, &mut tmpfb);
+                self.gl.NamedFramebufferRenderbuffer(
                     tmpfb,
                     gl::DEPTH_ATTACHMENT,
                     gl::RENDERBUFFER,
@@ -88,9 +87,9 @@ impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
                 if let Some(_stencil) = stencil {
                     unimplemented!()
                 } else {
-                    gl::ClearNamedFramebufferfv(tmpfb, gl::DEPTH, 0, &depth);
+                    self.gl.ClearNamedFramebufferfv(tmpfb, gl::DEPTH, 0, &depth);
                 }
-                gl::DeleteFramebuffers(1, &tmpfb);
+                self.gl.DeleteFramebuffers(1, &tmpfb);
             }
         } else {
             // TODO specify which level to clear in command
@@ -98,7 +97,7 @@ impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
                 if let Some(_stencil) = stencil {
                     unimplemented!()
                 } else {
-                    gl::ClearTexImage(
+                    self.gl.ClearTexImage(
                         obj,
                         0,
                         gl::DEPTH_COMPONENT,
@@ -124,31 +123,31 @@ impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
             ds.0.collect(i as u32, descriptor_map, &mut sr);
         }
 
-        self.state_cache.set_uniform_buffers(
+        self.state_cache.set_uniform_buffers(self.gl,
             &sr.uniform_buffers,
             &sr.uniform_buffer_offsets,
             &sr.uniform_buffer_sizes,
         );
-        self.state_cache.set_shader_storage_buffers(
-            &sr.shader_storage_buffers,
+        self.state_cache.set_shader_storage_buffers(self.gl,
+                                                    &sr.shader_storage_buffers,
             &sr.shader_storage_buffer_offsets,
             &sr.shader_storage_buffer_sizes,
         );
-        self.state_cache.set_textures(&sr.textures);
-        self.state_cache.set_samplers(&sr.samplers);
-        self.state_cache.set_images(&sr.images);
+        self.state_cache.set_textures(self.gl, &sr.textures);
+        self.state_cache.set_samplers(self.gl, &sr.samplers);
+        self.state_cache.set_images(self.gl, &sr.images);
     }
 
-    pub fn cmd_present(&mut self, image: &Image, _swapchain: &Swapchain) {
+    pub fn cmd_present(&mut self, image: &GlImage, swapchain: &GlSwapchain) {
         // only handle default swapchain for now
         //assert_eq!(swapchain, 0, "invalid swapchain handle");
         // make a framebuffer and bind the image to it
         unsafe {
             let mut tmpfb = 0;
-            gl::CreateFramebuffers(1, &mut tmpfb);
+            self.gl.CreateFramebuffers(1, &mut tmpfb);
             // bind image to it
             if image.target == gl::RENDERBUFFER {
-                gl::NamedFramebufferRenderbuffer(
+                self.gl.NamedFramebufferRenderbuffer(
                     tmpfb,
                     gl::COLOR_ATTACHMENT0,
                     gl::RENDERBUFFER,
@@ -156,13 +155,12 @@ impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
                 );
             } else {
                 // TODO other levels / layers?
-                gl::NamedFramebufferTexture(tmpfb, gl::COLOR_ATTACHMENT0, image.obj, 0);
+                self.gl.NamedFramebufferTexture(tmpfb, gl::COLOR_ATTACHMENT0, image.obj, 0);
             }
             // blit to default framebuffer
-            //gl::BindFramebuffer(gl::READ_FRAMEBUFFER, tmpfb);
-            let (w, h): (u32, u32) = self.window.get_inner_size().unwrap().into();
+            let (w, h): (u32, u32) = swapchain.inner.size();
 
-            gl::BlitNamedFramebuffer(
+            self.gl.BlitNamedFramebuffer(
                 tmpfb,
                 0,
                 0,        // srcX0
@@ -178,21 +176,21 @@ impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
             );
 
             // destroy temp framebuffer
-            gl::DeleteFramebuffers(1, &tmpfb);
+            self.gl.DeleteFramebuffers(1, &tmpfb);
         }
 
         // swap buffers
-        self.window.swap_buffers().expect("swap_buffers error")
+        swapchain.inner.present()
     }
 
-    fn cmd_set_framebuffer(&mut self, fb: &'rcx Framebuffer) {
-        self.state_cache.set_draw_framebuffer(fb.obj);
+    fn cmd_set_framebuffer(&mut self, fb: &'rcx GlFramebuffer) {
+        self.state_cache.set_draw_framebuffer(self.gl, fb.obj);
     }
 
-    fn cmd_set_graphics_pipeline(&mut self, pipeline: &'rcx GraphicsPipeline) {
+    fn cmd_set_graphics_pipeline(&mut self, pipeline: &'rcx GlGraphicsPipeline) {
         // switching pipelines
         self.current_pipeline = Some(pipeline);
-        pipeline.bind(self.state_cache);
+        pipeline.bind(self.gl, self.state_cache);
     }
 
     fn cmd_set_vertex_buffers(&mut self, buffers: &[BufferTypeless<'rcx, OpenGlBackend>]) {
@@ -212,16 +210,16 @@ impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
         }
 
         self.state_cache
-            .set_vertex_buffers(&objs, &offsets, &strides);
+            .set_vertex_buffers(self.gl, &objs, &offsets, &strides);
     }
 
     fn cmd_set_viewports(&mut self, viewports: &[Viewport]) {
-        self.state_cache.set_viewports(viewports);
+        self.state_cache.set_viewports(self.gl, viewports);
     }
 
-    fn cmd_set_index_buffer(&mut self, index_buffer: &'rcx Buffer, offset: usize, ty: IndexType) {
+    fn cmd_set_index_buffer(&mut self, index_buffer: &'rcx GlBuffer, offset: usize, ty: IndexType) {
         self.state_cache
-            .set_index_buffer(index_buffer.obj, offset, ty);
+            .set_index_buffer(self.gl, index_buffer.obj, offset, ty);
     }
 
     fn cmd_draw(
@@ -235,6 +233,7 @@ impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
             .current_pipeline
             .expect("cmd_set_vertex_buffers called with no pipeline bound");
         self.state_cache.draw(
+            self.gl,
             pipeline.input_assembly_state.topology,
             vertex_count,
             instance_count,
@@ -255,6 +254,7 @@ impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
             .current_pipeline
             .expect("cmd_set_vertex_buffers called with no pipeline bound");
         self.state_cache.draw_indexed(
+            self.gl,
             pipeline.input_assembly_state.topology,
             index_count,
             instance_count,

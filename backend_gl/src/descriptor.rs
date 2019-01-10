@@ -1,5 +1,6 @@
 use crate::{
     api::types::*,
+    api::Gl,
     pipeline::{BindingSpace, DescriptorMap},
     resource::SamplerCache,
     OpenGlBackend,
@@ -67,7 +68,7 @@ impl<'tcx> From<DescriptorSetLayoutBinding<'tcx>> for TypelessDescriptorSetLayou
 }
 
 #[derive(Debug)]
-pub struct DescriptorSetLayout {
+pub struct GlDescriptorSetLayout {
     pub bindings: Vec<TypelessDescriptorSetLayoutBinding>,
 }
 
@@ -96,17 +97,18 @@ pub enum RawDescriptor {
 }
 
 #[derive(Debug)]
-pub struct DescriptorSet {
+pub struct GlDescriptorSet {
     pub descriptors: Vec<RawDescriptor>,
 }
 
-impl DescriptorSet {
+impl GlDescriptorSet {
     pub fn from_descriptors_and_layout(
+        gl: &Gl,
         descriptors: &[Descriptor<OpenGlBackend>],
-        layout: &DescriptorSetLayout,
+        layout: &GlDescriptorSetLayout,
         sampler_cache: &mut SamplerCache,
-    ) -> DescriptorSet {
-        DescriptorSet {
+    ) -> GlDescriptorSet {
+        GlDescriptorSet {
             descriptors: descriptors
                 .iter()
                 .enumerate()
@@ -115,7 +117,7 @@ impl DescriptorSet {
                         match layout.bindings[i].descriptor_type {
                             DescriptorType::SampledImage => RawDescriptor::Texture {
                                 image: img.0.obj,
-                                sampler: sampler_cache.get_sampler(sampler),
+                                sampler: sampler_cache.get_sampler(gl, sampler),
                             },
                             _ => panic!("unexpected descriptor type"),
                         }

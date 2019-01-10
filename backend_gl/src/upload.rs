@@ -1,6 +1,6 @@
 //! Upload buffers
 use crate::buffer::create_buffer;
-use crate::{api as gl, api::types::*};
+use crate::{api as gl, api::types::*, api::Gl};
 use gfx2::align_offset;
 use std::ptr::copy_nonoverlapping;
 use std::sync::Mutex;
@@ -15,8 +15,9 @@ pub struct MappedBuffer {
 unsafe impl Send for MappedBuffer {}
 
 impl MappedBuffer {
-    pub fn new(size: usize) -> MappedBuffer {
+    pub fn new(gl: &Gl, size: usize) -> MappedBuffer {
         let buffer = create_buffer(
+            gl,
             size,
             gl::MAP_WRITE_BIT | gl::MAP_PERSISTENT_BIT | gl::MAP_COHERENT_BIT,
             None,
@@ -27,7 +28,7 @@ impl MappedBuffer {
             | gl::MAP_PERSISTENT_BIT
             | gl::MAP_COHERENT_BIT;
         let ptr =
-            unsafe { gl::MapNamedBufferRange(buffer, 0, size as isize, map_flags) as *mut u8 };
+            unsafe { gl.MapNamedBufferRange(buffer, 0, size as isize, map_flags) as *mut u8 };
 
         MappedBuffer {
             buffer,
@@ -43,7 +44,7 @@ impl MappedBuffer {
         }
     }
 
-    pub fn flush(&self) {
+    pub fn flush(&self, _gl: &Gl) {
         if (self.flags & gl::MAP_COHERENT_BIT) != 0 {
             // do nothing, data is already visible to the CPU
         } else {
@@ -83,8 +84,8 @@ impl UploadBuffer {
         Some((self_.buffer.raw_buffer(), offset))
     }
 
-    pub fn flush(&self) {
-        self.0.lock().unwrap().buffer.flush()
+    pub fn flush(&self, gl: &Gl) {
+        self.0.lock().unwrap().buffer.flush(gl)
     }
 
     pub fn into_inner(self) -> MappedBuffer {

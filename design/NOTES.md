@@ -1181,3 +1181,10 @@ Alternative: arena-based GPU synchronization
 - swap buffers?
     - custom callback in swapchain
     - not needed if rendering into a texture
+    - swapchain size?
+        - custom callback
+    
+#### Robustness
+- handle object creation failures
+    - images, buffers, framebuffers, etc.
+    - return Result instead of panic!()

@@ -1,19 +1,20 @@
-use crate::{api as gl, api::types::*, OpenGlBackend as R};
+use crate::{api as gl, api::types::*, api::Gl, OpenGlBackend as R};
 use gfx2;
 
 #[derive(Debug)]
-pub struct Framebuffer {
+pub struct GlFramebuffer {
     pub obj: GLuint,
 }
 
-impl Framebuffer {
+impl GlFramebuffer {
     pub fn new(
+        gl: &Gl,
         color_attachments: &[gfx2::Image<R>],
         depth_stencil_attachment: Option<gfx2::Image<R>>,
-    ) -> Result<Framebuffer, GLenum> {
+    ) -> Result<GlFramebuffer, GLenum> {
         let mut obj = 0;
         unsafe {
-            gl::CreateFramebuffers(1, &mut obj);
+            gl.CreateFramebuffers(1, &mut obj);
         }
 
         // color attachments
@@ -21,7 +22,7 @@ impl Framebuffer {
             let index = index as u32;
             match img.0.target {
                 gl::RENDERBUFFER => unsafe {
-                    gl::NamedFramebufferRenderbuffer(
+                    gl.NamedFramebufferRenderbuffer(
                         obj,
                         gl::COLOR_ATTACHMENT0 + index,
                         gl::RENDERBUFFER,
@@ -29,7 +30,7 @@ impl Framebuffer {
                     );
                 },
                 _ => unsafe {
-                    gl::NamedFramebufferTexture(
+                    gl.NamedFramebufferTexture(
                         obj,
                         gl::COLOR_ATTACHMENT0 + index,
                         img.0.obj,
@@ -43,7 +44,7 @@ impl Framebuffer {
         if let Some(img) = depth_stencil_attachment {
             match img.0.target {
                 gl::RENDERBUFFER => unsafe {
-                    gl::NamedFramebufferRenderbuffer(
+                    gl.NamedFramebufferRenderbuffer(
                         obj,
                         gl::DEPTH_ATTACHMENT,
                         gl::RENDERBUFFER,
@@ -51,7 +52,7 @@ impl Framebuffer {
                     );
                 },
                 _ => unsafe {
-                    gl::NamedFramebufferTexture(
+                    gl.NamedFramebufferTexture(
                         obj,
                         gl::DEPTH_ATTACHMENT,
                         img.0.obj,
@@ -63,7 +64,7 @@ impl Framebuffer {
 
         // enable draw buffers
         unsafe {
-            gl::NamedFramebufferDrawBuffers(
+            gl.NamedFramebufferDrawBuffers(
                 obj,
                 color_attachments.len() as i32,
                 [
@@ -81,18 +82,18 @@ impl Framebuffer {
         }
 
         // check framebuffer completeness
-        let status = unsafe { gl::CheckNamedFramebufferStatus(obj, gl::DRAW_FRAMEBUFFER) };
+        let status = unsafe { gl.CheckNamedFramebufferStatus(obj, gl::DRAW_FRAMEBUFFER) };
 
         if status == gl::FRAMEBUFFER_COMPLETE {
-            Ok(Framebuffer { obj })
+            Ok(GlFramebuffer { obj })
         } else {
             Err(status)
         }
     }
 
-    pub fn destroy(self) {
+    pub fn destroy(self, gl: &Gl) {
         unsafe {
-            gl::DeleteFramebuffers(1, &self.obj);
+            gl.DeleteFramebuffers(1, &self.obj);
         }
     }
 }
