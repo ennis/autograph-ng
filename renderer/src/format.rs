@@ -1,6 +1,7 @@
 #![allow(non_upper_case_globals)]
 
-/// Storage formats of GPU data (texture, vertices, etc).
+/// Storage formats for GPU data (texture, vertices, etc).
+///
 /// These are actually Vulkan formats.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[allow(non_camel_case_types)]
@@ -193,50 +194,76 @@ pub enum Format {
     ASTC_12x12_SRGB_BLOCK = 184,
 }
 
+/// Layout of color components in a given format.
 pub enum ComponentLayout {
     UNKNOWN,
+    /// One component
     R,
+    /// Two components
     RG,
+    /// Three components, RGB order
     RGB,
+    /// Four components, RGBA order
     RGBA,
+    /// Three components, BGR order
     BGR,
+    /// Four components, BGRA order
     BGRA,
+    /// Four components, ARGB order
     ARGB,
+    /// Four components, ABGR order
     ABGR,
     EBGR,
+    /// Depth only component
     D,
+    /// Depth-stencil component
     DS,
+    /// Stencil only component
     S,
     XD,
 }
 
+/// Numeric format of components.
 #[allow(non_camel_case_types)]
 pub enum NumericFormat {
     UNKNOWN,
+    /// Unsigned normalized (unsigned integer value normalized in \[0.0;1.0\])
     UNORM,
+    /// Signed normalized (unsigned integer value normalized in \[-1.0;1.0\])
     SNORM,
     USCALED,
     SSCALED,
+    /// Unsigned integer
     UINT,
+    /// Signed integer
     SINT,
+    /// SRGB color value
     SRGB,
+    /// Unsigned floating-point value
     UFLOAT,
+    /// Signed floating-point value
     SFLOAT,
     UNORM_UINT,
     SFLOAT_UINT,
 }
 
+/// Information about a format.
 pub struct FormatInfo {
+    /// Component layout
     pub component_layout: ComponentLayout,
+    /// Bit widths of the components
     pub component_bits: [u8; 4],
+    /// Numeric format of the components
     pub format_type: NumericFormat,
 }
 
 impl FormatInfo {
+    /// Returns true if the format represents a compressed format.
     pub fn is_compressed(&self) -> bool {
         self.component_bits == [0, 0, 0, 0]
     }
 
+    /// Returns true if the components of the format are normalized in \[0.0;1.0\] or \[-1.0;1.0\].
     pub fn is_normalized(&self) -> bool {
         match self.format_type {
             NumericFormat::UNORM | NumericFormat::SNORM => true,
@@ -244,6 +271,7 @@ impl FormatInfo {
         }
     }
 
+    /// Returns the number of components of the format.
     pub fn num_components(&self) -> u32 {
         match self.component_layout {
             ComponentLayout::UNKNOWN => 0,
@@ -263,6 +291,7 @@ impl FormatInfo {
         }
     }
 
+    /// Returns the size in bytes of one element of this format.
     pub fn byte_size(&self) -> usize {
         (self.component_bits[0]
             + self.component_bits[1]
@@ -1199,6 +1228,7 @@ static TF_ASTC_12x12_SRGB_BLOCK: FormatInfo = FormatInfo {
 };
 
 impl Format {
+    /// Returns information about the format.
     pub fn get_format_info(self) -> &'static FormatInfo {
         match self {
             Format::UNDEFINED => &TF_UNDEFINED,

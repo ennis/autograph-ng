@@ -103,6 +103,24 @@ impl<'a, R: RendererBackend> Swapchain<'a, R> {
 }
 
 //--------------------------------------------------------------------------------------------------
+
+/// An allocator and container for renderer resources.
+///
+/// Arenas are allocators specialized for renderer resources: most objects created by the
+/// renderer backend are allocated and owned by arenas, and are released all at once
+/// when the arena is dropped.
+/// The lifetime of most objects created by the renderer are bound to an arena,
+/// and those objects cannot be dropped individually.
+///
+/// Typically, an application has one arena per resource lifetime. For instance,
+/// an application could have the following arenas, sorted from long-lived to short-lived:
+/// * an arena for long-lived resources, such as immutable textures,
+/// * an arena for hot-reloadable resources, destroyed and recreated on user input or filesystem events,
+/// * an arena for swapchain-related resources, destroyed and recreated when the swapchain is resized,
+/// * an arena for resources that live for the current frame only.
+///
+/// This type is a wrapper around [RendererBackend::Arena] that drops the arena
+/// when it goes out of scope.
 pub struct Arena<'rcx, R: RendererBackend> {
     backend: &'rcx R,
     inner_arena: Option<R::Arena>,
@@ -115,6 +133,7 @@ impl<'rcx, R: RendererBackend> Drop for Arena<'rcx, R> {
 }
 
 impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
+    /// Returns the backend arena.
     pub fn inner_arena(&self) -> &R::Arena {
         self.inner_arena.as_ref().unwrap()
     }
@@ -139,7 +158,7 @@ impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
         ))
     }
 
-    /// Creates a shader module.
+    /// Creates a shader module from SPIR-V bytecode.
     #[inline]
     pub fn create_shader_module(&self, data: &[u8], stage: ShaderStageFlags) -> ShaderModule<R> {
         ShaderModule(
@@ -148,9 +167,7 @@ impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
         )
     }
 
-    /// Creates a graphics pipeline.
-    /// Pipeline = all shaders + input layout + output layout (expected buffers)
-    /// Creation process?
+    /// Creates a graphics pipeline given the pipeline description passed in create_info.
     #[inline]
     pub fn create_graphics_pipeline<'a>(
         &'a self,
@@ -162,10 +179,13 @@ impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
         )
     }
 
-    /// Creates an image.
+    /// Creates an immutable image that cannot be modified by any operation
+    /// (render, transfer, swaps or otherwise).
+    /// Useful for long-lived texture data.
     /// Initial data is uploaded to the image memory, and will be visible to all operations
     /// from the current frame and after.
-    /// (the first operation that depends on the image will block on transfer complete)
+    /// The first operation that depends on the image will block until the initial data upload
+    /// is complete.
     #[inline]
     pub fn create_immutable_image(
         &self,
@@ -187,8 +207,15 @@ impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
         ))
     }
 
-    /// Creates a scoped image.
-    /// TODO document this stuff.
+    /// Creates an image containing uninitialized data.
+    ///
+    /// If `scope` is not `AliasScope::no_alias()`, the image is considered _aliasable_, meaning
+    /// that the memory backing this image can be shared between multiple image objects.
+    /// The image does not retain its contents between frames,
+    /// and should only be accessed within the specified scope.
+    /// This is suitable for transient image data that is not used during the entirety of a frame.
+    ///
+    /// See also [AliasScope].
     #[inline]
     pub fn create_image(
         &self,
@@ -225,7 +252,7 @@ impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
         )
     }
 
-    /// Creates a GPU (device local) buffer.
+    /// Creates an immutable, device-local GPU buffer containing an object of type T.
     #[inline]
     pub fn upload<T: Copy + 'static>(&self, data: &T) -> Buffer<R, T> {
         let size = mem::size_of::<T>();
@@ -238,6 +265,7 @@ impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
         )
     }
 
+    /// Creates an immutable, device-local GPU buffer containing an array of objects of type T.
     #[inline]
     pub fn upload_slice<T: Copy + 'static>(&self, data: &[T]) -> Buffer<R, [T]> {
         let size = mem::size_of_val(data);
@@ -250,6 +278,8 @@ impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
         )
     }
 
+    /// Creates a descriptor set layout, describing the resources and binding points expected
+    /// by a shader.
     #[inline]
     pub fn create_descriptor_set_layout<'a>(
         &'a self,

@@ -10,52 +10,87 @@ use crate::ImageUsageFlags;
 use std::fmt::Debug;
 
 //--------------------------------------------------------------------------------------------------
+
+/// Trait implemented by backend swapchain objects.
 pub trait Swapchain: Debug {
     fn size(&self) -> (u32, u32);
 }
+/// Trait implemented by backend buffer objects.
 pub trait Buffer: Debug {
     fn size(&self) -> u64;
 }
+/// Trait implemented by backend image objects.
 pub trait Image: Debug {}
+/// Trait implemented by backend framebuffer objects.
 pub trait Framebuffer: Debug {}
+/// Trait implemented by backend descriptor set layout objects.
 pub trait DescriptorSetLayout: Debug {}
+/// Trait implemented by backend shader module objects.
 pub trait ShaderModule: Debug {}
+/// Trait implemented by backend graphics pipeline objects.
 pub trait GraphicsPipeline: Debug {}
+/// Trait implemented by backend descriptor set objects.
 pub trait DescriptorSet: Debug {}
 
-/// V2 API
-/// Some associated backend types (such as Framebuffers, or DescriptorSets) conceptually "borrow"
-/// the referenced resources, and as such should have an associated lifetime parameter.
-/// However, this cannot be expressed right now because of the lack of generic associated types
-/// (a.k.a. associated type constructors, or ATCs).
+/// Trait implemented by renderer backends.
+///
+/// The `RendererBackend` trait provides an interface to create graphics resources and send commands
+/// to one (TODO or more) GPU.
+/// It has a number of associated types for various kinds of graphics objects.
+/// It serves as an abstraction layer over a graphics API.
+///
+/// See the [gfx2_backend_gl] crate for an example implementation.
 pub trait RendererBackend: Sync {
+    // Some associated backend types (such as Framebuffers, or DescriptorSets) conceptually "borrow"
+    // the referenced resources, and as such should have an associated lifetime parameter.
+    // However, this cannot be expressed right now because of the lack of generic associated types
+    // (a.k.a. associated type constructors, or ATCs).
+
     // XXX the 'static bounds may not be necessary: I put them to avoid specifying complex bounds
     // in other areas of the library.
     // That said, without ATCs, the associated types can't
     // really be bounded by anything other than 'static.
     // They don't need to be sized, however, as all we do is take references to them.
+
+    /// Backend object type for swapchains
     type Swapchain: ?Sized + Swapchain + 'static;
+    /// Backend object type for framebuffers
     type Framebuffer: ?Sized + Framebuffer + 'static;
+    /// Backend object type for buffers
     type Buffer: ?Sized + Buffer + 'static;
+    /// Backend object type for images
     type Image: ?Sized + Image + 'static;
+    /// Backend object type for descriptor sets
     type DescriptorSet: ?Sized + DescriptorSet + 'static;
+    /// Backend object type for descriptor set layouts
     type DescriptorSetLayout: ?Sized + DescriptorSetLayout + 'static;
+    /// Backend object type for shader modules
     type ShaderModule: ?Sized + ShaderModule + 'static;
+    /// Backend object type for graphics pipelines
     type GraphicsPipeline: ?Sized + GraphicsPipeline + 'static;
 
-    /// Contains resources.
+    /// Backend arena type.
+    ///
+    /// Arenas own the resources created by the backend, and are the primary
+    /// way of managing the lifetime of backend resources.
+    /// Resources contained in arenas are dropped all at once.
+    /// This type is not used directly: see the [Arena](crate::arena::Arena) wrapper.
     type Arena: Sync;
 
+    /// Creates a new empty Arena.
     fn create_arena(&self) -> Self::Arena;
 
-    /// Drops a group of resources in the arena.
+    /// Drops an arena and all the objects it owns.
     fn drop_arena(&self, arena: Self::Arena)
     where
         Self: Sized;
 
+    /// See [Renderer::create_swapchain](crate::Renderer::create_swapchain).
     fn create_swapchain<'a>(&self, arena: &'a Self::Arena) -> &'a Self::Swapchain
     where
         Self: Sized;
+
+    /// See [Renderer::default_swapchain](crate::Renderer::default_swapchain).
     fn default_swapchain<'rcx>(&'rcx self) -> Option<&'rcx Self::Swapchain>;
 
     /// Creates an immutable image that cannot be modified by any operation (render, transfer, swaps or otherwise).
@@ -74,6 +109,8 @@ pub trait RendererBackend: Sync {
         Self: Sized;
 
     /// Creates an image containing uninitialized data.
+    ///
+    /// See [Arena::create_image](crate::arena::Arena::create_image).
     fn create_image<'a>(
         &self,
         arena: &'a Self::Arena,
@@ -87,7 +124,19 @@ pub trait RendererBackend: Sync {
     where
         Self: Sized;
 
-    /// Creates a framebuffer.
+    /// Updates a region of an image.
+    ///
+    /// This function assumes that the format of data matches the internal format of the image.
+    /// No conversion is performed.
+    fn update_image(
+        &self,
+        image: &Self::Image,
+        min_extent: (u32,u32,u32),
+        max_extent: (u32,u32,u32),
+        data: &[u8]
+        ) where Self: Sized;
+
+    /// See [Arena::create_framebuffer](crate::arena::Arena::create_framebuffer).
     fn create_framebuffer<'a>(
         &self,
         arena: &'a Self::Arena,
@@ -97,7 +146,7 @@ pub trait RendererBackend: Sync {
     where
         Self: Sized;
 
-    /// Creates an immutable buffer.
+    /// TODO
     fn create_immutable_buffer<'a>(
         &self,
         arena: &'a Self::Arena,
@@ -107,11 +156,12 @@ pub trait RendererBackend: Sync {
     where
         Self: Sized;
 
-    /// Creates a buffer containing uninitialized data.
+    /// TODO
     fn create_buffer<'a>(&self, arena: &'a Self::Arena, size: u64) -> &'a Self::Buffer
     where
         Self: Sized;
 
+    /// See [Arena::create_shader_module](crate::arena::Arena::create_shader_module).
     fn create_shader_module<'a>(
         &self,
         arena: &'a Self::Arena,
@@ -121,6 +171,7 @@ pub trait RendererBackend: Sync {
     where
         Self: Sized;
 
+    /// See [Arena::create_graphics_pipeline](crate::arena::Arena::create_graphics_pipeline).
     fn create_graphics_pipeline<'a>(
         &self,
         arena: &'a Self::Arena,
@@ -129,6 +180,8 @@ pub trait RendererBackend: Sync {
     where
         Self: Sized;
 
+    /// Creates a descriptor set layout, describing the resources and binding points expected
+    /// by a shader.
     fn create_descriptor_set_layout<'a>(
         &self,
         arena: &'a Self::Arena,
@@ -137,7 +190,8 @@ pub trait RendererBackend: Sync {
     where
         Self: Sized;
 
-    /// Creates a new descriptor set.
+    /// Creates a new descriptor set, which describes a set of resources to be bound to the graphics
+    /// pipeline.
     fn create_descriptor_set<'a>(
         &self,
         arena: &'a Self::Arena,
@@ -147,6 +201,9 @@ pub trait RendererBackend: Sync {
     where
         Self: Sized;
 
+    /// Sends commands to the GPU for execution, and ends the current frame.
+    ///
+    /// Precondition: the command list should be sorted by sortkey.
     fn submit_frame<'a>(&self, commands: &[Command<'a, Self>])
     where
         Self: Sized;

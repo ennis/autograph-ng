@@ -150,7 +150,7 @@ pub struct DescriptorMapBuilder {
 }
 
 impl DescriptorMapBuilder {
-    fn insert(&mut self, set: u32, binding: u32, space: BindingSpace) -> FlatBinding {
+    fn get_or_insert(&mut self, set: u32, binding: u32, space: BindingSpace) -> FlatBinding {
         let set = set as usize;
         if set >= self.sets.len() {
             self.sets.resize(set + 1, Vec::new());
@@ -258,7 +258,7 @@ pub fn translate_spirv_to_gl_flavor(
                 .descriptor_set_decoration()
                 .expect("expected descriptor set decoration");
             let (iptr_b, binding) = v.binding_decoration().expect("expected binding decoration");
-            let new_binding = desc_map.insert(ds, binding, space);
+            let new_binding = desc_map.get_or_insert(ds, binding, space);
 
             // remove descriptor set and binding, replace with GL binding
             m.edit_remove_instruction(iptr_ds);

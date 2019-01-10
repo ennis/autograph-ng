@@ -1,96 +1,57 @@
 #![feature(proc_macro_diagnostic)]
+#![feature(proc_macro_span)]
 extern crate proc_macro;
 extern crate proc_macro2;
 
+use lazy_static::lazy_static;
 use proc_macro2::Span;
-use proc_macro2::TokenStream;
+//use proc_macro2::TokenStream;
 use quote::quote;
+use regex::Regex;
 use shaderc;
+use std::fs;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use std::path::PathBuf;
 use syn;
 use syn::parse::ParseStream;
 use syn::punctuated::Punctuated;
+//use syn::spanned::Spanned;
 use syn::Token;
 
 mod preprocessor;
 
-/*
-fn gfx2_name() -> syn::Path {
-    syn::parse_str("gfx2").unwrap()
-}*/
-/*
-#[proc_macro_attribute]
-pub fn shader_module(
-    _attribs: proc_macro::TokenStream,
-    src: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
-    //src
+lazy_static! {
+    static ref RE_COMPILE_ERROR: Regex =
+        Regex::new(r#"^(?P<srcid>[^:]*):(?P<line>[^:]*):(?P<msg>.*)$"#).unwrap();
+}
 
-    // parse a whole module
-    let m: syn::ItemMod = syn::parse_macro_input!(src as syn::ItemMod);
-    let mut stub_fields = Vec::new();
+struct ShaderCompilationError {
+    _srcid: String,
+    line: u32,
+    msg: String,
+}
 
-    if let Some((_, ref contents)) = m.content {
-        for item in contents.iter() {
-            match item {
-                syn::Item::Fn(itemfn) => {
-                    println!("fn {:?}", itemfn);
-                    let lifetimes = itemfn.decl.generics.lifetimes();
-                    let unsafety = &itemfn.unsafety;
-                    let abi = &itemfn.abi;
-                    let _attrs = &itemfn.attrs;
-                    let _asyncness = itemfn.asyncness;
-                    let inputs = &itemfn.decl.inputs;
-                    let output = &itemfn.decl.output;
-                    let ident = &itemfn.ident;
-                    let tytk = quote! {
-                        #ident: &'lib for<#(#lifetimes),*> #unsafety #abi fn(#inputs) #output
-                    };
-                    println!("{}", tytk.to_string());
-                    stub_fields.push(tytk);
-                }
-                syn::Item::Const(itemconst) => {
-                    let ty = &itemconst.ty;
-                    let ident = &itemconst.ident;
-                    let tytk = quote! {
-                        #ident: &'lib #ty,
-                    };
-                    stub_fields.push(tytk);
-                }
-                _ => {}
-            }
+impl ShaderCompilationError {
+    pub fn from_log_line(line: &str) -> Option<ShaderCompilationError> {
+        if let Some(c) = RE_COMPILE_ERROR.captures(line) {
+            Some(ShaderCompilationError {
+                line: (&c["line"]).parse::<u32>().unwrap_or(0),
+                _srcid: c["srcid"].to_string(),
+                msg: c["msg"].to_string(),
+            })
+        } else {
+            // Failed to parse
+            None
         }
     }
 
-    let mod_name = m.ident;
-    let stub_name = syn::Ident::new(
-        &format!("{}_Symbols", mod_name.to_string()),
-        Span::call_site(),
-    );
-    let items = m.content.as_ref().unwrap().1.iter();
-
-    let q = quote! {
-        mod #mod_name {
-            #(#items)*
-
-            #[allow(non_snake_case)]
-            struct #stub_name <'lib> {
-                #(#stub_fields)*
-            }
-        }
-    };
-    q.into()
-}*/
-
-fn compile_shader(
-    src: proc_macro::TokenStream,
-    stage: shaderc::ShaderKind,
-) -> proc_macro::TokenStream {
-    // parse a string literal
-    let litstr = syn::parse_macro_input!(src as syn::LitStr);
-    compile_glsl_shader(&litstr.value(), &litstr.span(), "<embedded GLSL>", stage).into()
+    pub fn from_log(log: &str) -> Vec<ShaderCompilationError> {
+        log.lines()
+            .flat_map(|line| Self::from_log_line(line))
+            .collect()
+    }
 }
 
 #[proc_macro]
@@ -118,12 +79,29 @@ pub fn glsl_compute(src: proc_macro::TokenStream) -> proc_macro::TokenStream {
     compile_shader(src, shaderc::ShaderKind::Compute)
 }
 
+fn compile_shader(
+    src: proc_macro::TokenStream,
+    stage: shaderc::ShaderKind,
+) -> proc_macro::TokenStream {
+    // parse a string literal
+    let litstr = syn::parse_macro_input!(src as syn::LitStr);
+    compile_glsl_shader(
+        &litstr.value(),
+        &litstr.span(),
+        "<embedded GLSL>",
+        Some(&litstr.span()),
+        stage,
+    )
+    .into()
+}
+
 fn compile_glsl_shader(
     src: &str,
-    span: &proc_macro2::Span,
+    span: &Span,
     file: &str,
+    file_span: Option<&Span>,
     stage: shaderc::ShaderKind,
-) -> TokenStream {
+) -> proc_macro2::TokenStream {
     // the doc says that we should preferably create one instance of the compiler
     // and reuse it, but I don't see a way to reuse a compiler instance
     // between macro invocations. Notably, it cannot be put into a lazy_static block wrapped
@@ -132,25 +110,91 @@ fn compile_glsl_shader(
     let mut opt = shaderc::CompileOptions::new().unwrap();
     opt.set_target_env(shaderc::TargetEnv::Vulkan, 0);
     opt.set_optimization_level(shaderc::OptimizationLevel::Zero);
-    compile_glsl_shader_inner(&mut compiler, &opt, src, span, file, stage)
+    compile_glsl_shader_inner(&mut compiler, &opt, src, span, file, file_span, stage)
 }
 
 fn compile_glsl_shader_inner(
     compiler: &mut shaderc::Compiler,
     opts: &shaderc::CompileOptions,
     src: &str,
-    span: &proc_macro2::Span,
+    span: &Span,
     file: &str,
+    file_span: Option<&Span>,
     stage: shaderc::ShaderKind,
-) -> TokenStream {
+) -> proc_macro2::TokenStream {
     let ca = compiler.compile_into_spirv(&src, stage, file, "main", Some(&opts));
 
     match ca {
-        Err(e) => {
-            span.unstable()
-                .error("error(s) encountered while compiling GLSL shader")
-                .note(format!("{}", e))
-                .emit();
+        Err(ref e) => {
+            let mut diag = span
+                .unstable()
+                .error("error(s) encountered while compiling GLSL shader");
+
+            match e {
+                shaderc::Error::CompilationError(num_err, log) => {
+                    // With raw strings, there is a way to build a span to the location of the error,
+                    // and produce a span_note with context for extra shiny diagnostics.
+                    // Unfortunately, there is no way to do so with external files, so don't do it
+                    // for now. (see https://github.com/rust-lang/rust/issues/55904)
+
+                    /*
+                    let mut lit = proc_macro::Literal::string(src);
+                    lit.set_span(span.unstable());
+                    // compilation errors, try to parse log to get more precise info
+                    let parsed = ShaderCompilationError::from_log(log);
+                    // fix spans and add them as notes
+                    for err in parsed.iter() {
+                        // FIXME this is really just a best-effort solution
+                        // find beginning of line
+                        let span_begin = if err.line == 1 || err.line == 0 {
+                            2 // FIXME HACK skip raw-string lead-in : r\"
+                        } else {
+                            src.match_indices('\n')
+                                .nth(err.line as usize - 2)
+                                .map(|(i, _)| i + 3) // FIXME HACK +2 to skip the r\" for raw strings, +1 to skip NL
+                                .unwrap_or(0)
+                        };
+                        let span2 = lit
+                            .subspan(span_begin..=span_begin)
+                            .unwrap_or(span.unstable());
+
+                        diag = diag.span_note(span2, format!("<GLSL>:{}: {}", err.line, err.msg));
+                        //let file_path = span.unstable().source_file().path();
+                        //diag = diag.note(format!("{}\n  --> {}:{}:", err.msg, span.unstable().source_file().path().display(), err.line));
+                    }*/
+
+                    // compilation errors, try to parse log to get more precise info
+                    let parsed = ShaderCompilationError::from_log(log);
+                    // fixup line
+                    for err in parsed.iter() {
+                        let (path, fixup_line) = if let Some(s) = file_span {
+                            (
+                                s.unstable().source_file().path(),
+                                span.unstable().start().line + err.line as usize - 1,
+                            )
+                        } else {
+                            (PathBuf::from(file.to_string()), err.line as usize)
+                        };
+                        // mimic the format of rustc diagnostics so that my IDE can pick them up...
+                        diag = diag.note(format!(
+                            "{}\n  --> {}:{}:",
+                            err.msg,
+                            path.display(),
+                            fixup_line
+                        ));
+                    }
+
+                    if parsed.len() != *num_err as usize {
+                        // we did not parse them all, print full log for good measure
+                        diag = diag.note(format!("full error log: {}", e));
+                    }
+                }
+                _ => {
+                    diag = diag.note(format!("{}", e));
+                }
+            }
+
+            diag.emit();
             quote!(&[])
         }
         Ok(ca) => {
@@ -199,7 +243,7 @@ pub fn include_combined_shader(input: proc_macro::TokenStream) -> proc_macro::To
     compile_combined_shader_file_to_spirv(&s).into()
 }
 
-fn compile_combined_shader_file_to_spirv(s: &CombinedShader) -> TokenStream {
+fn compile_combined_shader_file_to_spirv(s: &CombinedShader) -> proc_macro2::TokenStream {
     let mut stages = Vec::new();
     for ident in s.stages.iter() {
         let stage = ident.to_string();
@@ -251,7 +295,7 @@ fn compile_combined_shader_file_to_spirv(s: &CombinedShader) -> TokenStream {
     opt.set_target_env(shaderc::TargetEnv::Vulkan, 0);
     opt.set_optimization_level(shaderc::OptimizationLevel::Zero);
 
-    let mut try_compile = |src: &String, stage: shaderc::ShaderKind| -> TokenStream {
+    let mut try_compile = |src: &String, stage: shaderc::ShaderKind| -> proc_macro2::TokenStream {
         if stages.contains(&stage) {
             let (stage_item, stage_macro) = match stage {
                 shaderc::ShaderKind::Vertex => {
@@ -283,6 +327,7 @@ fn compile_combined_shader_file_to_spirv(s: &CombinedShader) -> TokenStream {
                 &stage_src,
                 &s.path.span(),
                 &path,
+                None,
                 stage,
             );
             quote! { pub const #stage_item: &'static [u8] = #inner; }
@@ -312,4 +357,42 @@ fn compile_combined_shader_file_to_spirv(s: &CombinedShader) -> TokenStream {
             #comp
         }
     }
+}
+
+#[proc_macro]
+pub fn include_shader(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let pathlit: syn::LitStr = syn::parse_macro_input!(input as syn::LitStr);
+    let filename = PathBuf::from(pathlit.value());
+
+    let stage = match filename.extension() {
+        Some(ext) if ext == "vert" => shaderc::ShaderKind::Vertex,
+        Some(ext) if ext == "frag" => shaderc::ShaderKind::Fragment,
+        Some(ext) if ext == "geom" => shaderc::ShaderKind::Geometry,
+        Some(ext) if ext == "tese" => shaderc::ShaderKind::TessEvaluation,
+        Some(ext) if ext == "tesc" => shaderc::ShaderKind::TessControl,
+        Some(ext) if ext == "comp" => shaderc::ShaderKind::Compute,
+        _ => {
+            return syn::Error::new(pathlit.span(), "cannot deduce shader stage from extension")
+                .to_compile_error()
+                .into();
+        }
+    };
+
+    let mut path = pathlit.span().unstable().source_file().path();
+    path.set_file_name(&filename);
+
+    // TODO maybe it's better to return a compile_error!{} ?
+    let src = fs::read_to_string(&path).expect("failed to open GLSL shader source");
+
+    let bytecode = compile_glsl_shader(
+        &src,
+        &pathlit.span(),
+        path.as_os_str().to_str().expect("path was not valid UTF-8"),
+        None,
+        stage,
+    );
+
+    // include_str so that it is considered when tracking dirty files
+    let q = quote! { (include_str!(#pathlit), #bytecode).1 };
+    q.into()
 }

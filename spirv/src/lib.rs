@@ -8,6 +8,7 @@ pub mod inst;
 pub mod layout;
 
 use std::cell::RefCell;
+use std::fmt;
 use std::marker::PhantomData;
 
 //pub use self::inst::*;
@@ -26,8 +27,14 @@ pub enum ParseError {
 
 /// Be careful not to mix IPtrs between modules
 /// IPtrs are invalidated after the module is edited.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct IPtr<'m>(usize, PhantomData<&'m ()>);
+
+impl<'m> fmt::Debug for IPtr<'m> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "IPtr({})", self.0)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Module {

@@ -168,9 +168,9 @@ fn main() {
         let arena_0 = r.create_arena();
         // reload shader crate
         let shader_lib = load_dev_dylib!(common_shaders).unwrap();
-        let shader_mod = load_module!(&shader_lib, common_shaders::blit::hot).unwrap();
+        let shader_mod = load_module!(&shader_lib, common_shaders::hot).unwrap();
         // reload pipelines
-        let pipeline = create_pipelines(&arena_0, shader_mod.VERTEX, shader_mod.FRAGMENT);
+        let pipeline = create_pipelines(&arena_0, shader_mod.BLIT_VERT, shader_mod.BLIT_FRAG);
 
         let image = arena_0
             .create_image(
@@ -292,7 +292,10 @@ fn main() {
                     break 'swapchain;
                 }
 
-                if default_swapchain.size() != (w, h) {
+                let (new_w, new_h) = default_swapchain.size();
+                // don't resize if new size is null in one dimension, as it will
+                // cause create_framebuffer to fail.
+                if (new_w, new_h) != (w, h) && new_w != 0 && new_h != 0 {
                     break 'events;
                 }
             }

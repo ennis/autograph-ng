@@ -1,37 +1,42 @@
-//! Images
 use bitflags::bitflags;
 use std::fmt;
 
-//--------------------------------------------------------------------------------------------------
-// Image dimensions
-
+/// Dimensions of an image.
+///
 /// **Borrowed from vulkano**
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Dimensions {
+    /// 1D image
     Dim1d {
         width: u32,
     },
+    /// Array of 1D images
     Dim1dArray {
         width: u32,
         array_layers: u32,
     },
+    /// 2D image
     Dim2d {
         width: u32,
         height: u32,
     },
+    /// Array of 2D images
     Dim2dArray {
         width: u32,
         height: u32,
         array_layers: u32,
     },
+    /// 3D image
     Dim3d {
         width: u32,
         height: u32,
         depth: u32,
     },
+    /// Cubemap image (6 2D images)
     Cubemap {
         size: u32,
     },
+    /// Array of cubemaps
     CubemapArray {
         size: u32,
         array_layers: u32,
@@ -39,6 +44,7 @@ pub enum Dimensions {
 }
 
 impl Dimensions {
+    /// Returns the width in pixels.
     #[inline]
     pub fn width(&self) -> u32 {
         match *self {
@@ -52,6 +58,9 @@ impl Dimensions {
         }
     }
 
+    /// Returns the height in pixels.
+    ///
+    /// Returns 1 for 1D images.
     #[inline]
     pub fn height(&self) -> u32 {
         match *self {
@@ -65,11 +74,17 @@ impl Dimensions {
         }
     }
 
+    /// Returns the (width,height) pair.
+    ///
+    /// Equivalent to `(self.width(), self.height())`
     #[inline]
     pub fn width_height(&self) -> (u32, u32) {
         (self.width(), self.height())
     }
 
+    /// Returns the depth (third dimension) of the image.
+    ///
+    /// Returns 1 for 1D, 2D or cubemap images.
     #[inline]
     pub fn depth(&self) -> u32 {
         match *self {
@@ -83,6 +98,9 @@ impl Dimensions {
         }
     }
 
+    /// Returns the (width,height,depth) triplet.
+    ///
+    /// Equivalent to `(self.width(), self.height(), self.depth())`
     #[inline]
     pub fn width_height_depth(&self) -> (u32, u32, u32) {
         (self.width(), self.height(), self.depth())

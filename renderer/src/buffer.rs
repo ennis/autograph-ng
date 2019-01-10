@@ -7,6 +7,7 @@ pub struct BufferSlice<'a, R: RendererBackend> {
 }
 
 //--------------------------------------------------------------------------------------------------
+
 /// Marker trait for data that can be uploaded to a GPU buffer
 pub trait BufferData: 'static {
     type Element;

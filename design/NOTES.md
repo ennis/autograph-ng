@@ -1131,3 +1131,53 @@ Alternative: arena-based GPU synchronization
 - implement in renderer?
     - no: impl RenderUtils<'rcx>
 - not a priority
+
+#### The Great Renaming of 2019
+- gfx2 -> autograph
+- renderer -> autograph-render
+- derive -> autograph-render-derive (re-exported by render)
+- backend_gl -> autograph-render-gl
+- extension_runtime -> autograph-ext + autograph-ext-macros (or autograph-plugin)
+- shader_macros -> autograph-shaders + autograph-shaders-macros
+
+#### Geometry and Meshes
+- priority: connection with Maya / Houdini
+    - import only baked animations
+- alembic?
+    - documentation is complete shit, as expected
+    - but most promising
+    - bake sim to alembic, load scene, sync camera
+    - alembic-rs ...
+- custom plugins?
+    - hook at the last moment before rendering, expose geometry
+    - send geometry to connected process
+    
+#### Images
+- priority: image pipelines
+- nuke API?
+    - Custom renderer: library, or out-of-process?
+    - library first
+    - need a GL context
+        - issue: GL version?
+        - drivers on client probably not up-to-date: cannot assume GL 4.6
+            - GL_ARB_gl_spirv
+            - GL_ARB_spirv_extensions
+    - scanlines?
+        - request full image before entering node
+        - copy image to GPU
+        - partial copy? tiled ops?
+        - see request, read tile, upload tile to GPU
+    - worker threads
+        - engine() called on worker threads
+        - first call triggers the GPU operation
+- OpenFX API
+
+#### Texture upload
+- async, with PBOs
+- let the driver do the optimization, for now
+
+#### Create renderer from existing context
+- grab info about the current context
+- swap buffers?
+    - custom callback in swapchain
+    - not needed if rendering into a texture

@@ -96,19 +96,19 @@
 pub use gfx2_extension_macros::hot_reload_module;
 use libloading::{Library, Symbol};
 use log::debug;
+use notify::{DebouncedEvent, RecommendedWatcher, Watcher};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time;
 use std::sync::mpsc::{channel, Receiver};
-use notify::{Watcher, DebouncedEvent, RecommendedWatcher};
+use std::time;
 
 pub struct Dylib {
     tmppath: PathBuf,
-    libname: String,    // for logging only
+    libname: String, // for logging only
     lib: Option<Library>,
     events: Receiver<DebouncedEvent>,
-    _watcher: RecommendedWatcher
+    _watcher: RecommendedWatcher,
 }
 
 impl Dylib {
@@ -131,7 +131,7 @@ impl Dylib {
                 .as_secs();
             let index = libname.rfind('.').unwrap_or(libname.len());
             let (before, after) = libname.split_at(index);
-            format!("{}-{}{}", before, timestamp, after)
+            format!("{}-{:x}{}", before, timestamp, after)
         };
         tmppath.push(unique_name);
         debug!(
@@ -143,8 +143,11 @@ impl Dylib {
         fs::copy(libpath.as_ref(), &tmppath)?;
         // crate watcher
         let (tx, rx) = channel();
-        let mut watcher = notify::watcher(tx, time::Duration::from_secs(1)).expect("failed to create watcher");
-        watcher.watch(libpath.as_ref(), notify::RecursiveMode::NonRecursive).expect("failed to watch library");
+        let mut watcher =
+            notify::watcher(tx, time::Duration::from_secs(1)).expect("failed to create watcher");
+        watcher
+            .watch(libpath.as_ref(), notify::RecursiveMode::NonRecursive)
+            .expect("failed to watch library");
 
         // load library
         let lib = Library::new(&tmppath)?;
@@ -154,7 +157,7 @@ impl Dylib {
             tmppath,
             libname: libname.to_string(),
             events: rx,
-            _watcher: watcher
+            _watcher: watcher,
         })
     }
 
@@ -167,8 +170,8 @@ impl Dylib {
             DebouncedEvent::Write(_) => {
                 debug!("detected write on {}", self.libname);
                 true
-            },
-            _ => false
+            }
+            _ => false,
         })
     }
 }

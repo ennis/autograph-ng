@@ -7,6 +7,12 @@ use crate::{
 use derivative::Derivative;
 use std::ops::Range;
 
+/// Represents a command to be executed by the renderer backend.
+/// Before being sent to the backend, all commands are collected into a single array, and then
+/// sorted accorded to their `sortkey`. This sort is stable,
+/// so if two commands in a command buffer have the same sortkey, the order of insertion is kept.
+/// However, commands with the same sorting key from different command buffers
+/// can end up interleaved.
 pub struct Command<'a, R: RendererBackend> {
     pub sortkey: u64,
     pub cmd: CommandInner<'a, R>,
@@ -30,6 +36,7 @@ pub struct CmdSetVertexBuffers<'a, R: RendererBackend> {
 
 // command header(with sort key), followed by subcommands (state-change commands)
 
+/// Parameters for non-indexed draw commands.
 #[derive(Copy, Clone, Debug)]
 pub struct DrawParams {
     pub vertex_count: u32,
@@ -38,6 +45,7 @@ pub struct DrawParams {
     pub first_instance: u32,
 }
 
+/// Parameters for indexed draw commands.
 #[derive(Copy, Clone, Debug)]
 pub struct DrawIndexedParams {
     pub index_count: u32,
@@ -198,6 +206,7 @@ impl<'a, R: RendererBackend> Clone for CommandInner<'a, R> {
 }
 */
 
+/// Command buffers contain a list of commands.
 pub struct CommandBuffer<'a, R: RendererBackend> {
     commands: Vec<Command<'a, R>>,
 }

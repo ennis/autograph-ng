@@ -53,6 +53,7 @@ pub const TYPE_MAT3: TypeDesc = TypeDesc::Matrix(PrimitiveType::Float, 3, 3);
 pub const TYPE_MAT4: TypeDesc = TypeDesc::Matrix(PrimitiveType::Float, 4, 4);
 
 //--------------------------------------------------------------------------------------------------
+
 /// Trait implemented by types that are layout-compatible with an specific
 /// to GLSL/SPIR-V type.
 /// An implementation is provided for most primitive types and arrays of primitive types.

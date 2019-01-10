@@ -179,6 +179,17 @@ impl OpenGlBackend {
             sampler_cache: Mutex::new(SamplerCache::new()),
         }
     }
+
+    /// Creates a new OpenGlBackend from the current OpenGL context.
+    ///
+    /// Panics if no context is currently bound, or if the current context does not
+    /// satisfy the minimum requirements of the backend implementation.
+    ///
+    pub fn from_current_context() -> OpenGlBackend {
+        // get version, check 4.6, or DSA + SPIR-V
+
+        unimplemented!()
+    }
 }
 
 // TODO move this into a function in the spirv module
@@ -416,5 +427,13 @@ impl RendererBackend for OpenGlBackend {
         *fnum += 1;
         // update default framebuffer size
         *self.def_swapchain.size.lock().unwrap() = self.window.get_inner_size().unwrap().into();
+    }
+
+    fn update_image(&self, image: &Image,
+                    min_extent: (u32, u32, u32),
+                    max_extent: (u32, u32, u32),
+                    data: &[u8])
+    {
+        unimplemented!()
     }
 }
