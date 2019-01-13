@@ -1,0 +1,15 @@
+[package]
+name = "autograph-plugin-macros"
+version = "0.1.0"
+authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+log = "0.4.6"
+quote = "0.6.10"
+syn = "0.15.23"
+darling = "0.8.1"
+proc-macro2 = "0.4.24"
+
+[lib]
+proc-macro = true

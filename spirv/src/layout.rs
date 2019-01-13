@@ -1,4 +1,4 @@
-use gfx2::interface::{PrimitiveType, TypeDesc};
+use autograph_render::interface::{PrimitiveType, TypeDesc};
 use std::cmp::max;
 
 //--------------------------------------------------------------------------------------------------

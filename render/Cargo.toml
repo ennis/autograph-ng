@@ -1,0 +1,43 @@
+[package]
+name = "autograph-render"
+version = "0.1.0"
+authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
+edition = '2018'
+
+[dev-dependencies]
+image = "0.20.1"
+autograph-render-macros = { path = "macros" }
+autograph-render-gl = { path = "../render-gl" }
+autograph-plugin = { path = "../plugin" }
+winit = "0.18.0"
+glutin = "0.19.0"
+pretty_env_logger = "0.3.0"
+libloading = "0.5.0"
+common_shaders = { path = "../common_shaders" }
+
+[dependencies]
+bitflags = "1.0.4"
+config = "0.9.1"
+byteorder = "1.2.7"
+log = "0.4.6"
+time = "0.1.41"
+regex= "1.1.0"
+smallvec = "0.6.7"
+lazy_static = "1.2.0"
+ordered-float = "1.0.1"
+fxhash = "0.2.1"
+derivative = "1.0.2"
+nalgebra-glm = { version = "0.2.0", optional = true }
+autograph-render-macros = { path = "macros" }
+autograph-shader-macros = { path = "../shader/macros" }
+
+[features]
+glm-types = ["nalgebra-glm"]
+
+[[example]]
+name = "blit"
+required-features = ["glm-types"]
+
+[[example]]
+name = "simple"
+required-features = ["glm-types"]

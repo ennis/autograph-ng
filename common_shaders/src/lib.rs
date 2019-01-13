@@ -1,7 +1,7 @@
 #![feature(proc_macro_hygiene)]
-use gfx2::glm;
-use gfx2::*;
-use gfx2_extension_runtime::hot_reload_module;
+use autograph_render::glm;
+use autograph_render::*;
+use autograph_plugin::hot_reload_module;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -32,7 +32,7 @@ pub struct Blit<'a, R: RendererBackend> {
 
 #[hot_reload_module]
 pub mod hot {
-    use gfx2::include_shader;
+    use autograph_render::include_shader;
 
     #[no_mangle]
     pub static BLIT_VERT: &[u8] = include_shader!("blit.vert");

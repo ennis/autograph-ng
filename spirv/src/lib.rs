@@ -1,3 +1,4 @@
+//! SPIR-V parsing and manipulation utilities.
 #[macro_use]
 extern crate log;
 

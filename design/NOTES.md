@@ -1188,3 +1188,37 @@ Alternative: arena-based GPU synchronization
 - handle object creation failures
     - images, buffers, framebuffers, etc.
     - return Result instead of panic!()
+    
+#### Architecture bikeshed no1
+- A: private structs in top-level module, impl in submodules
+- B: private struct in submodules, but public fields
+    - prefer B
+- module simplification:
+    - merge buffer, image, descriptor, framebuffer, upload, resources in same module
+        - arena
+    - image::upload in cmd
+- rational module simplification
+    - identify cross-dependencies
+    - put in same module
+        - shaders and programs
+    - window creation
+        - no deps
+    - backend impl <-> arena
+    - arena <-> all resources
+    - cmd execution is separate (deals with references only, no memory management)
+    - sync is self contained
+- modules:
+    - top: backend impl + objects
+    - mod resources: object creation & caching & aliasing
+        - resources, arena, alias pool
+        - impl backend for creation
+    - mod cmd: command execution
+        - cmd + state cache
+        - need access inside objects
+    - mod window
+    - mod sync_arena
+    - mod sync
+    - mod format: public 
+    - mod shader
+        - shader compilation & graphics pipeline creation
+    - mod api

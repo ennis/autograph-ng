@@ -1,14 +1,14 @@
 [workspace]
 members = [
-    "derive",
-    "renderer",
-    "backend_gl",
+    "plugin",
+    "render",
+    "render/macros",
+    "render-gl",
+    "shader/macros",
     "spirv",
-    "shader_macros",
     "common_shaders",
-    "extension_runtime",
     # for testing
-    "extension_runtime/tests/test_dylib"
+    "plugin/tests/test_dylib"
 ]
 
 [profile.release]

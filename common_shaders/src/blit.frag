@@ -25,7 +25,7 @@ void main() {
     vec2 dithercoords = gl_FragCoord.xy / textureSize(dithertex,0);
     vec4 dither = 1.0 * texture(dithertex, dithercoords);
     //vec3 tmp = vec3(f_uv, 0.0);
-    tmp += 1.0/64.0 * (dither.rgb - 0.5);
+    tmp += 1.0/16.0 * (dither.rgb - 0.5);
     color = vec4(tmp, 1.0);
 }
 
