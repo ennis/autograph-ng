@@ -53,7 +53,7 @@ pub use self::shader::*;
 pub use self::traits::RendererBackend;
 pub use self::util::*;
 // re-export macros
-pub use autograph_render_macros::{BufferLayout, DescriptorSetInterface};
+pub use autograph_render_macros::{BufferLayout, DescriptorSetInterface, VertexData};
 pub use autograph_shader_macros::{
     glsl_compute, glsl_fragment, glsl_geometry, glsl_tess_control, glsl_tess_eval, glsl_vertex,
     include_combined_shader, include_shader,
@@ -78,7 +78,7 @@ pub enum Queue {
 
 /// Describes the type of indices contained in an index buffer.
 #[derive(Copy, Clone, Debug)]
-pub enum IndexType {
+pub enum IndexFormat {
     /// 16-bit unsigned integer indices
     U16,
     /// 32-bit unsigned integer indices

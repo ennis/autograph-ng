@@ -601,15 +601,15 @@ impl StateCache {
         }
     }
 
-    pub fn set_index_buffer(&mut self, gl: &Gl, buffer: GLuint, offset: usize, ty: IndexType) {
+    pub fn set_index_buffer(&mut self, gl: &Gl, buffer: GLuint, offset: usize, ty: IndexFormat) {
         self.index_buffer.update_cached(buffer, || unsafe {
             gl.BindBuffer(gl::ELEMENT_ARRAY_BUFFER, buffer);
         });
 
         self.index_buffer_offset = Some(offset);
         self.index_buffer_type = Some(match ty {
-            IndexType::U16 => gl::UNSIGNED_SHORT,
-            IndexType::U32 => gl::UNSIGNED_INT,
+            IndexFormat::U16 => gl::UNSIGNED_SHORT,
+            IndexFormat::U32 => gl::UNSIGNED_INT,
         });
     }
 

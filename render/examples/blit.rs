@@ -26,7 +26,7 @@ type DescriptorSetLayout<'a> = autograph_render::DescriptorSetLayout<'a, Backend
 type GraphicsPipeline<'a> = autograph_render::GraphicsPipeline<'a, Backend>;
 
 //--------------------------------------------------------------------------------------------------
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, VertexData)]
 #[repr(C)]
 pub struct Vertex {
     pub pos: [f32; 2],
@@ -69,11 +69,11 @@ impl<'a> PipelineInterface<'a, Backend> for Blit<'a> {
     const FRAGMENT_OUTPUT_INTERFACE: &'static [FragmentOutputDescription] = &[];
     const DESCRIPTOR_SET_INTERFACE: &'static [&'static [DescriptorSetLayoutBinding<'static>]] = &[];
 
-    fn do_visit(&self, visitor: &mut PipelineInterfaceVisitor<'a, Backend>) {
-        visitor.visit_dynamic_viewports(&[self.viewport]);
-        visitor.visit_vertex_buffers(&[self.vertex_buffer.into()]);
+    fn do_visit<V: PipelineInterfaceVisitor<'a,Backend>>(&self, visitor: &mut V) {
+        visitor.visit_dynamic_viewports(std::iter::once(self.viewport));
+        visitor.visit_vertex_buffers(std::iter::once(self.vertex_buffer.into()));
         visitor.visit_framebuffer(self.framebuffer);
-        visitor.visit_descriptor_sets(&[self.per_object]);
+        visitor.visit_descriptor_sets(std::iter::once(self.per_object));
     }
 }
 

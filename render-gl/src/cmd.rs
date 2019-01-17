@@ -8,7 +8,7 @@ use crate::{
     state::StateCache,
 };
 use autograph_render;
-use autograph_render::{BufferTypeless, Command, CommandInner, IndexType, Viewport};
+use autograph_render::{BufferTypeless, Command, CommandInner, IndexFormat, Viewport};
 
 // resources
 pub struct ExecuteCtxt<'a, 'rcx> {
@@ -216,7 +216,7 @@ impl<'a, 'rcx> ExecuteCtxt<'a, 'rcx> {
         self.state_cache.set_viewports(self.gl, viewports);
     }
 
-    fn cmd_set_index_buffer(&mut self, index_buffer: &'rcx GlBuffer, offset: usize, ty: IndexType) {
+    fn cmd_set_index_buffer(&mut self, index_buffer: &'rcx GlBuffer, offset: usize, ty: IndexFormat) {
         self.state_cache
             .set_index_buffer(self.gl, index_buffer.obj, offset, ty);
     }

@@ -30,6 +30,9 @@ impl<'a, R: RendererBackend, T: BufferData + ?Sized> Buffer<'a, R, T> {
     pub fn byte_size(&self) -> u64 {
         traits::Buffer::size(self.0)
     }
+    pub fn into_typeless(self) -> BufferTypeless<'a, R> {
+        BufferTypeless(self.0)
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -46,7 +49,7 @@ impl<'a, R: RendererBackend, T: BufferData + ?Sized> From<Buffer<'a, R, T>>
     for BufferTypeless<'a, R>
 {
     fn from(from: Buffer<'a, R, T>) -> Self {
-        BufferTypeless(from.0)
+        from.into_typeless()
     }
 }
 
@@ -68,6 +71,12 @@ pub struct Image<'a, R: RendererBackend>(pub &'a R::Image);
 impl<'a, R: RendererBackend> Image<'a, R> {
     pub fn into_sampled(self, d: SamplerDescription) -> SampledImage<'a, R> {
         SampledImage(self.0, d)
+    }
+}
+
+impl<'a, R: RendererBackend> From<SampledImage<'a,R>> for Image<'a, R> {
+    fn from(img: SampledImage<'a, R>) -> Self {
+        Image(img.0)
     }
 }
 
@@ -301,30 +310,8 @@ impl<'rcx, R: RendererBackend> Arena<'rcx, R> {
         }
 
         impl<'a, R: RendererBackend> DescriptorSetInterfaceVisitor<'a, R> for Visitor<'a, R> {
-            fn visit_buffer(
-                &mut self,
-                _binding: u32,
-                buffer: BufferTypeless<'a, R>,
-                offset: usize,
-                size: usize,
-            ) {
-                self.descriptors.push(Descriptor::Buffer {
-                    buffer,
-                    offset,
-                    size,
-                })
-            }
-
-            fn visit_sampled_image(
-                &mut self,
-                _binding: u32,
-                image: Image<'a, R>,
-                sampler: &SamplerDescription,
-            ) {
-                self.descriptors.push(Descriptor::SampledImage {
-                    sampler: *sampler,
-                    img: image,
-                })
+            fn visit_descriptors(&mut self, descriptors: impl IntoIterator<Item=Descriptor<'a, R>>) {
+                self.descriptors.extend(descriptors)
             }
         }
 

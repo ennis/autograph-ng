@@ -2,7 +2,7 @@ extern crate autograph_render;
 #[macro_use]
 extern crate autograph_render_macros;
 
-use autograph_render::{BufferLayout, BufferTypeless, PrimitiveType, RendererBackend, TypeDesc};
+use autograph_render::{interface::BufferLayout, BufferTypeless, interface::PrimitiveType, RendererBackend, interface::TypeDesc};
 
 #[repr(C)]
 #[derive(BufferLayout, Copy, Clone)]
@@ -22,7 +22,7 @@ struct TestLayout2 {
 #[test]
 fn test_buffer_layout() {
     assert_eq!(
-        <TestLayout1 as autograph_render::BufferLayout>::TYPE,
+        <TestLayout1 as BufferLayout>::TYPE,
         &TypeDesc::Struct(&[
             (0, &TypeDesc::Primitive(PrimitiveType::Int)),
             (4, &TypeDesc::Primitive(PrimitiveType::Int)),
@@ -30,7 +30,7 @@ fn test_buffer_layout() {
     );
 
     assert_eq!(
-        <TestLayout2 as autograph_render::BufferLayout>::TYPE,
+        <TestLayout2 as BufferLayout>::TYPE,
         &TypeDesc::Struct(&[
             (0, &TypeDesc::Vector(PrimitiveType::Int, 3)),
             (12, &TypeDesc::Primitive(PrimitiveType::Float)),
@@ -50,7 +50,7 @@ fn test_derive_in_function() {
     }
 
     assert_eq!(
-        <TestLayout3 as autograph_render::BufferLayout>::TYPE,
+        <TestLayout3 as BufferLayout>::TYPE,
         &TypeDesc::Struct(&[
             (0, &TypeDesc::Vector(PrimitiveType::Int, 3)),
             (12, &TypeDesc::Primitive(PrimitiveType::Float)),

@@ -113,11 +113,11 @@ impl GlDescriptorSet {
                 .iter()
                 .enumerate()
                 .map(|(i, d)| match d {
-                    Descriptor::SampledImage { img, sampler } => {
+                    Descriptor::SampledImage(img) => {
                         match layout.bindings[i].descriptor_type {
                             DescriptorType::SampledImage => RawDescriptor::Texture {
                                 image: img.0.obj,
-                                sampler: sampler_cache.get_sampler(gl, sampler),
+                                sampler: sampler_cache.get_sampler(gl, &img.1),
                             },
                             _ => panic!("unexpected descriptor type"),
                         }

@@ -1,6 +1,7 @@
 //! Descriptors
 use crate::arena::BufferTypeless;
 use crate::arena::Image;
+use crate::arena::SampledImage;
 use crate::image::SamplerDescription;
 use crate::interface::TypeDesc;
 use crate::shader::ShaderStageFlags;
@@ -39,10 +40,7 @@ pub enum DescriptorType {
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""), Copy(bound = ""))]
 pub enum Descriptor<'a, R: RendererBackend> {
-    SampledImage {
-        img: Image<'a, R>,
-        sampler: SamplerDescription,
-    },
+    SampledImage(SampledImage<'a,R>),
     Image {
         img: Image<'a, R>,
     },
@@ -51,6 +49,7 @@ pub enum Descriptor<'a, R: RendererBackend> {
         offset: usize,
         size: usize,
     },
+    // TODO push constants
     Empty,
 }
 

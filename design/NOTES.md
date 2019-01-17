@@ -1222,3 +1222,66 @@ Alternative: arena-based GPU synchronization
     - mod shader
         - shader compilation & graphics pipeline creation
     - mod api
+    
+#### Playground app
+- playground
+- playground-host
+- init, update, render?
+- use cases
+    - have a render loop
+    - add a line to load an image from a file, break render loop and reload
+        - but save state
+    - struct with state?
+    - several structs
+        - long-lived stuff
+        - short-lived stuff
+        - serialize state somehow
+    - several entry points
+        - `init() -> Outer`
+        - `swapchain_init(&Outer) -> Swapchain`
+        - `frame(&Outer, &Swapchain) -> Frame`
+        - change frame
+        - change swapchain, invalidate frame
+        - change outer, invalidate all
+    - one entry point, load state from hashmaps
+    
+```
+
+fn main() {
+    'outer: loop {
+        plugin.init(...);
+        
+        'swapchain: loop {
+            plugin.swapchain_init(...);
+            
+            'frame: loop {
+                plugin.frame(...);
+            }
+        }
+    }
+}
+
+struct App<'a> {
+    
+}
+
+impl Playgrounds<'outer, 'frame> for App<'a> {
+    
+    pub fn init(&self, arena: &'outer Arena) {
+        let x = aaa;
+    }
+    
+    pub fn swapchain_resize(&self) {
+        
+    }
+    
+    pub fn render(arena: &'inner Arena) {
+    }
+}
+```
+
+#### TypeDescs in interface
+- e.g. `Buffer<T>, Image`
+- some types can have an associated TypeDesc, which can be matched against a TypeDesc expected by a shader
+- this is distinct from formats (even if they overlap sometimes)
+- BufferTypeless has no type info about the contents, Buffer<T> has one

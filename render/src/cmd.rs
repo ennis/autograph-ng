@@ -1,11 +1,13 @@
 use crate::sync::*;
 use crate::{
     interface::{PipelineInterface, PipelineInterfaceVisitor},
-    BufferTypeless, DescriptorSet, Framebuffer, GraphicsPipeline, Image, IndexType,
+    BufferTypeless, DescriptorSet, Framebuffer, GraphicsPipeline, Image, IndexFormat,
     RendererBackend, ScissorRect, Swapchain, Viewport,
 };
 use derivative::Derivative;
 use std::ops::Range;
+use crate::interface::VertexBufferDescriptor;
+use crate::interface::IndexBufferDescriptor;
 
 /// Represents a command to be executed by the renderer backend.
 /// Before being sent to the backend, all commands are collected into a single array, and then
@@ -90,7 +92,7 @@ pub enum CommandInner<'a, R: RendererBackend> {
     SetIndexBuffer {
         index_buffer: BufferTypeless<'a, R>,
         offset: usize,
-        ty: IndexType,
+        ty: IndexFormat,
     },
     SetScissors {
         //first: u32,
@@ -298,11 +300,11 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
     //----------------------------------------------------------------------------------------------
     // Draw
 
-    fn set_descriptor_sets(&mut self, sortkey: u64, descriptor_sets: &[DescriptorSet<'a, R>]) {
+    fn set_descriptor_sets<I: IntoIterator<Item=DescriptorSet<'a,R>>>(&mut self, sortkey: u64, descriptor_sets: I) {
         self.push_command(
             sortkey,
             CommandInner::SetDescriptorSets {
-                descriptor_sets: descriptor_sets.to_vec(),
+                descriptor_sets: descriptor_sets.into_iter().collect(),
             },
         )
     }
@@ -311,11 +313,11 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
         self.push_command(sortkey, CommandInner::SetFramebuffer { framebuffer })
     }
 
-    fn set_vertex_buffers(&mut self, sortkey: u64, vertex_buffers: &[BufferTypeless<'a, R>]) {
+    fn set_vertex_buffers<'tcx, I: IntoIterator<Item=VertexBufferDescriptor<'a,'tcx,R>>>(&mut self, sortkey: u64, vertex_buffers: I) {
         self.push_command(
             sortkey,
             CommandInner::SetVertexBuffers {
-                vertex_buffers: vertex_buffers.to_vec(),
+                vertex_buffers: vertex_buffers.into_iter().map(|d| d.buffer).collect(),
             },
         )
     }
@@ -325,7 +327,7 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
         sortkey: u64,
         index_buffer: BufferTypeless<'a, R>,
         offset: usize,
-        ty: IndexType,
+        ty: IndexFormat,
     ) {
         self.push_command(
             sortkey,
@@ -337,20 +339,20 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
         )
     }
 
-    fn set_viewports(&mut self, sortkey: u64, viewports: &[Viewport]) {
+    fn set_viewports<I: IntoIterator<Item=Viewport>>(&mut self, sortkey: u64, viewports: I) {
         self.push_command(
             sortkey,
             CommandInner::SetViewports {
-                viewports: viewports.to_vec(),
+                viewports: viewports.into_iter().collect(),
             },
         )
     }
 
-    fn set_scissors(&mut self, sortkey: u64, scissors: &[ScissorRect]) {
+    fn set_scissors<I: IntoIterator<Item=ScissorRect>>(&mut self, sortkey: u64, scissors: I) {
         self.push_command(
             sortkey,
             CommandInner::SetScissors {
-                scissors: scissors.to_vec(),
+                scissors: scissors.into_iter().collect(),
             },
         )
     }
@@ -369,34 +371,31 @@ impl<'a, R: RendererBackend> CommandBuffer<'a, R> {
         }
 
         impl<'a, 'b, R: RendererBackend> PipelineInterfaceVisitor<'a, R> for Visitor<'a, 'b, R> {
-            fn visit_descriptor_sets(&mut self, descriptor_sets: &[DescriptorSet<'a, R>]) {
+            fn visit_descriptor_sets<I: IntoIterator<Item=DescriptorSet<'a,R>>>(&mut self, descriptor_sets: I) {
                 self.cmdbuf
                     .set_descriptor_sets(self.sortkey, descriptor_sets);
             }
 
-            fn visit_vertex_buffers(&mut self, vertex_buffers: &[BufferTypeless<'a, R>]) {
+            fn visit_vertex_buffers<'tcx, I: IntoIterator<Item=VertexBufferDescriptor<'a,'tcx,R>>>(&mut self, vertex_buffers: I)
+            {
                 self.cmdbuf.set_vertex_buffers(self.sortkey, vertex_buffers);
             }
 
-            fn visit_index_buffer(
-                &mut self,
-                index_buffer: BufferTypeless<'a, R>,
-                offset: usize,
-                ty: IndexType,
-            ) {
+            fn visit_index_buffer(&mut self, buffer: IndexBufferDescriptor<'a, R>)
+            {
                 self.cmdbuf
-                    .set_index_buffer(self.sortkey, index_buffer, offset, ty);
+                    .set_index_buffer(self.sortkey, buffer.buffer, buffer.offset as usize, buffer.format);
             }
 
             fn visit_framebuffer(&mut self, framebuffer: Framebuffer<'a, R>) {
                 self.cmdbuf.set_framebuffer(self.sortkey, framebuffer);
             }
 
-            fn visit_dynamic_viewports(&mut self, viewports: &[Viewport]) {
+            fn visit_dynamic_viewports<I: IntoIterator<Item=Viewport>>(&mut self, viewports: I) {
                 self.cmdbuf.set_viewports(self.sortkey, viewports);
             }
 
-            fn visit_dynamic_scissors(&mut self, scissors: &[ScissorRect]) {
+            fn visit_dynamic_scissors<I: IntoIterator<Item=ScissorRect>>(&mut self, scissors: I) {
                 self.cmdbuf.set_scissors(self.sortkey, scissors);
             }
         }

@@ -53,11 +53,13 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     let mut bindings = Vec::new();
     let mut binding_indices = Vec::new();
     let mut index = 0;
+    // see pipeline_interface::generate for an explanation of how item lists are built.
+    let mut desc_iter = Vec::new();
 
     for f in fields.iter() {
+        let name = f.ident.as_ref().unwrap();
         let field_ty = &f.ty;
         //let field_ty_without_lifetimes = field_ty.uses_type_params()
-        //let field_name = f.ident.clone().unwrap();
         let descriptor = <Descriptor as FromField>::from_field(f).unwrap();
 
         //if let Ok(descriptor) = descriptor {
@@ -97,6 +99,11 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
             "expected one of `storage_image`, `sampled_image`, `uniform_buffer`, `storage_buffer`",
         );
 
+        desc_iter.push(quote!{
+            // Into<Descriptor>
+            std::iter::once(self.#name.into())
+        });
+
         bindings.push(quote! {
             #gfx::DescriptorSetLayoutBinding {
                 binding: #index,
@@ -109,32 +116,20 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
 
         binding_indices.push(index);
         index += 1;
-        /*} else {
-            // TODO more info
-            panic!("invalid descriptor set entry");
-        }*/
     }
-
-    let field_names = fields.iter().map(|f| f.ident.as_ref().unwrap());
-
-    let do_visit_calls = field_names
-        .zip(binding_indices.iter())
-        .map(|(field_name, binding_index)| {
-            quote! {
-                #gfx::interface::DescriptorInterface::do_visit(&self.#field_name, #binding_index, visitor);
-            }
-        })
-        .collect::<Vec<_>>();
 
     //----------------------------------------------------------------------------------------------
     let q = if let Some(ref args) = s.arguments {
         let args: AngleBracketedGenericArguments =
             parse_str(args).expect("failed to parse angle bracketed generic arguments");
         quote! {
-            impl #impl_generics #gfx::interface::DescriptorSetInterface #args for #struct_name #ty_generics #where_clause {
+            impl #impl_generics #gfx::interface::DescriptorSetInterface #args
+            for #struct_name #ty_generics #where_clause {
                 const INTERFACE: &'static [#gfx::DescriptorSetLayoutBinding<'static>] = &[#(#bindings,)*];
                 fn do_visit(&self, visitor: &mut impl #gfx::interface::DescriptorSetInterfaceVisitor#args) {
-                    #(#do_visit_calls)*
+                    visitor.visit_descriptors(
+                        std::iter::empty()#(.chain(#desc_iter))*
+                    );
                 }
             }
         }
@@ -143,7 +138,9 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
             impl #impl_generics #gfx::interface::DescriptorSetInterface #ty_generics for #struct_name #ty_generics #where_clause {
                 const INTERFACE: &'static [#gfx::DescriptorSetLayoutBinding<'static>] = &[#(#bindings,)*];
                 fn do_visit(&self, visitor: &mut impl #gfx::interface::DescriptorSetInterfaceVisitor#ty_generics) {
-                    #(#do_visit_calls)*
+                    visitor.visit_descriptors(
+                       std::iter::empty()#(.chain(#desc_iter))*
+                    );
                 }
             }
         }

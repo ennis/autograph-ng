@@ -25,11 +25,21 @@
 	* Gain:
 		* hot-reloadable render code
 			* can distribute as binary, no need for recompilation
+			* less compiled code duplication in hot-reload DLLs
 		* switch backends at runtime
 		* less syntactical noise in application code (although type aliases reduce it already)
+		    * derivation of interfaces
 	* Loss:
 		* fat pointers (64 -> 128)
 		* perf (need downcasts)
+		* downcasts:
+		    * create descriptor set
+		    * command buffers
+		    * commands
+		    * could perform downcasts in the wrapper, but:
+		        * problematic downcasts: large arrays
+		        * downcast whole arrays before passing to backend
+		
 * keep it for now
 
 
