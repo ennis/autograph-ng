@@ -17,6 +17,7 @@ use crate::RendererBackend;
 use derivative::Derivative;
 use std::marker::PhantomData;
 use std::mem;
+use crate::interface::PipelineInterface;
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Derivative)]
@@ -94,6 +95,7 @@ pub struct ShaderModule<'a, R: RendererBackend>(pub &'a R::ShaderModule);
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""), Copy(bound = ""), Debug(bound = ""))]
 pub struct GraphicsPipeline<'a, R: RendererBackend>(pub &'a R::GraphicsPipeline);
+
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Derivative)]

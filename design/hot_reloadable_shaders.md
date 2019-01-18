@@ -39,6 +39,33 @@
 		    * could perform downcasts in the wrapper, but:
 		        * problematic downcasts: large arrays
 		        * downcast whole arrays before passing to backend
+		* Could a DX12 backend directly impl the Traits on COM interfaces?
+		    * with the rust wrapper, COM interfaces are just structs containing a pointer to the vtable
+		    * &dyn Image would be:
+		        * `data -> vtbl -> [COM function pointers]`
+		        * `vtbl -> impl Image`
+		    * if possible:
+		        * `data -> [COM function pointers]`
+		        * `vtbl -> impl Image for VTbl`
+		        * just implement the trait on the VTbl or Vtbl wrapper
+    * Other option: switch back to raw, usize handles with lifetime tag
+        * unsafe cast to pointer type when needed
+        * backend never called directly
+        * need renderer ref to call methods on objects
+        * can squish OpenGL indices into the handles
+    * main issue with non-pointer handles: make sure that the handle is of the correct type and belongs to the device
+		* multi-device: sharing arenas between devices?
+		* ultimate solution: allow only one renderer instance at runtime
+		    * multi-device handled in backend
+		    * can unchecked_downcast as needed
+    * Q: is there a reasonable scenario that would require instantiating more than one renderer at the same time?
+        * multi-window? no -> in backend
+        * multi-device? no -> in backend
+        * remote rendering?
+            * send render commands to another machine
+            * maybe...
+            * but somewhat useless? would need to duplicate resources
+            * don't support multi-GPU across different API...
 		
 * keep it for now
 

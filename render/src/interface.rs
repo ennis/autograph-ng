@@ -3,7 +3,7 @@ use crate::*;
 //--------------------------------------------------------------------------------------------------
 
 /// Primitive SPIR-V data types.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum PrimitiveType {
     /// 32-bit signed integer
     Int,
@@ -21,7 +21,7 @@ pub enum PrimitiveType {
 }
 
 /// Texture basic data type (NOT storage format)
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ImageDataType {
     Float, // and also depth
     Integer,
@@ -38,7 +38,7 @@ pub enum ImageDataType {
 /// For instance, a vertex buffer containing an attribute with format `R16G16B16_UNORM` is unpacked
 /// and fed to the vertex shader as a 3-component vector of floats, which is represented by
 /// `TypeDesc::Vector(PrimitiveType::Float,3)`.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum TypeDesc<'tcx> {
     /// Primitive type.
     Primitive(PrimitiveType),
@@ -177,6 +177,7 @@ pub trait DescriptorSetInterfaceVisitor<'a, R: RendererBackend> {
 }
 
 /// Layout of a descriptor set.
+#[derive(Copy,Clone,Debug,Eq,PartialEq,Hash)]
 pub struct DescriptorSetLayoutDescription<'tcx>
 {
     pub bindings: &'tcx [DescriptorSetLayoutBinding<'tcx>]
@@ -232,7 +233,7 @@ impl<'a, R: RendererBackend> DescriptorInterface<'a, R> for SampledImage<'a, R> 
 //--------------------------------------------------------------------------------------------------
 
 /// Description of a vertex attribute within a vertex layout.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TypedVertexInputAttributeDescription<'tcx> {
     pub ty: &'tcx TypeDesc<'tcx>,
     pub format: Format,
@@ -240,7 +241,7 @@ pub struct TypedVertexInputAttributeDescription<'tcx> {
 }
 
 /// Describes the layout of vertex data inside a single vertex buffer.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VertexLayout<'tcx> {
     /// Description of individual vertex attributes inside the buffer.
     pub elements: &'tcx [TypedVertexInputAttributeDescription<'tcx>],

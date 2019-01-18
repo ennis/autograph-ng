@@ -9,7 +9,7 @@ use crate::traits::RendererBackend;
 use derivative::Derivative;
 
 /// Represents an entry (binding) in a descriptor set layout.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct DescriptorSetLayoutBinding<'tcx> {
     /// Binding index
     pub binding: u32,
@@ -26,7 +26,7 @@ pub struct DescriptorSetLayoutBinding<'tcx> {
 }
 
 /// Descriptor type
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum DescriptorType {
     Sampler, // TODO
     SampledImage,

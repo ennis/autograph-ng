@@ -1290,4 +1290,5 @@ impl Playgrounds<'outer, 'frame> for App<'a> {
 - Pipeline <PipelineInterface, VertexTypes
 - Remove descriptor set layouts?
     - descriptor set layouts derived in backend when creating pipeline
+        - or maybe not in backend? cache in renderer, where typeids are known?
     - cached via hashing / typeid
