@@ -1285,3 +1285,9 @@ impl Playgrounds<'outer, 'frame> for App<'a> {
 - some types can have an associated TypeDesc, which can be matched against a TypeDesc expected by a shader
 - this is distinct from formats (even if they overlap sometimes)
 - BufferTypeless has no type info about the contents, Buffer<T> has one
+
+#### Strongly-typed pipelines
+- Pipeline <PipelineInterface, VertexTypes
+- Remove descriptor set layouts?
+    - descriptor set layouts derived in backend when creating pipeline
+    - cached via hashing / typeid

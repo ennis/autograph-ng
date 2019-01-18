@@ -1,8 +1,7 @@
 use super::autograph_name;
 use darling::{FromDeriveInput, FromField};
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::{TokenStream};
 use quote::quote;
-use syn::{parse_str, AngleBracketedGenericArguments, Ident};
 use syn::spanned::Spanned;
 
 // Q: which attributes to expose?
@@ -29,13 +28,13 @@ struct Framebuffer {}
 #[darling(attributes(descriptor_set))]
 struct DescriptorSet {
     // TODO: honor index attribute
-    index: u32,
+    _index: u32,
 }
 
 #[derive(FromField)]
 #[darling(attributes(descriptor_set_array))]
 struct DescriptorSetArray {
-    base_index: u32,
+    _base_index: u32,
 }
 
 #[derive(FromField)]
@@ -58,14 +57,14 @@ struct ScissorArray {}
 #[darling(attributes(vertex_buffer))]
 struct VertexBuffer {
     // TODO: honor index attribute
-    index: u32
+    _index: u32
 }
 
 #[derive(FromField)]
 #[darling(attributes(vertex_buffer_array))]
 struct VertexBufferArray {
     // TODO: honor base index attribute
-    base_index: u32
+    _base_index: u32
 }
 
 #[derive(FromField)]
@@ -77,7 +76,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
 
     let gfx = autograph_name();
     let struct_name = &s.ident;
-    let (impl_generics, ty_generics, where_clause) = s.generics.split_for_impl();
+    let (_impl_generics, _ty_generics, _where_clause) = s.generics.split_for_impl();
 
     //----------------------------------------------------------------------------------------------
     let fields = match fields {
@@ -103,7 +102,9 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     // Chaining individual items is not a very efficient approach: we rely on the optimizer
     // to clean this for us. This *will* generate abysmal code in debug mode, though.
     let mut vbuf_iter = Vec::new();
+    let mut vtx_iface = Vec::new();
     let mut desc_set_iter = Vec::new();
+    let mut desc_set_iface = Vec::new();
     let mut viewport_iter = Vec::new();
     let mut scissor_iter = Vec::new();
     let mut seen_ibuf = false;
@@ -121,10 +122,16 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
             desc_set_iter.push(quote!{
                 std::iter::once(#name)
             });
+            desc_set_iface.push(quote! {
+                <#ty as DescriptorSetInterface>::LAYOUT
+            });
         }
         else if let Ok(_) = <VertexBuffer as FromField>::from_field(f) {
             vbuf_iter.push(quote!{
                 std::iter::once(#name)
+            });
+            vtx_iface.push(quote! {
+                <<#ty as VertexBufferInterface>::Vertex as VertexData>::LAYOUT
             });
         }
         else if let Ok(_) = <IndexBuffer as FromField>::from_field(f) {
@@ -180,9 +187,13 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
 
     let q = quote!{
         impl<'a, R: RendererBackend> #gfx::interface::PipelineInterface<'a, R> for #struct_name {
-            const VERTEX_INPUT_INTERFACE: &'static [VertexInputBufferDescription<'static>] = &[];
+            const VERTEX_INPUT_INTERFACE: &'static [VertexInputBufferDescription<'static>] = &[
+                #(#vtx_iface,)*
+            ];
             const FRAGMENT_OUTPUT_INTERFACE: &'static [FragmentOutputDescription] = &[];
-            const DESCRIPTOR_SET_INTERFACE: &'static [&'static [DescriptorSetLayoutBinding<'static>]] = &[];
+            const DESCRIPTOR_SET_INTERFACE: &'static [&'static [DescriptorSetLayoutBinding<'static>]] = &[
+                #(#desc_set_iface,)*
+            ];
 
             fn do_visit<V: PipelineInterfaceVisitor<'a,R>>(&self, visitor: &mut V) {
                 #(#stmts)*
@@ -203,5 +214,5 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
         }
     };
 
-    unimplemented!()
+    q
 }

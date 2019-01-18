@@ -2,7 +2,7 @@
 use crate::arena::BufferTypeless;
 use crate::arena::Image;
 use crate::arena::SampledImage;
-use crate::image::SamplerDescription;
+//use crate::image::SamplerDescription;
 use crate::interface::TypeDesc;
 use crate::shader::ShaderStageFlags;
 use crate::traits::RendererBackend;

@@ -125,7 +125,9 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
         quote! {
             impl #impl_generics #gfx::interface::DescriptorSetInterface #args
             for #struct_name #ty_generics #where_clause {
-                const INTERFACE: &'static [#gfx::DescriptorSetLayoutBinding<'static>] = &[#(#bindings,)*];
+                const LAYOUT: #gfx::interface::DescriptorSetLayoutDescription<'static> = #gfx::interface::DescriptorSetLayoutDescription {
+                    bindings: &[#(#bindings,)*]
+                };
                 fn do_visit(&self, visitor: &mut impl #gfx::interface::DescriptorSetInterfaceVisitor#args) {
                     visitor.visit_descriptors(
                         std::iter::empty()#(.chain(#desc_iter))*
@@ -136,7 +138,9 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     } else {
         quote! {
             impl #impl_generics #gfx::interface::DescriptorSetInterface #ty_generics for #struct_name #ty_generics #where_clause {
-                const INTERFACE: &'static [#gfx::DescriptorSetLayoutBinding<'static>] = &[#(#bindings,)*];
+                const LAYOUT: #gfx::interface::DescriptorSetLayoutDescription<'static> = #gfx::interface::DescriptorSetLayoutDescription {
+                    bindings: &[#(#bindings,)*]
+                };
                 fn do_visit(&self, visitor: &mut impl #gfx::interface::DescriptorSetInterfaceVisitor#ty_generics) {
                     visitor.visit_descriptors(
                        std::iter::empty()#(.chain(#desc_iter))*

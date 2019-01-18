@@ -1,7 +1,7 @@
 #![feature(proc_macro_hygiene)]
 #![feature(unboxed_closures)]
 #![feature(fn_traits)]
-use gfx2_extension_runtime::hot_reload_module;
+use autograph_plugin::hot_reload_module;
 
 #[hot_reload_module]
 pub mod hot {

@@ -2,17 +2,17 @@ extern crate autograph_render;
 #[macro_use]
 extern crate autograph_render_macros;
 
-use autograph_render::{interface::BufferLayout, BufferTypeless, interface::PrimitiveType, RendererBackend, interface::TypeDesc};
+use autograph_render::{interface::StructuredBufferData, BufferTypeless, interface::PrimitiveType, RendererBackend, interface::TypeDesc};
 
 #[repr(C)]
-#[derive(BufferLayout, Copy, Clone)]
+#[derive(StructuredBufferData, Copy, Clone)]
 struct TestLayout1 {
     a: i32,
     b: i32,
 }
 
 #[repr(C)]
-#[derive(BufferLayout, Copy, Clone)]
+#[derive(StructuredBufferData, Copy, Clone)]
 struct TestLayout2 {
     a: [i32; 3],
     b: f32,
@@ -22,7 +22,7 @@ struct TestLayout2 {
 #[test]
 fn test_buffer_layout() {
     assert_eq!(
-        <TestLayout1 as BufferLayout>::TYPE,
+        <TestLayout1 as StructuredBufferData>::TYPE,
         &TypeDesc::Struct(&[
             (0, &TypeDesc::Primitive(PrimitiveType::Int)),
             (4, &TypeDesc::Primitive(PrimitiveType::Int)),
@@ -30,7 +30,7 @@ fn test_buffer_layout() {
     );
 
     assert_eq!(
-        <TestLayout2 as BufferLayout>::TYPE,
+        <TestLayout2 as StructuredBufferData>::TYPE,
         &TypeDesc::Struct(&[
             (0, &TypeDesc::Vector(PrimitiveType::Int, 3)),
             (12, &TypeDesc::Primitive(PrimitiveType::Float)),
@@ -42,7 +42,7 @@ fn test_buffer_layout() {
 #[test]
 fn test_derive_in_function() {
     #[repr(C)]
-    #[derive(BufferLayout, Copy, Clone)]
+    #[derive(StructuredBufferData, Copy, Clone)]
     struct TestLayout3 {
         a: [i32; 3],
         b: f32,
@@ -50,7 +50,7 @@ fn test_derive_in_function() {
     }
 
     assert_eq!(
-        <TestLayout3 as BufferLayout>::TYPE,
+        <TestLayout3 as StructuredBufferData>::TYPE,
         &TypeDesc::Struct(&[
             (0, &TypeDesc::Vector(PrimitiveType::Int, 3)),
             (12, &TypeDesc::Primitive(PrimitiveType::Float)),

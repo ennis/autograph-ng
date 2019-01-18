@@ -16,7 +16,7 @@ impl Vertex2DTex {
     }
 }
 
-#[derive(BufferLayout, Copy, Clone)]
+#[derive(StructuredBufferData, Copy, Clone)]
 #[repr(C)]
 pub struct Uniforms {
     pub transform: glm::Mat4x3,

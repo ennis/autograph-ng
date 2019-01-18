@@ -11,7 +11,7 @@ use autograph_render::interface::DescriptorSetInterfaceVisitor;
 use autograph_render::interface::FragmentOutputDescription;
 use autograph_render::interface::PipelineInterface;
 use autograph_render::interface::PipelineInterfaceVisitor;
-use autograph_render::interface::VertexInputBufferDescription;
+use autograph_render::interface::VertexLayout;
 use autograph_render::*;
 use autograph_render_gl as gl_backend;
 use std::env;
@@ -338,7 +338,7 @@ struct SimplePipelineInterface<'a> {
 
 impl<'a> PipelineInterface<'a, Backend> for SimplePipelineInterface<'a> {
     // TODO
-    const VERTEX_INPUT_INTERFACE: &'static [VertexInputBufferDescription<'static>] = &[];
+    const VERTEX_INPUT_INTERFACE: &'static [VertexLayout<'static>] = &[];
     const FRAGMENT_OUTPUT_INTERFACE: &'static [FragmentOutputDescription] = &[];
     const DESCRIPTOR_SET_INTERFACE: &'static [&'static [DescriptorSetLayoutBinding<'static>]] = &[];
 

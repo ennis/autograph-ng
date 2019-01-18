@@ -1,7 +1,7 @@
 use crate::autograph_name;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{Ident, Meta, NestedMeta};
+use syn::Ident;
 
 /// Checks that the derive input has a repr(C) attribute.
 fn has_repr_c_attr(ast: &syn::DeriveInput) -> bool {
@@ -81,16 +81,16 @@ fn generate_struct_layout(fields: &syn::Fields) -> StructLayout
 }
 
 
-pub fn generate_buffer_layout(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
+pub fn generate_structured_buffer_data(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     let gfx = autograph_name();
 
     if !has_repr_c_attr(ast) {
-        panic!("derive(BufferLayout) can only be used on repr(C) structs");
+        panic!("derive(StructuredBufferData) can only be used on repr(C) structs");
     }
 
     let struct_name = &ast.ident;
     let privmod = syn::Ident::new(
-        &format!("__buffer_layout_{}", struct_name),
+        &format!("__StructuredBufferData_{}", struct_name),
         Span::call_site(),
     );
 
@@ -110,7 +110,7 @@ pub fn generate_buffer_layout(ast: &syn::DeriveInput, fields: &syn::Fields) -> T
         let offset = &offset.ident;
 
         field_descs.push(
-            quote!{ (#privmod::#offset, <#field_ty as #gfx::interface::BufferLayout>::TYPE) }
+            quote!{ (#privmod::#offset, <#field_ty as #gfx::interface::StructuredBufferData>::TYPE) }
         );
     }
 
@@ -125,7 +125,7 @@ pub fn generate_buffer_layout(ast: &syn::DeriveInput, fields: &syn::Fields) -> T
             #(#sizes)*
         }
 
-        unsafe impl #gfx::interface::BufferLayout for #struct_name {
+        unsafe impl #gfx::interface::StructuredBufferData for #struct_name {
             const TYPE: &'static #gfx::interface::TypeDesc<'static> = &#gfx::interface::TypeDesc::Struct(&[#(#field_descs),*]);
         }
     }
@@ -164,7 +164,7 @@ pub fn generate_vertex_data(ast: &syn::DeriveInput, fields: &syn::Fields) -> Tok
             quote!{
                 #gfx::interface::TypedVertexInputAttributeDescription {
                     ty: &<#field_ty as #gfx::interface::VertexAttributeType>::EQUIVALENT_TYPE,
-                    location: #i as u32,
+                    //location: #i as u32,
                     format: <#field_ty as #gfx::interface::VertexAttributeType>::FORMAT,
                     offset: #privmod::#offset as u32,
                 }
@@ -184,8 +184,8 @@ pub fn generate_vertex_data(ast: &syn::DeriveInput, fields: &syn::Fields) -> Tok
         }
 
         unsafe impl #gfx::interface::VertexData for #struct_name {
-            const DESCRIPTION: &'static #gfx::interface::VertexInputBufferDescription<'static> =
-                &#gfx::interface::VertexInputBufferDescription {
+            const LAYOUT: &'static #gfx::interface::VertexLayout<'static> =
+                &#gfx::interface::VertexLayout {
                     elements: &[#(#attribs,)*],
                     stride: ::std::mem::size_of::<#struct_name>()
                 };

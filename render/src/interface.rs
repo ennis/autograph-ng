@@ -1,13 +1,22 @@
 use crate::*;
 
 //--------------------------------------------------------------------------------------------------
+
+/// Primitive SPIR-V data types.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum PrimitiveType {
+    /// 32-bit signed integer
     Int,
+    /// 32-bit unsigned integer
     UnsignedInt,
-    Half, //?
+    /// 16-bit half float (unused)
+    Half,
+    /// 32-bit floating-point value
     Float,
+    /// 64-bit floating-point value
     Double,
+    /// Boolean
+    /// TODO size and alignment?
     Bool,
 }
 
@@ -19,23 +28,34 @@ pub enum ImageDataType {
     UnsignedInteger,
 }
 
-/// GLSL/SPIR-V types used to interface with shader programs.
-/// i.e. the types used to describe a buffer interface.
+/// Describes a data type used inside a SPIR-V shader
+/// (e.g. the type of a uniform, or the type of vertex attributes as seen by the shader).
+///
+/// TypeDescs are slightly different from Formats:
+/// the latter describes the precise bit layout, packing, numeric format, and interpretation
+/// of individual data elements, while the former describes unpacked data as seen inside shaders.
+///
+/// For instance, a vertex buffer containing an attribute with format `R16G16B16_UNORM` is unpacked
+/// and fed to the vertex shader as a 3-component vector of floats, which is represented by
+/// `TypeDesc::Vector(PrimitiveType::Float,3)`.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum TypeDesc<'tcx> {
+    /// Primitive type.
     Primitive(PrimitiveType),
-    /// Array type, may have special alignment constraints
+    /// Array type.
     Array(&'tcx TypeDesc<'tcx>, usize),
-    /// Vector type (ty,size), not all sizes are valid.
+    /// Vector type (ty,size).
     Vector(PrimitiveType, u8),
-    /// Matrix type (ty,rows,cols), not all combinations of rows and cols are valid.
+    /// Matrix type (ty,rows,cols).
     Matrix(PrimitiveType, u8, u8),
-    /// A structure type: (offset, typedesc)
+    /// Structure type (array of (offset, type) tuples).
     Struct(&'tcx [(usize, &'tcx TypeDesc<'tcx>)]),
-    /// An image type.
+    /// Image type.
     Image(ImageDataType, Option<Format>),
+    /// Combination of an image and sampling information.
     SampledImage(ImageDataType, Option<Format>),
     Void,
+    /// Pointer to data.
     Pointer(&'tcx TypeDesc<'tcx>),
     Unknown,
 }
@@ -58,63 +78,63 @@ pub const TYPE_MAT4: TypeDesc = TypeDesc::Matrix(PrimitiveType::Float, 4, 4);
 /// to GLSL/SPIR-V type.
 ///
 /// An implementation is provided for most primitive types and arrays of primitive types.
-/// Structs can derive it automatically with `#[derive(BufferLayout)]`
-pub unsafe trait BufferLayout {
+/// Structs can derive it automatically with `#[derive(StructuredBufferData)]`
+pub unsafe trait StructuredBufferData: BufferData {
     const TYPE: &'static TypeDesc<'static>;
 }
 
-macro_rules! impl_buffer_layout_type {
+macro_rules! impl_structured_type {
     ($t:ty, $tydesc:expr) => {
-        unsafe impl BufferLayout for $t {
+        unsafe impl StructuredBufferData for $t {
             const TYPE: &'static TypeDesc<'static> = $tydesc;
         }
     };
 }
 
-impl_buffer_layout_type!(f32, &TypeDesc::Primitive(PrimitiveType::Float));
-impl_buffer_layout_type!([f32; 2], &TypeDesc::Vector(PrimitiveType::Float, 2));
-impl_buffer_layout_type!([f32; 3], &TypeDesc::Vector(PrimitiveType::Float, 3));
-impl_buffer_layout_type!([f32; 4], &TypeDesc::Vector(PrimitiveType::Float, 4));
-impl_buffer_layout_type!(i32, &TypeDesc::Primitive(PrimitiveType::Int));
-impl_buffer_layout_type!([i32; 2], &TypeDesc::Vector(PrimitiveType::Int, 2));
-impl_buffer_layout_type!([i32; 3], &TypeDesc::Vector(PrimitiveType::Int, 3));
-impl_buffer_layout_type!([i32; 4], &TypeDesc::Vector(PrimitiveType::Int, 4));
-impl_buffer_layout_type!([[f32; 2]; 2], &TypeDesc::Matrix(PrimitiveType::Float, 2, 2));
-impl_buffer_layout_type!([[f32; 3]; 3], &TypeDesc::Matrix(PrimitiveType::Float, 3, 3));
-impl_buffer_layout_type!([[f32; 4]; 4], &TypeDesc::Matrix(PrimitiveType::Float, 4, 4));
+impl_structured_type!(f32, &TypeDesc::Primitive(PrimitiveType::Float));
+impl_structured_type!([f32; 2], &TypeDesc::Vector(PrimitiveType::Float, 2));
+impl_structured_type!([f32; 3], &TypeDesc::Vector(PrimitiveType::Float, 3));
+impl_structured_type!([f32; 4], &TypeDesc::Vector(PrimitiveType::Float, 4));
+impl_structured_type!(i32, &TypeDesc::Primitive(PrimitiveType::Int));
+impl_structured_type!([i32; 2], &TypeDesc::Vector(PrimitiveType::Int, 2));
+impl_structured_type!([i32; 3], &TypeDesc::Vector(PrimitiveType::Int, 3));
+impl_structured_type!([i32; 4], &TypeDesc::Vector(PrimitiveType::Int, 4));
+impl_structured_type!([[f32; 2]; 2], &TypeDesc::Matrix(PrimitiveType::Float, 2, 2));
+impl_structured_type!([[f32; 3]; 3], &TypeDesc::Matrix(PrimitiveType::Float, 3, 3));
+impl_structured_type!([[f32; 4]; 4], &TypeDesc::Matrix(PrimitiveType::Float, 4, 4));
 
 #[cfg(feature = "glm-types")]
-impl_buffer_layout_type!(
+impl_structured_type!(
     nalgebra_glm::Vec2,
     &TypeDesc::Vector(PrimitiveType::Float, 2)
 );
 #[cfg(feature = "glm-types")]
-impl_buffer_layout_type!(
+impl_structured_type!(
     nalgebra_glm::Vec3,
     &TypeDesc::Vector(PrimitiveType::Float, 3)
 );
 #[cfg(feature = "glm-types")]
-impl_buffer_layout_type!(
+impl_structured_type!(
     nalgebra_glm::Vec4,
     &TypeDesc::Vector(PrimitiveType::Float, 4)
 );
 #[cfg(feature = "glm-types")]
-impl_buffer_layout_type!(
+impl_structured_type!(
     nalgebra_glm::Mat2,
     &TypeDesc::Matrix(PrimitiveType::Float, 2, 2)
 );
 #[cfg(feature = "glm-types")]
-impl_buffer_layout_type!(
+impl_structured_type!(
     nalgebra_glm::Mat3,
     &TypeDesc::Matrix(PrimitiveType::Float, 3, 3)
 );
 #[cfg(feature = "glm-types")]
-impl_buffer_layout_type!(
+impl_structured_type!(
     nalgebra_glm::Mat4,
     &TypeDesc::Matrix(PrimitiveType::Float, 4, 4)
 );
 #[cfg(feature = "glm-types")]
-impl_buffer_layout_type!(
+impl_structured_type!(
     nalgebra_glm::Mat4x3,
     &TypeDesc::Matrix(PrimitiveType::Float, 4, 3)
 );
@@ -156,6 +176,12 @@ pub trait DescriptorSetInterfaceVisitor<'a, R: RendererBackend> {
     fn visit_descriptors(&mut self, descriptors: impl IntoIterator<Item=Descriptor<'a,R>>);
 }
 
+/// Layout of a descriptor set.
+pub struct DescriptorSetLayoutDescription<'tcx>
+{
+    pub bindings: &'tcx [DescriptorSetLayoutBinding<'tcx>]
+}
+
 /// Trait implemented by types that can be converted to descriptor sets.
 ///
 /// This trait can be automatically derived for structs via a custom derive, each field
@@ -172,7 +198,7 @@ pub trait DescriptorSetInterfaceVisitor<'a, R: RendererBackend> {
 ///
 pub trait DescriptorSetInterface<'a, R: RendererBackend> {
     /// List of binding descriptions. This can be used to build a [DescriptorSetLayout].
-    const INTERFACE: &'static [DescriptorSetLayoutBinding<'static>];
+    const LAYOUT: DescriptorSetLayoutDescription<'static>;
     /// Passes all bindings in the set to the given visitor.
     fn do_visit(&self, visitor: &mut impl DescriptorSetInterfaceVisitor<'a, R>);
 }
@@ -191,11 +217,11 @@ impl<'a, R: RendererBackend> DescriptorInterface<'a, R> for BufferTypeless<'a, R
 }
 
 // TODO: no impl for T: !BufferLayout, must use specialization
-impl<'a, R: RendererBackend, T: BufferData + ?Sized + BufferLayout> DescriptorInterface<'a, R>
+impl<'a, R: RendererBackend, T: BufferData + ?Sized + StructuredBufferData> DescriptorInterface<'a, R>
     for Buffer<'a, R, T>
 {
     // T: BufferLayout so we have type info about the contents
-    const TYPE: Option<&'static TypeDesc<'static>> = Some(<T as BufferLayout>::TYPE);
+    const TYPE: Option<&'static TypeDesc<'static>> = Some(<T as StructuredBufferData>::TYPE);
 }
 
 impl<'a, R: RendererBackend> DescriptorInterface<'a, R> for SampledImage<'a, R> {
@@ -205,10 +231,9 @@ impl<'a, R: RendererBackend> DescriptorInterface<'a, R> for SampledImage<'a, R> 
 
 //--------------------------------------------------------------------------------------------------
 
-/// Description of a vertex attribute.
+/// Description of a vertex attribute within a vertex layout.
 #[derive(Copy, Clone, Debug)]
 pub struct TypedVertexInputAttributeDescription<'tcx> {
-    pub location: u32,
     pub ty: &'tcx TypeDesc<'tcx>,
     pub format: Format,
     pub offset: u32,
@@ -216,7 +241,7 @@ pub struct TypedVertexInputAttributeDescription<'tcx> {
 
 /// Describes the layout of vertex data inside a single vertex buffer.
 #[derive(Copy, Clone, Debug)]
-pub struct VertexInputBufferDescription<'tcx> {
+pub struct VertexLayout<'tcx> {
     /// Description of individual vertex attributes inside the buffer.
     pub elements: &'tcx [TypedVertexInputAttributeDescription<'tcx>],
     /// Number of bytes to go to the next element.
@@ -230,7 +255,7 @@ pub struct VertexBufferDescriptor<'a, 'tcx, R: RendererBackend>
     /// Buffer containing vertex data.
     pub buffer: BufferTypeless<'a, R>,
     /// Layout of vertex data.
-    pub desc: &'tcx VertexInputBufferDescription<'tcx>,
+    pub layout: &'tcx VertexLayout<'tcx>,
     /// Offset to the start of vertex data in the buffer.
     pub offset: u64,
 }
@@ -255,7 +280,7 @@ pub struct VertexBufferDescriptor<'a, 'tcx, R: RendererBackend>
 /// }
 /// ```
 pub unsafe trait VertexData: BufferData {
-    const DESCRIPTION: &'static VertexInputBufferDescription<'static>;
+    const LAYOUT: &'static VertexLayout<'static>;
 }
 
 /// Descriptor for an index buffer.
@@ -275,13 +300,22 @@ pub unsafe trait IndexData: BufferData {
     const FORMAT: IndexFormat;
 }
 
+pub trait VertexBufferInterface<'a, 'tcx, R: RendererBackend>: Into<VertexBufferDescriptor<'a, 'tcx, R>> {
+    type Vertex: VertexData;
+}
+
+pub trait IndexBufferInterface<'a, R: RendererBackend>: Into<IndexBufferDescriptor<'a, R>> {
+    type Index: IndexData;
+}
+
+
 // typed buffer -> vertex buffer descriptor
 impl<'a, 'tcx, T, R: RendererBackend> From<Buffer<'a, R, [T]>> for VertexBufferDescriptor<'a, 'tcx, R> where T: VertexData {
     fn from(buf: Buffer<'a, R, [T]>) -> Self {
         VertexBufferDescriptor {
             offset: 0,
             buffer: buf.into(),
-            desc: <T as VertexData>::DESCRIPTION,
+            layout: <T as VertexData>::LAYOUT,
         }
     }
 }
@@ -297,6 +331,15 @@ impl<'a, T, R: RendererBackend> From<Buffer<'a, R, [T]>> for IndexBufferDescript
     }
 }
 
+impl<'a, 'tcx, T, R> VertexBufferInterface<'a, 'tcx, R> for Buffer<'a, R, [T]> where T: VertexData, R: RendererBackend
+{
+    type Vertex = T;
+}
+
+impl<'a, T, R> IndexBufferInterface<'a, R> for Buffer<'a, R, [T]> where T: IndexData, R: RendererBackend
+{
+    type Index = T;
+}
 
 /// Trait implemented by types that can serve as a vertex attribute.
 pub unsafe trait VertexAttributeType {
@@ -432,7 +475,7 @@ pub trait PipelineInterfaceVisitor<'a, R: RendererBackend> {
 /// ```
 ///
 pub trait PipelineInterface<'a, R: RendererBackend> {
-    const VERTEX_INPUT_INTERFACE: &'static [VertexInputBufferDescription<'static>];
+    const VERTEX_INPUT_INTERFACE: &'static [&'static VertexLayout<'static>];
     const FRAGMENT_OUTPUT_INTERFACE: &'static [FragmentOutputDescription];
     const DESCRIPTOR_SET_INTERFACE: &'static [&'static [DescriptorSetLayoutBinding<'static>]];
 

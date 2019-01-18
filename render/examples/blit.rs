@@ -10,7 +10,7 @@ use autograph_render::interface::DescriptorSetInterface;
 use autograph_render::interface::FragmentOutputDescription;
 use autograph_render::interface::PipelineInterface;
 use autograph_render::interface::PipelineInterfaceVisitor;
-use autograph_render::interface::VertexInputBufferDescription;
+use autograph_render::interface::VertexLayout;
 use autograph_render::*;
 use autograph_render_gl as gl_backend;
 use autograph_plugin::{load_dev_dylib, load_module};
@@ -39,7 +39,7 @@ impl Vertex {
     }
 }
 
-#[derive(BufferLayout, Copy, Clone)]
+#[derive(StructuredBufferData, Copy, Clone)]
 #[repr(C)]
 pub struct Uniforms {
     pub transform: glm::Mat4x3,
@@ -65,7 +65,7 @@ pub struct Blit<'a> {
 }
 
 impl<'a> PipelineInterface<'a, Backend> for Blit<'a> {
-    const VERTEX_INPUT_INTERFACE: &'static [VertexInputBufferDescription<'static>] = &[];
+    const VERTEX_INPUT_INTERFACE: &'static [&'static VertexLayout<'static>] = &[];
     const FRAGMENT_OUTPUT_INTERFACE: &'static [FragmentOutputDescription] = &[];
     const DESCRIPTOR_SET_INTERFACE: &'static [&'static [DescriptorSetLayoutBinding<'static>]] = &[];
 
@@ -85,7 +85,7 @@ struct PipelineAndLayout<'a> {
 }
 
 fn create_pipelines<'a>(arena: &'a Arena<Backend>, vs: &[u8], fs: &[u8]) -> PipelineAndLayout<'a> {
-    let descriptor_set_layout = arena.create_descriptor_set_layout(PerObject::INTERFACE);
+    let descriptor_set_layout = arena.create_descriptor_set_layout(PerObject::LAYOUT.bindings);
 
     let gci = GraphicsPipelineCreateInfo {
         shader_stages: &GraphicsShaderStages {
