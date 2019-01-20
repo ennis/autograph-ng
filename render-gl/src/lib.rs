@@ -1,8 +1,9 @@
 #[macro_use]
 extern crate log;
 
-mod backend;
+mod aliaspool;
 mod api;
+mod backend;
 mod buffer;
 mod command;
 mod descriptor;
@@ -10,21 +11,20 @@ mod format;
 mod framebuffer;
 mod image;
 mod pipeline;
-mod aliaspool;
 mod sampler;
+mod swapchain;
 mod sync;
 mod util;
 mod window;
-mod swapchain;
 
-pub use self::window::create_backend_and_window;
 pub use self::swapchain::SwapchainInner;
+pub use self::window::create_backend_and_window;
 
 use crate::api as gl;
-use std::mem;
-use autograph_render::AliasScope;
 use autograph_render::traits::Downcast;
+use autograph_render::AliasScope;
 use std::any::Any;
+use std::mem;
 
 #[derive(Copy, Clone, Debug)]
 struct AliasInfo<K: slotmap::Key> {
@@ -64,7 +64,9 @@ trait DowncastPanic: Downcast {
     }
 
     fn downcast_mut_unwrap<T: Any>(&mut self) -> &mut T {
-        self.as_any_mut().downcast_mut().expect("invalid backend type")
+        self.as_any_mut()
+            .downcast_mut()
+            .expect("invalid backend type")
     }
 
     fn downcast_unwrap<T: Any>(self: Box<Self>) -> Box<T> {

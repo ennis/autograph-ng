@@ -8,10 +8,10 @@ mod edit;
 pub mod inst;
 pub mod layout;
 
+use spirv_headers::ImageFormat;
 use std::cell::RefCell;
 use std::fmt;
 use std::marker::PhantomData;
-use spirv_headers::ImageFormat;
 
 //pub use self::inst::*;
 //pub use self::edit::*;

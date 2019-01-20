@@ -23,7 +23,7 @@
 
 // necessary for const NotNaN
 #![feature(const_transmute)]
-
+#![feature(const_type_id)]
 extern crate log;
 
 // Reexport nalgebra_glm types if requested
@@ -98,14 +98,21 @@ use std::marker::PhantomData;
 
 use crate::descriptor::DescriptorSetInterface;
 use crate::framebuffer::Framebuffer;
+use crate::pipeline::build_vertex_input_interface;
+use crate::pipeline::AttachmentLayout;
+use crate::pipeline::DynamicStateFlags;
 use crate::pipeline::GraphicsPipeline;
 use crate::pipeline::GraphicsPipelineCreateInfo;
+use crate::pipeline::GraphicsPipelineCreateInfoTypeless;
+use crate::pipeline::GraphicsPipelineTypeless;
+use crate::pipeline::PipelineInterface;
+use crate::pipeline::PipelineLayout;
 use crate::pipeline::ShaderModule;
 use crate::pipeline::ShaderStageFlags;
+use crate::pipeline::VertexInputState;
+use std::any::TypeId;
 use std::mem;
 use std::slice;
-use fxhash::FxHashMap;
-use std::any::TypeId;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -173,10 +180,7 @@ pub trait RendererBackend: Sync {
     fn drop_arena(&self, arena: Box<dyn traits::Arena>);
 
     /// See [Renderer::create_swapchain](crate::Renderer::create_swapchain).
-    fn create_swapchain<'a>(
-        &self,
-        arena: &'a dyn traits::Arena,
-    ) -> &'a dyn traits::Swapchain;
+    fn create_swapchain<'a>(&self, arena: &'a dyn traits::Arena) -> &'a dyn traits::Swapchain;
 
     /// See [Renderer::default_swapchain](crate::Renderer::default_swapchain).
     fn default_swapchain<'a>(&'a self) -> Option<&'a dyn traits::Swapchain>;
@@ -237,11 +241,7 @@ pub trait RendererBackend: Sync {
     ) -> &'a dyn traits::Buffer;
 
     /// TODO
-    fn create_buffer<'a>(
-        &self,
-        arena: &'a dyn traits::Arena,
-        size: u64,
-    ) -> &'a dyn traits::Buffer;
+    fn create_buffer<'a>(&self, arena: &'a dyn traits::Arena, size: u64) -> &'a dyn traits::Buffer;
 
     /// See [Arena::create_shader_module](crate::arena::Arena::create_shader_module).
     fn create_shader_module<'a>(
@@ -255,7 +255,7 @@ pub trait RendererBackend: Sync {
     fn create_graphics_pipeline<'a>(
         &self,
         arena: &'a dyn traits::Arena,
-        create_info: &GraphicsPipelineCreateInfo<'_, 'a>,
+        create_info: &GraphicsPipelineCreateInfoTypeless<'_, 'a>,
     ) -> &'a dyn traits::GraphicsPipeline;
 
     /// Creates a descriptor set layout, describing the resources and binding points expected
@@ -265,7 +265,7 @@ pub trait RendererBackend: Sync {
     /// given typeid, if it is not None.
     ///
     /// TODO explain additional bound (actually it should be present everywhere)
-    fn create_descriptor_set_layout<'a, 'r:'a>(
+    fn create_descriptor_set_layout<'a, 'r: 'a>(
         &'r self,
         arena: &'a dyn traits::Arena,
         typeid: Option<TypeId>,
@@ -339,16 +339,14 @@ impl<'rcx> Arena<'rcx> {
         let raw_color_attachments = unsafe {
             slice::from_raw_parts(
                 color_attachments.as_ptr() as *const &'a dyn traits::Image,
-                color_attachments.len()
+                color_attachments.len(),
             )
         };
-        Framebuffer(
-            self.backend.create_framebuffer(
-                self.inner_arena(),
-                raw_color_attachments,
-                depth_stencil_attachment.map(|a| a.0),
-            )
-        )
+        Framebuffer(self.backend.create_framebuffer(
+            self.inner_arena(),
+            raw_color_attachments,
+            depth_stencil_attachment.map(|a| a.0),
+        ))
     }
 
     /// Creates a shader module from SPIR-V bytecode.
@@ -356,19 +354,71 @@ impl<'rcx> Arena<'rcx> {
     pub fn create_shader_module(&self, data: &[u8], stage: ShaderStageFlags) -> ShaderModule {
         ShaderModule(
             self.backend
-                .create_shader_module(self.inner_arena(), data, stage)
+                .create_shader_module(self.inner_arena(), data, stage),
         )
     }
 
     /// Creates a graphics pipeline given the pipeline description passed in create_info.
     #[inline]
-    pub fn create_graphics_pipeline<'a>(
+    pub fn create_graphics_pipeline_typeless<'a>(
+        &'a self,
+        create_info: &GraphicsPipelineCreateInfoTypeless<'_, 'a>,
+    ) -> GraphicsPipelineTypeless<'a> {
+        GraphicsPipelineTypeless(
+            self.backend
+                .create_graphics_pipeline(self.inner_arena(), create_info),
+        )
+    }
+
+    /// Creates a graphics pipeline given the pipeline description passed in create_info
+    /// and information derived from the pipeline interface type.
+    #[inline]
+    pub fn create_graphics_pipeline<'a, T: PipelineInterface<'a>>(
         &'a self,
         create_info: &GraphicsPipelineCreateInfo<'_, 'a>,
-    ) -> GraphicsPipeline<'a> {
+    ) -> GraphicsPipeline<'a, T> {
+        let (vtx_input_bindings, vtx_input_attribs) =
+            build_vertex_input_interface(<T as PipelineInterface<'a>>::VERTEX_INPUT_INTERFACE);
+
+        let vertex_input_state = VertexInputState {
+            bindings: &vtx_input_bindings,
+            attributes: &vtx_input_attribs,
+        };
+
+        let ds_interface: &[DescriptorSetLayoutDescription] =
+            <T as PipelineInterface<'a>>::DESCRIPTOR_SET_INTERFACE;
+        let descriptor_set_layouts = ds_interface
+            .iter()
+            .map(|ds| self.create_descriptor_set_layout(ds.typeid, ds.bindings))
+            .collect::<Vec<_>>();
+
+        let pipeline_layout = PipelineLayout {
+            descriptor_set_layouts: &descriptor_set_layouts,
+        };
+
+        let create_info_full = GraphicsPipelineCreateInfoTypeless {
+            shader_stages: create_info.shader_stages,
+            vertex_input_state: &vertex_input_state,
+            viewport_state: create_info.viewport_state,
+            rasterization_state: create_info.rasterization_state,
+            multisample_state: create_info.multisample_state,
+            depth_stencil_state: create_info.depth_stencil_state,
+            input_assembly_state: create_info.input_assembly_state,
+            color_blend_state: create_info.color_blend_state,
+            dynamic_state: DynamicStateFlags::empty(),
+            pipeline_layout: &pipeline_layout,
+            attachment_layout: &AttachmentLayout {
+                // TODO (this is currently ignored by the GL backend anyway)
+                input_attachments: &[],
+                depth_attachment: None,
+                color_attachments: &[],
+            },
+        };
+
         GraphicsPipeline(
             self.backend
-                .create_graphics_pipeline(self.inner_arena(), create_info)
+                .create_graphics_pipeline(self.inner_arena(), &create_info_full),
+            PhantomData,
         )
     }
 
@@ -389,17 +439,15 @@ impl<'rcx> Arena<'rcx> {
         usage: ImageUsageFlags,
         initial_data: &[u8],
     ) -> Image {
-        Image(
-            self.backend.create_immutable_image(
-                self.inner_arena(),
-                format,
-                dimensions,
-                mipcount,
-                samples,
-                usage,
-                initial_data,
-            )
-        )
+        Image(self.backend.create_immutable_image(
+            self.inner_arena(),
+            format,
+            dimensions,
+            mipcount,
+            samples,
+            usage,
+            initial_data,
+        ))
     }
 
     /// Creates an image containing uninitialized data.
@@ -421,17 +469,15 @@ impl<'rcx> Arena<'rcx> {
         samples: u32,
         usage: ImageUsageFlags,
     ) -> Image {
-        Image(
-            self.backend.create_image(
-                self.inner_arena(),
-                scope,
-                format,
-                dimensions,
-                mipcount,
-                samples,
-                usage,
-            )
-        )
+        Image(self.backend.create_image(
+            self.inner_arena(),
+            scope,
+            format,
+            dimensions,
+            mipcount,
+            samples,
+            usage,
+        ))
     }
 
     /// Creates a GPU (device local) buffer.
@@ -445,7 +491,7 @@ impl<'rcx> Arena<'rcx> {
     pub fn create_immutable_buffer_typeless(&self, size: u64, data: &[u8]) -> BufferTypeless {
         BufferTypeless(
             self.backend
-                .create_immutable_buffer(self.inner_arena(), size, data)
+                .create_immutable_buffer(self.inner_arena(), size, data),
         )
     }
 
@@ -456,10 +502,8 @@ impl<'rcx> Arena<'rcx> {
         let bytes = unsafe { ::std::slice::from_raw_parts(data as *const T as *const u8, size) };
 
         Buffer(
-
-                self.backend
-                    .create_immutable_buffer(self.inner_arena(), size as u64, bytes)
-            ,
+            self.backend
+                .create_immutable_buffer(self.inner_arena(), size as u64, bytes),
             PhantomData,
         )
     }
@@ -471,9 +515,8 @@ impl<'rcx> Arena<'rcx> {
         let bytes = unsafe { ::std::slice::from_raw_parts(data.as_ptr() as *const u8, size) };
 
         Buffer(
-                self.backend
-                    .create_immutable_buffer(self.inner_arena(), size as u64, bytes)
-            ,
+            self.backend
+                .create_immutable_buffer(self.inner_arena(), size as u64, bytes),
             PhantomData,
         )
     }
@@ -486,10 +529,11 @@ impl<'rcx> Arena<'rcx> {
         typeid: Option<TypeId>,
         bindings: &[DescriptorSetLayoutBinding],
     ) -> DescriptorSetLayout<'a> {
-        DescriptorSetLayout(
-            self.backend
-                .create_descriptor_set_layout(self.inner_arena(), typeid, bindings)
-        )
+        DescriptorSetLayout(self.backend.create_descriptor_set_layout(
+            self.inner_arena(),
+            typeid,
+            bindings,
+        ))
     }
 
     /// Creates a descriptor set layout, describing the resources and binding points expected
@@ -498,21 +542,25 @@ impl<'rcx> Arena<'rcx> {
     pub fn get_descriptor_set_layout<'a, T: DescriptorSetInterface<'a>>(
         &'a self,
     ) -> DescriptorSetLayout<'a> {
-        self.create_descriptor_set_layout(Some(TypeId::of::<<T as DescriptorSetInterface>::UniqueType>()), <T as DescriptorSetInterface>::LAYOUT.bindings)
+        self.create_descriptor_set_layout(
+            Some(TypeId::of::<<T as DescriptorSetInterface>::UniqueType>()),
+            <T as DescriptorSetInterface>::LAYOUT.bindings,
+        )
     }
-
 
     pub fn create_descriptor_set<'a, T: DescriptorSetInterface<'a>>(
         &'a self,
         descriptors: impl IntoIterator<Item = Descriptor<'a>>,
-    ) -> DescriptorSet<'a, T>
-    {
-        let descriptors : Vec<_> = descriptors.into_iter().collect();
+    ) -> DescriptorSet<'a, T> {
+        let descriptors: Vec<_> = descriptors.into_iter().collect();
 
         DescriptorSet(
-            self.backend
-                .create_descriptor_set(self.inner_arena(), self.get_descriptor_set_layout::<T>().0, descriptors.as_slice()),
-            PhantomData
+            self.backend.create_descriptor_set(
+                self.inner_arena(),
+                self.get_descriptor_set_layout::<T>().0,
+                descriptors.as_slice(),
+            ),
+            PhantomData,
         )
     }
 

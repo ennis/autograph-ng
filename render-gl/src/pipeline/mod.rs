@@ -1,30 +1,30 @@
-use ordered_float::NotNan;
-use autograph_render::pipeline::ColorBlendAttachmentState;
-use autograph_render::pipeline::LogicOp;
-use autograph_render::pipeline::RasterisationState;
-use autograph_render::pipeline::DepthStencilState;
-use autograph_render::image::SamplerDescription;
-use autograph_render::pipeline::InputAssemblyState;
-use autograph_render::pipeline::VertexInputBindingDescription;
-use autograph_render::pipeline::MultisampleState;
-use autograph_render::pipeline::GraphicsPipelineCreateInfo;
-use autograph_render::pipeline::ColorBlendAttachments;
-use autograph_render::traits;
 use crate::api::types::*;
 use crate::api::Gl;
 use crate::backend::GlArena;
 use crate::command::StateCache;
+use autograph_render::image::SamplerDescription;
+use autograph_render::pipeline::ColorBlendAttachmentState;
+use autograph_render::pipeline::ColorBlendAttachments;
+use autograph_render::pipeline::DepthStencilState;
+use autograph_render::pipeline::GraphicsPipelineCreateInfoTypeless;
+use autograph_render::pipeline::InputAssemblyState;
+use autograph_render::pipeline::LogicOp;
+use autograph_render::pipeline::MultisampleState;
+use autograph_render::pipeline::RasterisationState;
+use autograph_render::pipeline::VertexInputBindingDescription;
+use autograph_render::traits;
+use ordered_float::NotNan;
 
-mod shader;
 mod program;
+mod shader;
 mod vao;
 
-use self::vao::create_vertex_array_object;
 use self::program::create_graphics_program;
+use self::vao::create_vertex_array_object;
 
-pub(crate) use self::shader::GlShaderModule;
 pub(crate) use self::shader::BindingSpace;
 pub(crate) use self::shader::DescriptorMap;
+pub(crate) use self::shader::GlShaderModule;
 use crate::DowncastPanic;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -76,14 +76,30 @@ impl traits::GraphicsPipeline for GlGraphicsPipeline {}
 pub(crate) fn create_graphics_pipeline_internal<'a>(
     gl: &Gl,
     arena: &'a GlArena,
-    ci: &GraphicsPipelineCreateInfo,
+    ci: &GraphicsPipelineCreateInfoTypeless,
 ) -> &'a GlGraphicsPipeline {
     let (program, descriptor_map) = {
-        let vs = ci.shader_stages.vertex.0.downcast_ref_unwrap::<GlShaderModule>();
-        let fs = ci.shader_stages.fragment.map(|s| s.0.downcast_ref_unwrap::<GlShaderModule>());
-        let gs = ci.shader_stages.geometry.map(|s| s.0.downcast_ref_unwrap::<GlShaderModule>());
-        let tcs = ci.shader_stages.tess_control.map(|s| s.0.downcast_ref_unwrap::<GlShaderModule>());
-        let tes = ci.shader_stages.tess_eval.map(|s| s.0.downcast_ref_unwrap::<GlShaderModule>());
+        let vs = ci
+            .shader_stages
+            .vertex
+            .0
+            .downcast_ref_unwrap::<GlShaderModule>();
+        let fs = ci
+            .shader_stages
+            .fragment
+            .map(|s| s.0.downcast_ref_unwrap::<GlShaderModule>());
+        let gs = ci
+            .shader_stages
+            .geometry
+            .map(|s| s.0.downcast_ref_unwrap::<GlShaderModule>());
+        let tcs = ci
+            .shader_stages
+            .tess_control
+            .map(|s| s.0.downcast_ref_unwrap::<GlShaderModule>());
+        let tes = ci
+            .shader_stages
+            .tess_eval
+            .map(|s| s.0.downcast_ref_unwrap::<GlShaderModule>());
         create_graphics_program(gl, vs, fs, gs, tcs, tes).expect("failed to create program")
     };
 
@@ -127,7 +143,9 @@ impl GlGraphicsPipeline {
         state_cache.set_depth_write_enable(gl, self.depth_stencil_state.depth_write_enable);
         state_cache.set_depth_compare_op(gl, self.depth_stencil_state.depth_compare_op);
         match self.color_blend_state.attachments {
-            PipelineColorBlendAttachmentsOwned::All(ref state) => state_cache.set_all_blend(gl, state),
+            PipelineColorBlendAttachmentsOwned::All(ref state) => {
+                state_cache.set_all_blend(gl, state)
+            }
             PipelineColorBlendAttachmentsOwned::Separate(ref states) => {
                 for (i, s) in states.iter().enumerate() {
                     state_cache.set_blend_separate(gl, i as u32, s);

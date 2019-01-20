@@ -1,15 +1,14 @@
 #![feature(proc_macro_hygiene)]
 use autograph_plugin::hot_reload_module;
-use autograph_render::glm;
-use autograph_render::framebuffer::Framebuffer;
 use autograph_render::buffer::Buffer;
-use autograph_render::pipeline::Viewport;
-use autograph_render::descriptor::DescriptorSetTypeless;
-use autograph_render::vertex::VertexData;
 use autograph_render::buffer::StructuredBufferData;
+use autograph_render::descriptor::DescriptorSetTypeless;
+use autograph_render::framebuffer::Framebuffer;
+use autograph_render::glm;
+use autograph_render::pipeline::Viewport;
+use autograph_render::vertex::VertexData;
 
-#[derive(VertexData)]
-#[derive(Copy, Clone)]
+#[derive(VertexData, Copy, Clone)]
 #[repr(C)]
 pub struct Vertex2DTex {
     pub pos: [f32; 2],

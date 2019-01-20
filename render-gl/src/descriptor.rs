@@ -1,17 +1,17 @@
 use crate::api::types::*;
 use crate::api::Gl;
+use crate::buffer::GlBuffer;
+use crate::image::GlImage;
 use crate::pipeline::BindingSpace;
+use crate::pipeline::DescriptorMap;
+use crate::sampler::SamplerCache;
+use crate::DowncastPanic;
 use autograph_render;
-use autograph_render::traits;
 use autograph_render::descriptor::Descriptor;
 use autograph_render::descriptor::DescriptorSetLayoutBinding;
 use autograph_render::descriptor::DescriptorType;
 use autograph_render::pipeline::ShaderStageFlags;
-use crate::sampler::SamplerCache;
-use crate::pipeline::DescriptorMap;
-use crate::image::GlImage;
-use crate::buffer::GlBuffer;
-use crate::DowncastPanic;
+use autograph_render::traits;
 
 const MAX_INLINE_SHADER_RESOURCE_BINDINGS: usize = 10;
 
@@ -118,9 +118,7 @@ impl GlDescriptorSet {
                 .iter()
                 .enumerate()
                 .map(|(i, d)| match d {
-                    &Descriptor::SampledImage {
-                        img, ref sampler
-                    } => {
+                    &Descriptor::SampledImage { img, ref sampler } => {
                         let img: &GlImage = img.downcast_ref_unwrap();
                         match layout.bindings[i].descriptor_type {
                             DescriptorType::SampledImage => RawDescriptor::Texture {
@@ -133,10 +131,12 @@ impl GlDescriptorSet {
                     &Descriptor::Image { img } => {
                         let img: &GlImage = img.downcast_ref_unwrap();
                         match layout.bindings[i].descriptor_type {
-                            DescriptorType::StorageImage => RawDescriptor::Image { image: img.raw.obj },
+                            DescriptorType::StorageImage => {
+                                RawDescriptor::Image { image: img.raw.obj }
+                            }
                             _ => panic!("unexpected descriptor type"),
                         }
-                    },
+                    }
                     &Descriptor::Buffer {
                         buffer,
                         offset,

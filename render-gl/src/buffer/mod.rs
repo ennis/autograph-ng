@@ -2,8 +2,8 @@ use crate::api::types::*;
 use crate::api::Gl;
 use crate::AliasInfo;
 use autograph_render::traits;
-use std::ptr;
 use slotmap::new_key_type;
+use std::ptr;
 
 mod upload;
 
@@ -33,7 +33,12 @@ pub struct BufferDescription {
 }
 
 //--------------------------------------------------------------------------------------------------
-pub fn create_buffer(gl: &Gl, byte_size: usize, flags: GLenum, initial_data: Option<&[u8]>) -> GLuint {
+pub fn create_buffer(
+    gl: &Gl,
+    byte_size: usize,
+    flags: GLenum,
+    initial_data: Option<&[u8]>,
+) -> GLuint {
     let mut obj: GLuint = 0;
     unsafe {
         gl.CreateBuffers(1, &mut obj);
@@ -69,4 +74,3 @@ impl traits::Buffer for GlBuffer {
         self.raw.size as u64
     }
 }
-

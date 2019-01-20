@@ -1,14 +1,33 @@
+use crate::descriptor::DescriptorSetLayout;
+use crate::descriptor::DescriptorSetLayoutDescription;
+use crate::descriptor::DescriptorSetTypeless;
 use crate::format::Format;
-use crate::traits::RendererBackend;
-use crate::DescriptorSetLayout;
-use crate::ShaderModule;
+use crate::framebuffer::FragmentOutputDescription;
+use crate::framebuffer::Framebuffer;
+use crate::traits;
+use crate::vertex::IndexBufferDescriptor;
+use crate::vertex::VertexBufferDescriptor;
+use crate::vertex::VertexLayout;
+use crate::Arena;
+pub use autograph_render_macros::PipelineInterface;
 use bitflags::bitflags;
 use derivative::Derivative;
 use ordered_float::NotNan;
+use std::marker::PhantomData;
 use std::mem;
-pub use autograph_render_macros::PipelineInterface;
-use crate::descriptor::DescriptorSetLayoutDescription;
-use crate::Arena;
+
+bitflags! {
+    #[derive(Default)]
+    pub struct ShaderStageFlags: u32 {
+        const VERTEX = (1 << 0);
+        const GEOMETRY = (1 << 1);
+        const FRAGMENT = (1 << 2);
+        const TESS_CONTROL = (1 << 3);
+        const TESS_EVAL = (1 << 4);
+        const COMPUTE = (1 << 5);
+        const ALL_GRAPHICS = Self::VERTEX.bits | Self::GEOMETRY.bits | Self::FRAGMENT.bits | Self::TESS_CONTROL.bits | Self::TESS_EVAL.bits;
+    }
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VertexInputAttributeDescription {
@@ -31,15 +50,14 @@ pub enum ShaderFormat {
     BackendSpecific,
 }
 
-#[derive(Derivative)]
-#[derivative(Clone(bound = ""), Copy(bound = ""), Debug(bound = ""))]
-pub struct GraphicsShaderStages<'a, R: RendererBackend> {
+#[derive(Copy, Clone, Debug)]
+pub struct GraphicsShaderStages<'a> {
     //pub format: ShaderFormat,
-    pub vertex: ShaderModule<'a, R>,
-    pub geometry: Option<ShaderModule<'a, R>>,
-    pub fragment: Option<ShaderModule<'a, R>>,
-    pub tess_eval: Option<ShaderModule<'a, R>>,
-    pub tess_control: Option<ShaderModule<'a, R>>,
+    pub vertex: ShaderModule<'a>,
+    pub geometry: Option<ShaderModule<'a>>,
+    pub fragment: Option<ShaderModule<'a>>,
+    pub tess_eval: Option<ShaderModule<'a>>,
+    pub tess_control: Option<ShaderModule<'a>>,
 }
 
 bitflags! {
@@ -227,10 +245,9 @@ pub struct VertexInputState<'a> {
     pub attributes: &'a [VertexInputAttributeDescription],
 }
 
-#[derive(Derivative)]
-#[derivative(Clone(bound = ""), Copy(bound = ""), Debug(bound = ""))]
-pub struct PipelineLayout<'a, 'rcx, R: RendererBackend> {
-    pub descriptor_set_layouts: &'a [DescriptorSetLayout<'rcx, R>],
+#[derive(Copy, Clone, Debug)]
+pub struct PipelineLayout<'a, 'rcx> {
+    pub descriptor_set_layouts: &'a [DescriptorSetLayout<'rcx>],
     //pub push_constants: &'a [PushConstant]
 }
 
@@ -431,10 +448,9 @@ pub struct ColorBlendState<'a> {
     pub blend_constants: [NotNan<f32>; 4],
 }
 
-#[derive(Derivative)]
-#[derivative(Clone(bound = ""), Copy(bound = ""))]
-pub struct GraphicsPipelineCreateInfo<'a, 'rcx, R: RendererBackend> {
-    pub shader_stages: &'a GraphicsShaderStages<'rcx, R>,
+#[derive(Copy, Clone)]
+pub struct GraphicsPipelineCreateInfoTypeless<'a, 'rcx> {
+    pub shader_stages: &'a GraphicsShaderStages<'rcx>,
     pub vertex_input_state: &'a VertexInputState<'a>,
     pub viewport_state: &'a ViewportState<'a>,
     pub rasterization_state: &'a RasterisationState,
@@ -443,6 +459,189 @@ pub struct GraphicsPipelineCreateInfo<'a, 'rcx, R: RendererBackend> {
     pub input_assembly_state: &'a InputAssemblyState,
     pub color_blend_state: &'a ColorBlendState<'a>,
     pub dynamic_state: DynamicStateFlags,
-    pub pipeline_layout: &'a PipelineLayout<'a, 'rcx, R>,
+    pub pipeline_layout: &'a PipelineLayout<'a, 'rcx>,
     pub attachment_layout: &'a AttachmentLayout<'a>,
+}
+
+/// Variant of [GraphicsPipelineCreateInfoTypeless] where some information is derived from types
+/// passed to [Arena::create_graphics_pipeline].
+#[derive(Copy, Clone)]
+pub struct GraphicsPipelineCreateInfo<'a, 'rcx> {
+    pub shader_stages: &'a GraphicsShaderStages<'rcx>,
+    pub viewport_state: &'a ViewportState<'a>,
+    pub rasterization_state: &'a RasterisationState,
+    pub multisample_state: &'a MultisampleState,
+    pub depth_stencil_state: &'a DepthStencilState,
+    pub input_assembly_state: &'a InputAssemblyState,
+    pub color_blend_state: &'a ColorBlendState<'a>,
+}
+
+//--------------------------------------------------------------------------------------------------
+
+/// Shader module.
+#[derive(Copy, Clone, Debug)]
+pub struct ShaderModule<'a>(pub &'a dyn traits::ShaderModule);
+
+/// Graphics pipeline.
+#[derive(Copy, Clone, Debug)]
+pub struct GraphicsPipelineTypeless<'a>(pub &'a dyn traits::GraphicsPipeline);
+
+/// Graphics pipeline.
+#[derive(Debug)]
+pub struct GraphicsPipeline<'a, T: PipelineInterface<'a>>(
+    pub &'a dyn traits::GraphicsPipeline,
+    pub(crate) PhantomData<T>,
+);
+
+impl<'a, T: PipelineInterface<'a>> Clone for GraphicsPipeline<'a, T> {
+    fn clone(&self) -> Self {
+        GraphicsPipeline(self.0, PhantomData)
+    }
+}
+
+impl<'a, T: PipelineInterface<'a>> Copy for GraphicsPipeline<'a, T> {}
+
+// Type erasure for GraphicsPipelines
+impl<'a, T: PipelineInterface<'a>> From<GraphicsPipeline<'a, T>> for GraphicsPipelineTypeless<'a> {
+    fn from(ds: GraphicsPipeline<'a, T>) -> Self {
+        GraphicsPipelineTypeless(ds.0)
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+pub trait PipelineInterfaceVisitor<'a> {
+    fn visit_descriptor_sets<I: IntoIterator<Item = DescriptorSetTypeless<'a>>>(
+        &mut self,
+        descriptor_sets: I,
+    );
+    fn visit_vertex_buffers<'tcx, I: IntoIterator<Item = VertexBufferDescriptor<'a, 'tcx>>>(
+        &mut self,
+        buffers: I,
+    );
+    fn visit_index_buffer(&mut self, buffer: IndexBufferDescriptor<'a>);
+    fn visit_framebuffer(&mut self, framebuffer: Framebuffer<'a>);
+    fn visit_viewports<I: IntoIterator<Item = Viewport>>(&mut self, viewports: I);
+    fn visit_scissors<I: IntoIterator<Item = ScissorRect>>(&mut self, scissors: I);
+}
+
+///
+/// Describes pipeline states to set before issuing a draw or compute call.
+///
+/// #### Custom derive
+/// It is possible to automatically derive [PipelineInterface] for structs with named fields.
+///
+/// By default, the implementation is generic over the backend type, and expects the struct to have
+/// one lifetime parameter (`'a`) and a single type parameter for the renderer backend
+/// (`T: RendererBackend`).
+///
+/// Attributes define the interpretation of struct fields in terms of pipeline bindings.
+/// The field must be convertible via [Into] to the target binding type:
+/// * `descriptor_set(index=n)` specifies a descriptor set.
+/// The field must implement `Into<DescriptorSet>`.
+/// * `vertex_buffer` specifies a vertex buffer. The field must implement `Into<BufferTypeless>`.
+/// * `index_buffer` specifies an index buffer. The field must implement `Into<BufferTypeless>`.
+///   Annotating more than one field with this attribute is an error.
+/// * `viewport` specifies a viewport. The field must implement `Into<Viewport>`.
+/// * `scissor` specifies a scissor rectangle. The field must implement `Into<ScissorRect>`.
+///
+/// It is also possible to specify arrays of pipeline bindings:
+/// * `descriptor_set_array(base_index=n)` specifies an array of descriptor sets.
+///   The field must implement `IntoIterator<DescriptorSet>`.
+/// * `vertex_buffer_array(base_index=n)` specifies an array of vertex buffers.
+///   The field must implement `IntoIterator<BufferTypeless>`.
+/// * `viewport_array(base_index=n)` specifies an array of viewports.
+///   The field must implement `IntoIterator<Viewport>`.
+/// * `scissor_array(base_index=n)` specifies an array of scissor rectangles.
+///   The field must implement `IntoIterator<ScissorRect>`.
+///
+/// When a binding index is required, it is derived from the order of appearance of the binding in
+/// the struct. For instance:
+///
+/// ```
+/// #[derive(PipelineInterface)]
+/// pub struct ExampleInterface<'a> {
+///     #[descriptor_set] ds_a: DescriptorSet<'a>,     // index 0
+///     ...
+///     #[descriptor_set] ds_b: DescriptorSet<'a>,     // index 1
+///     ...
+///     #[descriptor_set_array] dss: DescriptorSet<'a>,   // indices 2..2+dss.len
+///     ...
+///     #[descriptor_set] ds_c: DescriptorSet<'a>,   // index dss.len
+/// }
+/// ```
+///
+/// #### Example
+///
+///```
+/// #[derive(PipelineInterface)]
+/// pub struct ExampleInterface<'a> {
+///    #[framebuffer]
+///    pub framebuffer: Framebuffer<'a>,
+///    #[descriptor_set]
+///    pub per_object: DescriptorSet<'a>,   // DS index 0
+///    #[viewport]
+///    pub viewport: Viewport,
+///    // Buffer<T> implements Into<BufferTypeless>
+///    #[vertex_buffer(base_location=0)]
+///    pub vertex_buffer: Buffer<'a, [Vertex]>,  // VB index 0
+///    #[descriptor_set]
+///    pub other: DescriptorSet<'a>,  // DS index 1
+/// }
+/// ```
+///
+pub trait PipelineInterface<'a> {
+    const VERTEX_INPUT_INTERFACE: &'static [VertexLayout<'static>];
+    const FRAGMENT_OUTPUT_INTERFACE: &'static [FragmentOutputDescription];
+    const DESCRIPTOR_SET_INTERFACE: &'static [DescriptorSetLayoutDescription<'static>];
+
+    fn do_visit<V: PipelineInterfaceVisitor<'a>>(&self, arena: &'a Arena, visitor: &mut V);
+
+    // Use this interface when rust supports impl Trait in Traits
+    /*fn vertex_inputs<'a,'rcx>(&'a self) -> impl Iterator<Item=&'rcx R::Buffer> + 'a;
+    fn fragment_outputs<'a,'rcx>(&'a self) -> impl Iterator<Item=&'rcx R::Image> + 'a;
+    fn descriptor_sets<'a,'rcx>(&'a self) -> impl Iterator<Item=&'rcx R::DescriptorSet> + 'a;
+    fn index_buffer(&self) -> Option<R::BufferHandle>;*/
+}
+
+/// Converts a sequence of VertexLayouts (one for each vertex buffer) into binding descriptions
+/// and vertex attribute descriptions.
+///
+/// This function generates vertex attributes for each element in all layouts,
+/// and laid out sequentially : i.e. if buffer #0 has 4 elements,
+/// and buffer #1 has 2 elements, then 6 attributes will be generated:
+/// attributes 0..=3 will map to vertex buffer 0 and attributes 4..=5 will map to vertex buffer 1.
+///
+/// TODO it might make sense at some point to change the interface to the backend so that
+/// it takes an array of vertex layouts instead of input bindings and attribute locations,
+/// and let the backend assign attribute locations automatically.
+pub(crate) fn build_vertex_input_interface(
+    buffer_layouts: &[VertexLayout],
+) -> (
+    Vec<VertexInputBindingDescription>,
+    Vec<VertexInputAttributeDescription>,
+) {
+    let mut input_bindings = Vec::new();
+    let mut input_attribs = Vec::new();
+
+    let mut location = 0;
+
+    for (binding, &layout) in buffer_layouts.iter().enumerate() {
+        input_bindings.push(VertexInputBindingDescription {
+            binding: binding as u32,
+            stride: layout.stride as u32,
+            input_rate: VertexInputRate::Vertex,
+        });
+
+        for &attrib in layout.elements.iter() {
+            input_attribs.push(VertexInputAttributeDescription {
+                location,
+                binding: binding as u32,
+                format: attrib.format,
+                offset: attrib.offset,
+            });
+            location += 1;
+        }
+    }
+
+    (input_bindings, input_attribs)
 }

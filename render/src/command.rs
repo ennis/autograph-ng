@@ -2,20 +2,21 @@ use crate::buffer::BufferTypeless;
 use crate::descriptor::DescriptorSetTypeless;
 use crate::framebuffer::Framebuffer;
 use crate::image::Image;
-use crate::sync::PipelineStageFlags;
 use crate::pipeline::GraphicsPipeline;
+use crate::pipeline::GraphicsPipelineTypeless;
 use crate::pipeline::PipelineInterface;
 use crate::pipeline::PipelineInterfaceVisitor;
 use crate::pipeline::ScissorRect;
 use crate::pipeline::Viewport;
 use crate::swapchain::Swapchain;
 use crate::sync::MemoryBarrier;
+use crate::sync::PipelineStageFlags;
+use crate::traits;
 use crate::vertex::IndexBufferDescriptor;
 use crate::vertex::IndexFormat;
 use crate::vertex::VertexBufferDescriptor;
-use crate::traits;
-use std::ops::Range;
 use crate::Arena;
+use std::ops::Range;
 
 /// Represents a command to be executed by the renderer backend.
 ///
@@ -216,7 +217,12 @@ impl<'a> CommandBuffer<'a> {
     }
 
     fn set_framebuffer(&mut self, sortkey: u64, framebuffer: Framebuffer<'a>) {
-        self.push_command(sortkey, CommandInner::SetFramebuffer { framebuffer: framebuffer.0 })
+        self.push_command(
+            sortkey,
+            CommandInner::SetFramebuffer {
+                framebuffer: framebuffer.0,
+            },
+        )
     }
 
     fn set_vertex_buffers<'tcx, I: IntoIterator<Item = VertexBufferDescriptor<'a, 'tcx>>>(
@@ -271,10 +277,15 @@ impl<'a> CommandBuffer<'a> {
         &mut self,
         sortkey: u64,
         arena: &'a Arena,
-        pipeline: GraphicsPipeline<'a>,
+        pipeline: GraphicsPipelineTypeless<'a>,
         interface: &PI,
     ) {
-        self.push_command(sortkey, CommandInner::DrawHeader { pipeline: pipeline.0 });
+        self.push_command(
+            sortkey,
+            CommandInner::DrawHeader {
+                pipeline: pipeline.0,
+            },
+        );
 
         struct Visitor<'a, 'b> {
             sortkey: u64,
@@ -334,11 +345,11 @@ impl<'a> CommandBuffer<'a> {
         &mut self,
         sortkey: u64,
         arena: &'a Arena,
-        pipeline: GraphicsPipeline<'a>,
+        pipeline: GraphicsPipeline<'a, PI>,
         interface: &PI,
         params: DrawParams,
     ) {
-        self.bind_pipeline_interface(sortkey, arena, pipeline, interface);
+        self.bind_pipeline_interface(sortkey, arena, pipeline.into(), interface);
         self.push_command(
             sortkey,
             CommandInner::Draw {
@@ -354,11 +365,11 @@ impl<'a> CommandBuffer<'a> {
         &mut self,
         sortkey: u64,
         arena: &'a Arena,
-        pipeline: GraphicsPipeline<'a>,
+        pipeline: GraphicsPipeline<'a, PI>,
         interface: &PI,
         params: DrawIndexedParams,
     ) {
-        self.bind_pipeline_interface(sortkey, arena, pipeline, interface);
+        self.bind_pipeline_interface(sortkey, arena, pipeline.into(), interface);
         self.push_command(
             sortkey,
             CommandInner::DrawIndexed {
@@ -377,7 +388,13 @@ impl<'a> CommandBuffer<'a> {
     /// Presents the specified image to the swapchain.
     /// Might incur a copy / blit or format conversion if necessary.
     pub fn present(&mut self, sortkey: u64, image: Image<'a>, swapchain: Swapchain<'a>) {
-        self.push_command(sortkey, CommandInner::Present { image: image.0, swapchain: swapchain.0 })
+        self.push_command(
+            sortkey,
+            CommandInner::Present {
+                image: image.0,
+                swapchain: swapchain.0,
+            },
+        )
     }
 }
 

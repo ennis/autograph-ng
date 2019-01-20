@@ -308,7 +308,7 @@ fn create_pipelines<'rcx, 'a>(arena: &'a Arena<'rcx, Backend>) -> PipelineAndLay
     };
 
     PipelineAndLayout {
-        pipeline: arena.create_graphics_pipeline(&gci),
+        pipeline: arena.create_graphics_pipeline_typeless(&gci),
         per_frame_descriptor_set_layout,
         per_object_descriptor_set_layout,
     }

@@ -1,20 +1,20 @@
-use crate::ImplementationParameters;
 use crate::api as gl;
 use crate::api::types::*;
 use crate::api::Gl;
-use ordered_float::NotNan;
-use autograph_render::pipeline::ColorBlendAttachmentState;
-use autograph_render::pipeline::PolygonMode;
-use autograph_render::pipeline::StencilOpState;
-use autograph_render::pipeline::CompareOp;
-use autograph_render::pipeline::PrimitiveTopology;
-use autograph_render::pipeline::StencilOp;
+use crate::ImplementationParameters;
 use autograph_render::pipeline::BlendFactor;
 use autograph_render::pipeline::BlendOp;
-use autograph_render::pipeline::StencilTest;
+use autograph_render::pipeline::ColorBlendAttachmentState;
+use autograph_render::pipeline::CompareOp;
 use autograph_render::pipeline::CullModeFlags;
-use autograph_render::vertex::IndexFormat;
+use autograph_render::pipeline::PolygonMode;
+use autograph_render::pipeline::PrimitiveTopology;
+use autograph_render::pipeline::StencilOp;
+use autograph_render::pipeline::StencilOpState;
+use autograph_render::pipeline::StencilTest;
 use autograph_render::pipeline::Viewport;
+use autograph_render::vertex::IndexFormat;
+use ordered_float::NotNan;
 
 pub struct ColorBlendCache {
     all: bool,
@@ -192,11 +192,11 @@ impl StateCache {
             shader_storage_buffer_offsets: None,*/
         }
     }
-/*
+
     pub fn invalidate(&mut self) {
         *self = StateCache {
             max_draw_buffers: self.max_draw_buffers,
-            max_color_attachments: self.max_color_attachments,
+            _max_color_attachments: self._max_color_attachments,
             max_viewports: self.max_viewports,
             cull_enable: None,
             cull_mode: None,
@@ -228,7 +228,7 @@ impl StateCache {
             shader_storage_buffer_offsets: None,*/
         };
     }
-*/
+
     pub fn set_program(&mut self, gl: &Gl, program: GLuint) {
         self.program.update_cached(program, || unsafe {
             gl.UseProgram(program);
@@ -454,9 +454,9 @@ impl StateCache {
 
     pub fn set_cull_mode(&mut self, gl: &Gl, cull_mode: CullModeFlags) {
         if cull_mode == CullModeFlags::NONE {
-            self.set_cull_enable(gl,false);
+            self.set_cull_enable(gl, false);
         } else {
-            self.set_cull_enable(gl,true);
+            self.set_cull_enable(gl, true);
         }
 
         self.cull_mode.update_cached(cull_mode, || unsafe {
@@ -517,9 +517,9 @@ impl StateCache {
 
     pub fn set_stencil_test(&mut self, gl: &Gl, stencil_test: &StencilTest) {
         match stencil_test {
-            StencilTest::Disabled => self.set_stencil_test_enabled(gl,false),
+            StencilTest::Disabled => self.set_stencil_test_enabled(gl, false),
             StencilTest::Enabled { front, back } => {
-                self.set_stencil_test_enabled(gl,true);
+                self.set_stencil_test_enabled(gl, true);
                 self.set_stencil_op(gl, front, back);
             }
         }

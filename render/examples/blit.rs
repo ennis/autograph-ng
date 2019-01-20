@@ -1,55 +1,45 @@
+#![feature(const_type_id)]
+
 #[macro_use]
 extern crate log;
 
 pub mod common;
 
-use std::env;
 use self::common::*;
 use autograph_plugin::{load_dev_dylib, load_module};
 use autograph_render::buffer::Buffer;
-use autograph_render::descriptor::DescriptorSetTypeless;
+use autograph_render::buffer::StructuredBufferData;
+use autograph_render::command::DrawParams;
+use autograph_render::descriptor::DescriptorSet;
+use autograph_render::descriptor::DescriptorSetInterface;
+use autograph_render::format::Format;
 use autograph_render::framebuffer::Framebuffer;
 use autograph_render::glm;
-use autograph_render::image::SampledImage;
 use autograph_render::image::ImageUsageFlags;
-use autograph_render::pipeline::PipelineInterface;
-use autograph_render::pipeline::PipelineInterfaceVisitor;
-use autograph_render::pipeline::Viewport;
+use autograph_render::image::MipmapsCount;
+use autograph_render::image::SampledImage;
+use autograph_render::image::SamplerDescription;
+use autograph_render::pipeline::ColorBlendAttachmentState;
+use autograph_render::pipeline::ColorBlendAttachments;
+use autograph_render::pipeline::ColorBlendState;
+use autograph_render::pipeline::DepthStencilState;
 use autograph_render::pipeline::GraphicsPipeline;
-use autograph_render::descriptor::DescriptorSetLayout;
 use autograph_render::pipeline::GraphicsPipelineCreateInfo;
 use autograph_render::pipeline::GraphicsShaderStages;
-use autograph_render::pipeline::VertexInputState;
-use autograph_render::pipeline::VertexInputBindingDescription;
-use autograph_render::pipeline::VertexInputAttributeDescription;
-use autograph_render::pipeline::VertexInputRate;
-use autograph_render::pipeline::RasterisationState;
-use autograph_render::pipeline::ColorBlendAttachmentState;
-use autograph_render::pipeline::DepthStencilState;
-use autograph_render::pipeline::AttachmentLayout;
-use autograph_render::AliasScope;
-use autograph_render::format::Format;
-use autograph_render::image::MipmapsCount;
-use autograph_render::image::SamplerDescription;
-use autograph_render::command::DrawParams;
-use autograph_render::pipeline::MultisampleState;
-use autograph_render::pipeline::Scissors;
-use autograph_render::pipeline::Viewports;
-use autograph_render::pipeline::ViewportState;
-use autograph_render::pipeline::PipelineLayout;
-use autograph_render::pipeline::AttachmentDescription;
-use autograph_render::vertex::VertexData;
-use autograph_render::buffer::StructuredBufferData;
-use autograph_render::descriptor::DescriptorSetInterface;
-use autograph_render::pipeline::DynamicStateFlags;
-use autograph_render::pipeline::ShaderStageFlags;
-use autograph_render::Arena;
 use autograph_render::pipeline::InputAssemblyState;
+use autograph_render::pipeline::MultisampleState;
+use autograph_render::pipeline::PipelineInterface;
 use autograph_render::pipeline::PrimitiveTopology;
-use autograph_render::pipeline::ColorBlendState;
-use autograph_render::pipeline::ColorBlendAttachments;
-use autograph_render::descriptor::DescriptorSet;
-//use autograph_render_gl::create_backend_and_window;
+use autograph_render::pipeline::RasterisationState;
+use autograph_render::pipeline::Scissors;
+use autograph_render::pipeline::ShaderStageFlags;
+use autograph_render::pipeline::Viewport;
+use autograph_render::pipeline::ViewportState;
+use autograph_render::pipeline::Viewports;
+use autograph_render::vertex::VertexData;
+use autograph_render::AliasScope;
+use autograph_render::Arena;
+use std::env;
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Copy, Clone, VertexData)]
@@ -65,6 +55,8 @@ impl Vertex {
     }
 }
 
+//--------------------------------------------------------------------------------------------------
+// SHADERS & PIPELINES
 #[derive(StructuredBufferData, Copy, Clone)]
 #[repr(C)]
 pub struct Uniforms {
@@ -94,30 +86,7 @@ pub struct Blit<'a> {
     pub vertex_buffer: Buffer<'a, [Vertex]>,
 }
 
-/*
-impl<'a> PipelineInterface<'a> for Blit<'a> {
-    const VERTEX_INPUT_INTERFACE: &'static [&'static VertexLayout<'static>] = &[];
-    const FRAGMENT_OUTPUT_INTERFACE: &'static [FragmentOutputDescription] = &[];
-    const DESCRIPTOR_SET_INTERFACE: &'static [&'static [DescriptorSetLayoutBinding<'static>]] = &[];
-
-    fn do_visit<V: PipelineInterfaceVisitor<'a>>(&self, visitor: &mut V) {
-        visitor.visit_dynamic_viewports(std::iter::once(self.viewport));
-        visitor.visit_vertex_buffers(std::iter::once(self.vertex_buffer.into()));
-        visitor.visit_framebuffer(self.framebuffer);
-        visitor.visit_descriptor_sets(std::iter::once(self.per_object));
-    }
-}*/
-
-//--------------------------------------------------------------------------------------------------
-// SHADERS & PIPELINES
-struct PipelineAndLayout<'a> {
-    blit_pipeline: GraphicsPipeline<'a>,
-    descriptor_set_layout: DescriptorSetLayout<'a>,
-}
-
-fn create_pipelines<'a>(arena: &'a Arena, vs: &[u8], fs: &[u8]) -> PipelineAndLayout<'a> {
-    let descriptor_set_layout = arena.create_descriptor_set_layout(None, PerObject::LAYOUT.bindings);
-
+fn create_pipelines<'a>(arena: &'a Arena, vs: &[u8], fs: &[u8]) -> GraphicsPipeline<'a, Blit<'a>> {
     let gci = GraphicsPipelineCreateInfo {
         shader_stages: &GraphicsShaderStages {
             vertex: arena.create_shader_module(vs, ShaderStageFlags::VERTEX),
@@ -125,27 +94,6 @@ fn create_pipelines<'a>(arena: &'a Arena, vs: &[u8], fs: &[u8]) -> PipelineAndLa
             fragment: Some(arena.create_shader_module(fs, ShaderStageFlags::FRAGMENT)),
             tess_eval: None,
             tess_control: None,
-        },
-        vertex_input_state: &VertexInputState {
-            bindings: &[VertexInputBindingDescription {
-                binding: 0,
-                stride: 16,
-                input_rate: VertexInputRate::Vertex,
-            }],
-            attributes: &[
-                VertexInputAttributeDescription {
-                    location: 0,
-                    binding: 0,
-                    format: Format::R32G32_SFLOAT,
-                    offset: 0,
-                },
-                VertexInputAttributeDescription {
-                    location: 1,
-                    binding: 0,
-                    format: Format::R32G32_SFLOAT,
-                    offset: 8,
-                },
-            ],
         },
         viewport_state: &ViewportState {
             viewports: Viewports::Dynamic,
@@ -163,24 +111,9 @@ fn create_pipelines<'a>(arena: &'a Arena, vs: &[u8], fs: &[u8]) -> PipelineAndLa
             blend_constants: [0.0.into(); 4],
             logic_op: None,
         },
-        dynamic_state: DynamicStateFlags::VIEWPORT,
-        pipeline_layout: &PipelineLayout {
-            descriptor_set_layouts: &[descriptor_set_layout],
-        },
-        attachment_layout: &AttachmentLayout {
-            input_attachments: &[],
-            depth_attachment: None,
-            color_attachments: &[AttachmentDescription {
-                format: Format::R8G8B8A8_SRGB,
-                samples: 1,
-            }],
-        },
     };
 
-    PipelineAndLayout {
-        blit_pipeline: arena.create_graphics_pipeline(&gci),
-        descriptor_set_layout,
-    }
+    arena.create_graphics_pipeline(&gci)
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -201,7 +134,7 @@ fn main() {
         let shader_lib = load_dev_dylib!(common_shaders).unwrap();
         let shader_mod = load_module!(&shader_lib, common_shaders::hot).unwrap();
         // reload pipelines
-        let pipeline = create_pipelines(&arena_0, shader_mod.BLIT_VERT, shader_mod.BLIT_FRAG);
+        let blit_pipeline = create_pipelines(&arena_0, shader_mod.BLIT_VERT, shader_mod.BLIT_FRAG);
 
         let image = arena_0
             .create_image(
@@ -284,10 +217,11 @@ fn main() {
                 });
 
                 let per_object = PerObject {
-                        uniforms,
-                        image,
-                        dither,
-                    }.into_descriptor_set(&arena_2);
+                    uniforms,
+                    image,
+                    dither,
+                }
+                .into_descriptor_set(&arena_2);
 
                 let mut cmdbuf = r.create_command_buffer();
                 cmdbuf.clear_image(0x0, color_buffer, &[0.0, 0.2, 0.8, 1.0]);
@@ -295,7 +229,7 @@ fn main() {
                 cmdbuf.draw(
                     0x0,
                     &arena_2,
-                    pipeline.blit_pipeline,
+                    blit_pipeline,
                     &Blit {
                         framebuffer,
                         per_object,

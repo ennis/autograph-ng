@@ -98,7 +98,6 @@ impl<D: Eq + Clone, K: slotmap::Key + Copy, T> AliasPool<D, K, T> {
     }*/
 }
 
-
 /*
 */
 

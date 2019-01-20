@@ -1,9 +1,9 @@
 use crate::api as gl;
 use crate::api::types::*;
 use crate::api::Gl;
-use autograph_render::traits;
 use crate::image::GlImage;
 use crate::DowncastPanic;
+use autograph_render::traits;
 
 /// Wrapper around OpenGL framebuffers.
 #[derive(Debug)]
@@ -27,7 +27,6 @@ impl GlFramebuffer {
         color_attachments: &[&dyn traits::Image],
         depth_stencil_attachment: Option<&dyn traits::Image>,
     ) -> Result<GlFramebuffer, GLenum> {
-
         assert!(color_attachments.len() < 8);
 
         let mut obj = 0;
@@ -105,7 +104,7 @@ impl GlFramebuffer {
         let status = unsafe { gl.CheckNamedFramebufferStatus(obj, gl::DRAW_FRAMEBUFFER) };
 
         if status == gl::FRAMEBUFFER_COMPLETE {
-            Ok(GlFramebuffer { obj })
+            Ok(GlFramebuffer { obj: dbg!(obj) })
         } else {
             Err(status)
         }

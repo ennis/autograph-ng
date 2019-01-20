@@ -1,15 +1,15 @@
+use crate::api as gl;
+use crate::api::types::*;
+use crate::api::Gl;
+use autograph_render::pipeline::ShaderStageFlags;
+use autograph_render::traits;
+use autograph_spirv::TypeDesc;
 use std::error::Error;
 use std::ffi::CString;
 use std::fmt;
 use std::mem;
 use std::os::raw::c_void;
 use std::ptr;
-use autograph_render::traits;
-use autograph_render::pipeline::ShaderStageFlags;
-use autograph_spirv::TypeDesc;
-use crate::api as gl;
-use crate::api::types::*;
-use crate::api::Gl;
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Debug)]
@@ -25,7 +25,8 @@ impl GlShaderModule {
     pub(crate) fn from_glsl(
         gl: &Gl,
         stage: ShaderStageFlags,
-        source: &[u8]) -> Result<GlShaderModule, ShaderCreationError> {
+        source: &[u8],
+    ) -> Result<GlShaderModule, ShaderCreationError> {
         let obj = create_shader_from_glsl(gl, stage, source)?;
         Ok(GlShaderModule {
             obj,
@@ -62,9 +63,7 @@ pub(crate) fn shader_stage_flags_to_glenum(stage: ShaderStageFlags) -> GLenum {
     }
 }
 
-fn get_shader_info_log(
-    gl: &Gl,
-    obj: GLuint) -> String {
+fn get_shader_info_log(gl: &Gl, obj: GLuint) -> String {
     unsafe {
         let mut log_size = 0;
         let mut log_buf = Vec::with_capacity(log_size as usize);

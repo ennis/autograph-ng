@@ -1,24 +1,23 @@
 use crate::api as gl;
 use crate::api::types::*;
 use crate::api::Gl;
-use crate::ImplementationParameters;
-use crate::swapchain::GlSwapchain;
 use crate::image::GlImage;
-use autograph_render::traits;
+use crate::pipeline::GlGraphicsPipeline;
+use crate::swapchain::GlSwapchain;
+use crate::DowncastPanic;
+use crate::ImplementationParameters;
 use autograph_render::command::Command;
 use autograph_render::command::CommandInner;
-use autograph_render::vertex::IndexFormat;
 use autograph_render::pipeline::Viewport;
-use crate::pipeline::GlGraphicsPipeline;
-use crate::DowncastPanic;
+use autograph_render::traits;
+use autograph_render::vertex::IndexFormat;
 
 mod state;
 pub use self::state::StateCache;
-use crate::descriptor::ShaderResourceBindings;
-use crate::framebuffer::GlFramebuffer;
 use crate::buffer::GlBuffer;
 use crate::descriptor::GlDescriptorSet;
-
+use crate::descriptor::ShaderResourceBindings;
+use crate::framebuffer::GlFramebuffer;
 
 pub struct SubmissionContext<'a, 'rcx> {
     state_cache: &'a mut StateCache,
@@ -53,8 +52,10 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
                     gl::RENDERBUFFER,
                     image.raw.obj,
                 );
-                self.gl.NamedFramebufferDrawBuffers(tmpfb, 1, (&[gl::COLOR_ATTACHMENT0]).as_ptr());
-                self.gl.ClearNamedFramebufferfv(tmpfb, gl::COLOR, 0, color.as_ptr());
+                self.gl
+                    .NamedFramebufferDrawBuffers(tmpfb, 1, (&[gl::COLOR_ATTACHMENT0]).as_ptr());
+                self.gl
+                    .ClearNamedFramebufferfv(tmpfb, gl::COLOR, 0, color.as_ptr());
                 self.gl.DeleteFramebuffers(1, &tmpfb);
             }
         } else {
@@ -71,12 +72,7 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
         }
     }
 
-    fn cmd_clear_depth_stencil_image(
-        &mut self,
-        image: &GlImage,
-        depth: f32,
-        stencil: Option<u8>,
-    ) {
+    fn cmd_clear_depth_stencil_image(&mut self, image: &GlImage, depth: f32, stencil: Option<u8>) {
         let obj = image.raw.obj;
         if image.raw.target == gl::RENDERBUFFER {
             // create temporary framebuffer
@@ -116,26 +112,25 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
 
     //pub fn cmd_set_attachments(&mut self, color_attachments: &[R::])
 
-    fn cmd_set_descriptor_sets(
-        &mut self,
-        descriptor_sets: &[&dyn traits::DescriptorSet],
-    ) {
+    fn cmd_set_descriptor_sets(&mut self, descriptor_sets: &[&dyn traits::DescriptorSet]) {
         let pipeline = self.current_pipeline.unwrap();
         let descriptor_map = pipeline.descriptor_map();
         let mut sr = ShaderResourceBindings::new();
 
         for (i, &ds) in descriptor_sets.iter().enumerate() {
-            let ds : &GlDescriptorSet = ds.downcast_ref_unwrap();
+            let ds: &GlDescriptorSet = ds.downcast_ref_unwrap();
             ds.collect(i as u32, descriptor_map, &mut sr);
         }
 
-        self.state_cache.set_uniform_buffers(self.gl,
+        self.state_cache.set_uniform_buffers(
+            self.gl,
             &sr.uniform_buffers,
             &sr.uniform_buffer_offsets,
             &sr.uniform_buffer_sizes,
         );
-        self.state_cache.set_shader_storage_buffers(self.gl,
-                                                    &sr.shader_storage_buffers,
+        self.state_cache.set_shader_storage_buffers(
+            self.gl,
+            &sr.shader_storage_buffers,
             &sr.shader_storage_buffer_offsets,
             &sr.shader_storage_buffer_sizes,
         );
@@ -161,7 +156,8 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
                 );
             } else {
                 // TODO other levels / layers?
-                self.gl.NamedFramebufferTexture(tmpfb, gl::COLOR_ATTACHMENT0, image.raw.obj, 0);
+                self.gl
+                    .NamedFramebufferTexture(tmpfb, gl::COLOR_ATTACHMENT0, image.raw.obj, 0);
             }
             // blit to default framebuffer
             let (w, h): (u32, u32) = swapchain.inner.size();
@@ -210,7 +206,7 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
         let mut strides = smallvec::SmallVec::<[GLsizei; 8]>::new();
 
         for (i, &vb) in buffers.iter().enumerate() {
-            let vb : &GlBuffer = vb.downcast_ref_unwrap();
+            let vb: &GlBuffer = vb.downcast_ref_unwrap();
             objs.push(vb.raw.obj);
             offsets.push(vb.offset as isize);
             strides.push(vertex_input_bindings[i].stride as i32);
@@ -224,7 +220,12 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
         self.state_cache.set_viewports(self.gl, viewports);
     }
 
-    fn cmd_set_index_buffer(&mut self, index_buffer: &'rcx GlBuffer, offset: usize, ty: IndexFormat) {
+    fn cmd_set_index_buffer(
+        &mut self,
+        index_buffer: &'rcx GlBuffer,
+        offset: usize,
+        ty: IndexFormat,
+    ) {
         self.state_cache
             .set_index_buffer(self.gl, index_buffer.raw.obj, offset, ty);
     }

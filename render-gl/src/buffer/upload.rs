@@ -1,8 +1,8 @@
 //! Upload buffers
-use crate::buffer::create_buffer;
 use crate::api as gl;
 use crate::api::types::*;
 use crate::api::Gl;
+use crate::buffer::create_buffer;
 use autograph_render::align_offset;
 use std::ptr::copy_nonoverlapping;
 use std::sync::Mutex;
@@ -29,8 +29,7 @@ impl MappedBuffer {
             | gl::MAP_WRITE_BIT
             | gl::MAP_PERSISTENT_BIT
             | gl::MAP_COHERENT_BIT;
-        let ptr =
-            unsafe { gl.MapNamedBufferRange(buffer, 0, size as isize, map_flags) as *mut u8 };
+        let ptr = unsafe { gl.MapNamedBufferRange(buffer, 0, size as isize, map_flags) as *mut u8 };
 
         MappedBuffer {
             buffer,

@@ -3,8 +3,8 @@ extern crate autograph_render;
 extern crate autograph_render_macros;
 
 use autograph_render::{
-    Buffer, BufferTypeless, DescriptorSetTypeless, Framebuffer, IndexFormat, RendererBackend, ScissorRect,
-    Viewport,
+    Buffer, BufferTypeless, DescriptorSetTypeless, Framebuffer, IndexFormat, RendererBackend,
+    ScissorRect, Viewport,
 };
 
 #[derive(DescriptorSetInterface)]

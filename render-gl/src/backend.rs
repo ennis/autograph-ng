@@ -1,34 +1,49 @@
-use crate::util::SyncArena;
+use crate::aliaspool::AliasPool;
 use crate::api as gl;
 use crate::api::types::*;
 use crate::api::Gl;
-use crate::image::RawImage;
-use crate::swapchain::GlSwapchain;
 use crate::buffer::GlBuffer;
+use crate::buffer::MappedBuffer;
+use crate::buffer::RawBuffer;
+use crate::buffer::UploadBuffer;
+use crate::command::StateCache;
+use crate::command::SubmissionContext;
 use crate::descriptor::GlDescriptorSet;
 use crate::descriptor::GlDescriptorSetLayout;
-use crate::pipeline::GlShaderModule;
-use crate::pipeline::GlGraphicsPipeline;
 use crate::framebuffer::GlFramebuffer;
-use crate::buffer::UploadBuffer;
+use crate::image::upload_image_region;
 use crate::image::GlImage;
-use crate::image::ImageDescription;
 use crate::image::ImageAliasKey;
-use crate::buffer::MappedBuffer;
+use crate::image::ImageDescription;
+use crate::image::RawImage;
+use crate::pipeline::create_graphics_pipeline_internal;
+use crate::pipeline::GlGraphicsPipeline;
+use crate::pipeline::GlShaderModule;
+use crate::sampler::SamplerCache;
+use crate::swapchain::GlSwapchain;
+use crate::swapchain::SwapchainInner;
 use crate::sync::GpuSyncObject;
-use autograph_render::RendererBackend;
-use autograph_render::AliasScope;
+use crate::sync::Timeline;
+use crate::util::SyncArena;
+use crate::util::SyncArenaHashMap;
+use crate::AliasInfo;
+use crate::DowncastPanic;
+use crate::ImplementationParameters;
+use autograph_render::command::Command;
+use autograph_render::descriptor::Descriptor;
+use autograph_render::descriptor::DescriptorSetLayoutBinding;
 use autograph_render::format::Format;
 use autograph_render::image::Dimensions;
-use autograph_render::image::MipmapsCount;
 use autograph_render::image::ImageUsageFlags;
+use autograph_render::image::MipmapsCount;
+use autograph_render::pipeline::GraphicsPipelineCreateInfoTypeless;
 use autograph_render::pipeline::ShaderStageFlags;
 use autograph_render::traits;
-use crate::sync::Timeline;
-use crate::command::StateCache;
-use crate::ImplementationParameters;
-use crate::sampler::SamplerCache;
-use crate::AliasInfo;
+use autograph_render::AliasScope;
+use autograph_render::RendererBackend;
+use config::Config;
+use std::any::TypeId;
+use std::collections::VecDeque;
 use std::ffi::CStr;
 use std::mem;
 use std::os::raw::c_char;
@@ -37,21 +52,6 @@ use std::slice;
 use std::str;
 use std::sync::Mutex;
 use std::time::Duration;
-use std::collections::VecDeque;
-use crate::image::upload_image_region;
-use config::Config;
-use crate::swapchain::SwapchainInner;
-use crate::command::SubmissionContext;
-use autograph_render::command::Command;
-use autograph_render::descriptor::Descriptor;
-use autograph_render::descriptor::DescriptorSetLayoutBinding;
-use crate::pipeline::create_graphics_pipeline_internal;
-use autograph_render::pipeline::GraphicsPipelineCreateInfo;
-use crate::aliaspool::AliasPool;
-use crate::DowncastPanic;
-use crate::buffer::RawBuffer;
-use crate::util::SyncArenaHashMap;
-use std::any::TypeId;
 
 //--------------------------------------------------------------------------------------------------
 extern "system" fn debug_callback(
@@ -75,7 +75,6 @@ extern "system" fn debug_callback(
     };
     log!(level, "(GL) {}", str);
 }
-
 
 //--------------------------------------------------------------------------------------------------
 pub(crate) struct GlArena {
@@ -159,9 +158,9 @@ impl Resources {
     }
 
     // arena can't drop before commands that refer to the objects inside are submitted
-    fn drop_arena(&mut self,  gl: &Gl, arena: Box<GlArena>)
-        where
-            Self: Sized,
+    fn drop_arena(&mut self, gl: &Gl, arena: Box<GlArena>)
+    where
+        Self: Sized,
     {
         // recover resources
         arena.images.into_vec().into_iter().for_each(|image| {
@@ -189,8 +188,10 @@ impl Resources {
             fb.destroy(gl);
         });
 
-        self.upload_buffers_in_use
-            .push_back(GpuSyncObject::new(gl, vec![arena.upload_buffer.into_inner()]));
+        self.upload_buffers_in_use.push_back(GpuSyncObject::new(
+            gl,
+            vec![arena.upload_buffer.into_inner()],
+        ));
     }
 
     //----------------------------------------------------------------------------------------------
@@ -252,7 +253,11 @@ pub struct OpenGlBackend {
 }
 
 impl OpenGlBackend {
-    pub fn with_gl(cfg: &Config, gl: gl::Gl, default_swapchain: Box<dyn SwapchainInner>) -> OpenGlBackend {
+    pub fn with_gl(
+        cfg: &Config,
+        gl: gl::Gl,
+        default_swapchain: Box<dyn SwapchainInner>,
+    ) -> OpenGlBackend {
         unsafe {
             gl.Enable(gl::DEBUG_OUTPUT_SYNCHRONOUS);
             gl.DebugMessageCallback(debug_callback as GLDEBUGPROC, ptr::null());
@@ -295,7 +300,7 @@ impl OpenGlBackend {
             timeline: Mutex::new(timeline),
             frame_num: Mutex::new(1),
             def_swapchain: GlSwapchain {
-                inner: default_swapchain
+                inner: default_swapchain,
             },
             desc_set_layout_cache: SyncArenaHashMap::new(),
             gl,
@@ -323,8 +328,7 @@ const SPIRV_MAGIC: u32 = 0x0723_0203;
 const UPLOAD_DEDICATED_THRESHOLD: usize = 65536;
 const FRAME_WAIT_TIMEOUT: Duration = Duration::from_millis(500);
 
-impl RendererBackend for OpenGlBackend
-{
+impl RendererBackend for OpenGlBackend {
     fn create_arena(&self) -> Box<dyn traits::Arena> {
         self.rsrc.lock().unwrap().create_arena(&self.gl)
     }
@@ -353,8 +357,7 @@ impl RendererBackend for OpenGlBackend
         samples: u32,
         _usage: ImageUsageFlags,
         data: &[u8],
-    ) -> &'a dyn traits::Image
-    {
+    ) -> &'a dyn traits::Image {
         let arena: &GlArena = arena.downcast_ref_unwrap();
         // initial data specified, allocate a texture
         let raw = RawImage::new_texture(&self.gl, fmt, &dims, mips, samples);
@@ -408,8 +411,7 @@ impl RendererBackend for OpenGlBackend
         let arena: &GlArena = arena.downcast_ref_unwrap();
         arena
             .framebuffers
-            .alloc(
-                GlFramebuffer::new(&self.gl, color_att, depth_stencil_att).unwrap())
+            .alloc(GlFramebuffer::new(&self.gl, color_att, depth_stencil_att).unwrap())
     }
 
     //----------------------------------------------------------------------------------------------
@@ -428,7 +430,8 @@ impl RendererBackend for OpenGlBackend
                 .unwrap();
             arena.buffers.alloc(GlBuffer {
                 raw: RawBuffer {
-                    obj, size: size as usize
+                    obj,
+                    size: size as usize,
                 },
                 offset,
                 alias_info: None,
@@ -441,7 +444,11 @@ impl RendererBackend for OpenGlBackend
     }
 
     //----------------------------------------------------------------------------------------------
-    fn create_buffer<'a>(&self, _arena: &'a dyn traits::Arena, _size: u64) -> &'a dyn traits::Buffer {
+    fn create_buffer<'a>(
+        &self,
+        _arena: &'a dyn traits::Arena,
+        _size: u64,
+    ) -> &'a dyn traits::Buffer {
         unimplemented!()
     }
 
@@ -471,7 +478,8 @@ impl RendererBackend for OpenGlBackend
                 stage,
             }
         } else {
-            GlShaderModule::from_glsl(&self.gl, stage, data).expect("failed to compile shader from GLSL source")
+            GlShaderModule::from_glsl(&self.gl, stage, data)
+                .expect("failed to compile shader from GLSL source")
         };
 
         arena.shader_modules.alloc(module)
@@ -481,26 +489,26 @@ impl RendererBackend for OpenGlBackend
     fn create_graphics_pipeline<'a>(
         &self,
         arena: &'a dyn traits::Arena,
-        create_info: &GraphicsPipelineCreateInfo<'_, 'a>,
+        create_info: &GraphicsPipelineCreateInfoTypeless<'_, 'a>,
     ) -> &'a dyn traits::GraphicsPipeline {
         let arena: &GlArena = arena.downcast_ref_unwrap();
         create_graphics_pipeline_internal(&self.gl, arena, create_info)
     }
 
     //----------------------------------------------------------------------------------------------
-    fn create_descriptor_set_layout<'a, 'r:'a>(
+    fn create_descriptor_set_layout<'a, 'r: 'a>(
         &'r self,
         arena: &'a dyn traits::Arena,
         typeid: Option<TypeId>,
         bindings: &[DescriptorSetLayoutBinding],
-    ) -> &'a dyn traits::DescriptorSetLayout
-    {
+    ) -> &'a dyn traits::DescriptorSetLayout {
         assert_ne!(bindings.len(), 0, "descriptor set layout has no bindings");
 
         if let Some(typeid) = typeid {
-            self.desc_set_layout_cache.get_or_insert_with(typeid, || GlDescriptorSetLayout {
-                bindings: bindings.iter().map(|b| b.clone().into()).collect(),
-            })
+            self.desc_set_layout_cache
+                .get_or_insert_with(typeid, || GlDescriptorSetLayout {
+                    bindings: bindings.iter().map(|b| b.clone().into()).collect(),
+                })
         } else {
             let arena: &GlArena = arena.downcast_ref_unwrap();
             arena.descriptor_set_layouts.alloc(GlDescriptorSetLayout {
@@ -518,8 +526,12 @@ impl RendererBackend for OpenGlBackend
     ) -> &'a dyn traits::DescriptorSet {
         let arena: &GlArena = arena.downcast_ref_unwrap();
         let mut sampler_cache = self.sampler_cache.lock().unwrap();
-        let descriptor_set =
-            GlDescriptorSet::from_descriptors_and_layout(&self.gl, descriptors, layout.downcast_ref_unwrap(), &mut sampler_cache);
+        let descriptor_set = GlDescriptorSet::from_descriptors_and_layout(
+            &self.gl,
+            descriptors,
+            layout.downcast_ref_unwrap(),
+            &mut sampler_cache,
+        );
         arena.descriptor_sets.alloc(descriptor_set)
     }
 
@@ -527,6 +539,10 @@ impl RendererBackend for OpenGlBackend
     fn submit_frame<'a>(&self, frame: &[Command<'a>]) {
         //let mut rsrc = self.rsrc.lock().unwrap();
         let mut scache = self.state_cache.lock().unwrap();
+
+        // invalidate the cache, because deletion of objects in arenas between two calls
+        // to `submit_frame` may have automatically 'unbound' objects from the pipeline.
+        scache.invalidate();
 
         // execute commands
         {
@@ -543,9 +559,10 @@ impl RendererBackend for OpenGlBackend
         // wait for previous frames before starting a new one
         // if max_frames_in_flight is zero, then will wait on the previously signalled point.
         if *fnum > u64::from(self.max_frames_in_flight) {
-            let timeout = !timeline.client_sync(&self.gl,
-                                                *fnum - u64::from(self.max_frames_in_flight),
-                                                FRAME_WAIT_TIMEOUT,
+            let timeout = !timeline.client_sync(
+                &self.gl,
+                *fnum - u64::from(self.max_frames_in_flight),
+                FRAME_WAIT_TIMEOUT,
             );
             if timeout {
                 panic!(
@@ -558,11 +575,13 @@ impl RendererBackend for OpenGlBackend
         *fnum += 1;
     }
 
-    fn update_image(&self, _image: &dyn traits::Image,
-                    _min_extent: (u32, u32, u32),
-                    _max_extent: (u32, u32, u32),
-                    _data: &[u8])
-    {
+    fn update_image(
+        &self,
+        _image: &dyn traits::Image,
+        _min_extent: (u32, u32, u32),
+        _max_extent: (u32, u32, u32),
+        _data: &[u8],
+    ) {
         unimplemented!()
     }
 }

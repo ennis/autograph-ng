@@ -56,10 +56,7 @@ pub fn descriptor_set_interface_derive(input: proc_macro::TokenStream) -> proc_m
     result.into()
 }
 
-#[proc_macro_derive(
-    PipelineInterface,
-    attributes(pipeline)
-)]
+#[proc_macro_derive(PipelineInterface, attributes(pipeline))]
 pub fn pipeline_interface_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast: syn::DeriveInput = syn::parse(input).expect("Couldn't parse item");
 

@@ -1,9 +1,9 @@
+use fxhash::FxBuildHasher;
+use fxhash::FxHashMap;
+use std::hash::Hash;
 use std::mem;
 use std::sync::Mutex;
 use typed_arena::Arena;
-use fxhash::FxHashMap;
-use std::hash::Hash;
-use fxhash::FxBuildHasher;
 
 /// Sync wrapper over a typed arena.
 /// See [typed_arena::Arena].
@@ -52,19 +52,18 @@ impl<T> SyncArena<T> {
 /// Basically an insert-only HashMap which can hand const references to its elements.
 pub struct SyncArenaHashMap<K: Eq + Hash, V> {
     arena: SyncArena<V>,
-    hash: Mutex<FxHashMap<K,*const V>>
+    hash: Mutex<FxHashMap<K, *const V>>,
 }
 
 // necessary because of *const V
 // TODO audit
-unsafe impl<K: Eq + Hash, V> Sync for SyncArenaHashMap<K, V>
-{}
+unsafe impl<K: Eq + Hash, V> Sync for SyncArenaHashMap<K, V> {}
 
-impl<K: Eq + Hash, V> SyncArenaHashMap<K,V> {
-    pub fn new() -> SyncArenaHashMap<K,V> {
+impl<K: Eq + Hash, V> SyncArenaHashMap<K, V> {
+    pub fn new() -> SyncArenaHashMap<K, V> {
         SyncArenaHashMap {
             arena: SyncArena::new(),
-            hash: Mutex::new(FxHashMap::with_hasher(FxBuildHasher::default()))
+            hash: Mutex::new(FxHashMap::with_hasher(FxBuildHasher::default())),
         }
     }
 
@@ -86,4 +85,3 @@ impl<K: Eq + Hash, V> SyncArenaHashMap<K,V> {
         }
     }
 }
-

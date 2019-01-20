@@ -2,8 +2,8 @@ use crate::backend::OpenGlBackend;
 use crate::swapchain::SwapchainInner;
 use config::Config;
 use glutin;
-use winit::{EventsLoop, WindowBuilder};
 use glutin::GlContext;
+use winit::{EventsLoop, WindowBuilder};
 
 impl SwapchainInner for glutin::GlWindow {
     fn size(&self) -> (u32, u32) {

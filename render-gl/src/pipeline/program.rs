@@ -1,16 +1,15 @@
+use super::shader::create_specialized_spirv_shader;
+use super::shader::translate_spirv_to_gl_flavor;
+use super::shader::DescriptorMap;
+use super::shader::DescriptorMapBuilder;
+use super::shader::GlShaderModule;
+use super::shader::ShaderCreationError;
 use crate::api as gl;
 use crate::api::types::*;
 use crate::api::Gl;
-use super::shader::ShaderCreationError;
+use autograph_render::pipeline::ShaderStageFlags;
 use std::error::Error;
 use std::fmt;
-use super::shader::GlShaderModule;
-use super::shader::DescriptorMap;
-use super::shader::DescriptorMapBuilder;
-use super::shader::translate_spirv_to_gl_flavor;
-use super::shader::create_specialized_spirv_shader;
-use autograph_render::pipeline::ShaderStageFlags;
-
 
 //--------------------------------------------------------------------------------------------------
 fn link_program(gl: &Gl, obj: GLuint) -> Result<GLuint, String> {

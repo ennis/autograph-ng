@@ -8,8 +8,8 @@ use autograph_render::Dimensions;
 use autograph_render::Format;
 use autograph_render::ImageUsageFlags;
 use autograph_render::MipmapsCount;
-use std::cmp::max;
 use slotmap::new_key_type;
+use std::cmp::max;
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -211,7 +211,12 @@ impl RawImage {
         }
     }
 
-    pub fn new_renderbuffer(gl: &Gl, format: Format, dimensions: &Dimensions, samples: u32) -> RawImage {
+    pub fn new_renderbuffer(
+        gl: &Gl,
+        format: Format,
+        dimensions: &Dimensions,
+        samples: u32,
+    ) -> RawImage {
         let et = ExtentsAndType::from_dimensions(&dimensions);
         let glfmt = GlFormatInfo::from_format(format);
 

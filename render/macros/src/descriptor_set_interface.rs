@@ -116,8 +116,10 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
         index += 1;
     }
 
-    let privmod = syn::Ident::new(&format!("__DescriptorSetLayout_UniqueTypeFor_{}", struct_name),
-                                  Span::call_site());
+    let privmod = syn::Ident::new(
+        &format!("__DescriptorSetLayout_UniqueTypeFor_{}", struct_name),
+        Span::call_site(),
+    );
 
     //----------------------------------------------------------------------------------------------
     let q = quote! {
@@ -129,7 +131,8 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
             for #struct_name #ty_generics #where_clause {
             const LAYOUT: #gfx::descriptor::DescriptorSetLayoutDescription<'static> =
                 #gfx::descriptor::DescriptorSetLayoutDescription {
-                    bindings: &[#(#bindings,)*]
+                    bindings: &[#(#bindings,)*],
+                    typeid: Some(std::any::TypeId::of::<#privmod::Dummy>())
                 };
             type UniqueType = #privmod::Dummy;
             type IntoInterface = Self;

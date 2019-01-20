@@ -1,6 +1,6 @@
-use std::fmt::Debug;
-pub use downcast_rs::Downcast;
 use downcast_rs::impl_downcast;
+pub use downcast_rs::Downcast;
+use std::fmt::Debug;
 
 /// Trait implemented by backend swapchain objects.
 pub trait Swapchain: Downcast + Debug {
