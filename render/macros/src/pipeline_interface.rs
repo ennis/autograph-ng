@@ -9,67 +9,39 @@ use syn::spanned::Spanned;
 // vertex_buffer, vertex_buffer_array
 
 #[derive(FromDeriveInput, Debug)]
-#[darling(attributes(interface), forward_attrs(allow, doc, cfg, repr))]
+#[darling(forward_attrs(allow, doc, cfg, repr))]
 struct PipelineInterfaceStruct {
     ident: syn::Ident,
     generics: syn::Generics,
     vis: syn::Visibility,
     attrs: Vec<syn::Attribute>,
+}
+
+
+#[derive(FromField)]
+#[darling(attributes(pipeline))]
+struct PipelineInterfaceItem {
     #[darling(default)]
-    arguments: Option<String>,
+    framebuffer: Flag,
+    #[darling(default)]
+    descriptor_set: Flag,
+    #[darling(default)]
+    descriptor_set_array: Flag,
+    #[darling(default)]
+    viewport: Flag,
+    #[darling(default)]
+    viewport_array: Flag,
+    #[darling(default)]
+    scissor: Flag,
+    #[darling(default)]
+    scissor_array: Flag,
+    #[darling(default)]
+    vertex_buffer: Flag,
+    #[darling(default)]
+    vertex_buffer_array: Flag,
+    #[darling(default)]
+    index_buffer: Flag,
 }
-
-
-#[derive(FromField)]
-#[darling(attributes(framebuffer))]
-struct Framebuffer {}
-
-#[derive(FromField)]
-#[darling(attributes(descriptor_set))]
-struct DescriptorSet {
-    // TODO: honor index attribute
-    _index: u32,
-}
-
-#[derive(FromField)]
-#[darling(attributes(descriptor_set_array))]
-struct DescriptorSetArray {
-    _base_index: u32,
-}
-
-#[derive(FromField)]
-#[darling(attributes(viewport))]
-struct Viewport {}
-
-#[derive(FromField)]
-#[darling(attributes(viewport_array))]
-struct ViewportArray {}
-
-#[derive(FromField)]
-#[darling(attributes(scissor))]
-struct Scissor {}
-
-#[derive(FromField)]
-#[darling(attributes(scissor_array))]
-struct ScissorArray {}
-
-#[derive(FromField)]
-#[darling(attributes(vertex_buffer))]
-struct VertexBuffer {
-    // TODO: honor index attribute
-    _index: u32
-}
-
-#[derive(FromField)]
-#[darling(attributes(vertex_buffer_array))]
-struct VertexBufferArray {
-    // TODO: honor base index attribute
-    _base_index: u32
-}
-
-#[derive(FromField)]
-#[darling(attributes(index_buffer))]
-struct IndexBuffer {}
 
 pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     let s = <PipelineInterfaceStruct as FromDeriveInput>::from_derive_input(ast).unwrap();
@@ -113,75 +85,78 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
         let ty = &f.ty;
         let name = &f.ident.as_ref().unwrap();
 
-        if let Ok(_) = <Framebuffer as FromField>::from_field(f) {
-            stmts.push(quote!{
-                visitor.visit_framebuffer(#name.into());
-            });
-        }
-        else if let Ok(_) = <DescriptorSet as FromField>::from_field(f) {
-            desc_set_iter.push(quote!{
-                std::iter::once(#name)
-            });
-            desc_set_iface.push(quote! {
-                <#ty as DescriptorSetInterface>::LAYOUT
-            });
-        }
-        else if let Ok(_) = <VertexBuffer as FromField>::from_field(f) {
-            vbuf_iter.push(quote!{
-                std::iter::once(#name)
-            });
-            vtx_iface.push(quote! {
-                <<#ty as VertexBufferInterface>::Vertex as VertexData>::LAYOUT
-            });
-        }
-        else if let Ok(_) = <IndexBuffer as FromField>::from_field(f) {
-            if !seen_ibuf {
-                // need indextype + offset
-                stmts.push(quote! {
-                    visitor.visit_index_buffer(#name.into());
-                });
-                seen_ibuf = true;
+        match <PipelineInterfaceItem as FromField>::from_field(f) {
+            Ok(pitem) => {
+                // check for duplicates
+                let mut num_attrs = 0;
+                if pitem.framebuffer.is_some() { num_attrs += 1; }
+                if pitem.descriptor_set.is_some() { num_attrs += 1; }
+                if pitem.descriptor_set_array.is_some() { num_attrs += 1; }
+                if pitem.viewport.is_some() { num_attrs += 1; }
+                if pitem.viewport_array.is_some() { num_attrs += 1; }
+                if pitem.scissor.is_some() { num_attrs += 1; }
+                if pitem.scissor_array.is_some() { num_attrs += 1; }
+                if pitem.vertex_buffer.is_some() { num_attrs += 1; }
+                if pitem.vertex_buffer_array.is_some() { num_attrs += 1; }
+                if pitem.index_buffer.is_some() { num_attrs += 1; }
+
+                if num_attrs == 0 {
+                    stmts.push(syn::Error::new(name.span(), "missing or incomplete `pipeline(...)` attribute. See the documentation of `PipelineInterface` for more information.")
+                        .to_compile_error());
+                    continue;
+                } else if num_attrs > 1 {
+                    stmts.push(syn::Error::new(name.span(), "field has more than one `pipeline(...)` attribute.")
+                        .to_compile_error());
+                    continue;
+                }
+
+                if pitem.framebuffer.is_some() {
+                    stmts.push(quote!{ visitor.visit_framebuffer(self.#name.clone()); });
+                } else if pitem.descriptor_set.is_some() {
+                    desc_set_iter.push(quote! { std::iter::once(self.#name.clone().into_descriptor_set(arena).into()) });
+                    desc_set_iface.push(quote! { <#ty as #gfx::descriptor::DescriptorSetInterface>::LAYOUT });
+                } else if pitem.vertex_buffer.is_some() {
+                    vbuf_iter.push(quote! { std::iter::once(self.#name.clone().into()) });
+                    vtx_iface.push(quote! {
+                        <<#ty as #gfx::vertex::VertexBufferInterface>::Vertex as #gfx::vertex::VertexData>::LAYOUT
+                    });
+                }
+                if pitem.index_buffer.is_some() {
+                    if !seen_ibuf {
+                        // need indextype + offset
+                        stmts.push(quote! {
+                        visitor.visit_index_buffer(self.#name.clone().into());
+                    });
+                        seen_ibuf = true;
+                    } else {
+                        stmts.push(syn::Error::new(name.span(), "duplicate `pipeline(index_buffer)` attribute")
+                            .to_compile_error());
+                    }
+                } else if pitem.viewport.is_some() {
+                    viewport_iter.push(quote! {
+                        std::iter::once(self.#name)
+                    });
+                } else if pitem.scissor.is_some() {
+                    scissor_iter.push(quote! {
+                        std::iter::once(self.#name)
+                    });
+                }
+                // pipeline item arrays --------------------------------------------------------------------
+                else if pitem.descriptor_set_array.is_some() {
+                    desc_set_iter.push(quote!{self.#name.into_iter().map(|a| a.into_descriptor_set().into())});
+                } else if pitem.vertex_buffer_array.is_some() {
+                    vbuf_iter.push(quote!{self.#name.into_iter().map(|a| a.into())});
+                } else if pitem.viewport_array.is_some() {
+                    viewport_iter.push(quote!{self.#name.into_iter()});
+                } else if pitem.scissor_array.is_some() {
+                    scissor_iter.push(quote!{self.#name.into_iter()});
+                }
+            },
+            Err(e) => {
+
+                stmts.push(syn::Error::new(name.span(), format!("failed to parse `pipeline(...)` attribute: {}", e))
+                    .to_compile_error());
             }
-            else {
-                return syn::Error::new(f.span(), "duplicate 'index_buffer' attribute")
-                    .to_compile_error();
-            }
-        }
-        else if let Ok(_) = <Viewport as FromField>::from_field(f) {
-            viewport_iter.push(quote!{
-                std::iter::once(#name)
-            });
-        }
-        else if let Ok(_) = <Scissor as FromField>::from_field(f) {
-            scissor_iter.push(quote! {
-                std::iter::once(#name)
-            });
-        }
-        // pipeline item arrays --------------------------------------------------------------------
-        else if let Ok(_) = <DescriptorSetArray as FromField>::from_field(f) {
-            desc_set_iter.push(quote!{
-                #name.into_iter()
-            });
-        }
-        else if let Ok(_) = <VertexBufferArray as FromField>::from_field(f) {
-            vbuf_iter.push(quote!{
-                #name.into_iter()
-            });
-        }
-        else if let Ok(_) = <ViewportArray as FromField>::from_field(f) {
-            viewport_iter.push(quote!{
-                #name.into_iter()
-            });
-        }
-        else if let Ok(_) = <ScissorArray as FromField>::from_field(f) {
-            scissor_iter.push(quote!{
-                #name.into_iter()
-            });
-        }
-        else {
-            // emit warning
-            //f.span().unstable().
-            //quote!()
         }
     }
 
@@ -204,10 +179,10 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                 visitor.visit_vertex_buffers(
                     std::iter::empty()#(.chain(#vbuf_iter))*
                 );
-                visitor.visit_viewport(
+                visitor.visit_viewports(
                     std::iter::empty()#(.chain(#viewport_iter))*
                 );
-                visitor.visit_scissor(
+                visitor.visit_scissors(
                     std::iter::empty()#(.chain(#scissor_iter))*
                 );
             }

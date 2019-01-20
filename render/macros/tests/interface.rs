@@ -3,7 +3,7 @@ extern crate autograph_render;
 extern crate autograph_render_macros;
 
 use autograph_render::{
-    Buffer, BufferTypeless, DescriptorSet, Framebuffer, IndexFormat, RendererBackend, ScissorRect,
+    Buffer, BufferTypeless, DescriptorSetTypeless, Framebuffer, IndexFormat, RendererBackend, ScissorRect,
     Viewport,
 };
 
@@ -25,7 +25,7 @@ pub struct TestPipelineInterface<'a, R: RendererBackend> {
     #[framebuffer]
     pub framebuffer: Framebuffer<'a, R>,
     #[descriptor_set]
-    pub per_object: DescriptorSet<'a, R>,
+    pub per_object: DescriptorSetTypeless<'a, R>,
     #[viewport]
     pub viewport: Viewport,
     #[vertex_buffer]
@@ -33,7 +33,7 @@ pub struct TestPipelineInterface<'a, R: RendererBackend> {
     #[vertex_buffer]
     pub vertex_buffer_prev: Buffer<'a, R, [Vertex]>,
     #[descriptor_set]
-    pub per_frame: DescriptorSet<'a, R>,
+    pub per_frame: DescriptorSetTypeless<'a, R>,
     #[index_buffer]
     pub indices: Buffer<'a, R, [u16]>,
 }
@@ -44,17 +44,17 @@ fn test_descriptor_set_interface() {}
 #[test]
 fn test_pipeline_interface() {
     struct Visitor<'a, R: RendererBackend> {
-        descriptor_sets: Vec<DescriptorSet<'a, R>>,
-        vertex_buffers: Vec<DescriptorSet<'a, R>>,
-        viewports: Vec<DescriptorSet<'a, R>>,
-        scissors: Vec<DescriptorSet<'a, R>>,
-        index_buffer: Option<DescriptorSet<'a, R>>,
+        descriptor_sets: Vec<DescriptorSetTypeless<'a, R>>,
+        vertex_buffers: Vec<DescriptorSetTypeless<'a, R>>,
+        viewports: Vec<DescriptorSetTypeless<'a, R>>,
+        scissors: Vec<DescriptorSetTypeless<'a, R>>,
+        index_buffer: Option<DescriptorSetTypeless<'a, R>>,
     };
 
     impl<'a, R: RendererBackend> autograph_render::interface::PipelineInterfaceVisitor<'a, R>
         for Visitor<'a, R>
     {
-        fn visit_descriptor_sets<I: IntoIterator<Item = DescriptorSet<'a, R>>>(
+        fn visit_descriptor_sets<I: IntoIterator<Item = DescriptorSetTypeless<'a, R>>>(
             &mut self,
             descriptor_sets: I,
         ) {

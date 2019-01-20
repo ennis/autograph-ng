@@ -6,6 +6,9 @@ use bitflags::bitflags;
 use derivative::Derivative;
 use ordered_float::NotNan;
 use std::mem;
+pub use autograph_render_macros::PipelineInterface;
+use crate::descriptor::DescriptorSetLayoutDescription;
+use crate::Arena;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VertexInputAttributeDescription {

@@ -1,5 +1,5 @@
 use crate::buffer::BufferTypeless;
-use crate::descriptor::DescriptorSet;
+use crate::descriptor::DescriptorSetTypeless;
 use crate::framebuffer::Framebuffer;
 use crate::image::Image;
 use crate::sync::PipelineStageFlags;
@@ -15,6 +15,7 @@ use crate::vertex::IndexFormat;
 use crate::vertex::VertexBufferDescriptor;
 use crate::traits;
 use std::ops::Range;
+use crate::Arena;
 
 /// Represents a command to be executed by the renderer backend.
 ///
@@ -201,7 +202,7 @@ impl<'a> CommandBuffer<'a> {
     //----------------------------------------------------------------------------------------------
     // Draw
 
-    fn set_descriptor_sets<I: IntoIterator<Item = DescriptorSet<'a>>>(
+    fn set_descriptor_sets<I: IntoIterator<Item = DescriptorSetTypeless<'a>>>(
         &mut self,
         sortkey: u64,
         descriptor_sets: I,
@@ -269,6 +270,7 @@ impl<'a> CommandBuffer<'a> {
     fn bind_pipeline_interface<PI: PipelineInterface<'a>>(
         &mut self,
         sortkey: u64,
+        arena: &'a Arena,
         pipeline: GraphicsPipeline<'a>,
         interface: &PI,
     ) {
@@ -280,7 +282,7 @@ impl<'a> CommandBuffer<'a> {
         }
 
         impl<'a, 'b> PipelineInterfaceVisitor<'a> for Visitor<'a, 'b> {
-            fn visit_descriptor_sets<I: IntoIterator<Item = DescriptorSet<'a>>>(
+            fn visit_descriptor_sets<I: IntoIterator<Item = DescriptorSetTypeless<'a>>>(
                 &mut self,
                 descriptor_sets: I,
             ) {
@@ -311,11 +313,11 @@ impl<'a> CommandBuffer<'a> {
                 self.cmdbuf.set_framebuffer(self.sortkey, framebuffer);
             }
 
-            fn visit_dynamic_viewports<I: IntoIterator<Item = Viewport>>(&mut self, viewports: I) {
+            fn visit_viewports<I: IntoIterator<Item = Viewport>>(&mut self, viewports: I) {
                 self.cmdbuf.set_viewports(self.sortkey, viewports);
             }
 
-            fn visit_dynamic_scissors<I: IntoIterator<Item = ScissorRect>>(&mut self, scissors: I) {
+            fn visit_scissors<I: IntoIterator<Item = ScissorRect>>(&mut self, scissors: I) {
                 self.cmdbuf.set_scissors(self.sortkey, scissors);
             }
         }
@@ -325,17 +327,18 @@ impl<'a> CommandBuffer<'a> {
             cmdbuf: self,
         };
 
-        interface.do_visit(&mut v);
+        interface.do_visit(arena, &mut v);
     }
 
     pub fn draw<PI: PipelineInterface<'a>>(
         &mut self,
         sortkey: u64,
+        arena: &'a Arena,
         pipeline: GraphicsPipeline<'a>,
         interface: &PI,
         params: DrawParams,
     ) {
-        self.bind_pipeline_interface(sortkey, pipeline, interface);
+        self.bind_pipeline_interface(sortkey, arena, pipeline, interface);
         self.push_command(
             sortkey,
             CommandInner::Draw {
@@ -350,11 +353,12 @@ impl<'a> CommandBuffer<'a> {
     pub fn draw_indexed<PI: PipelineInterface<'a>>(
         &mut self,
         sortkey: u64,
+        arena: &'a Arena,
         pipeline: GraphicsPipeline<'a>,
         interface: &PI,
         params: DrawIndexedParams,
     ) {
-        self.bind_pipeline_interface(sortkey, pipeline, interface);
+        self.bind_pipeline_interface(sortkey, arena, pipeline, interface);
         self.push_command(
             sortkey,
             CommandInner::DrawIndexed {

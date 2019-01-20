@@ -116,18 +116,25 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
         index += 1;
     }
 
+    let privmod = syn::Ident::new(&format!("__DescriptorSetLayout_UniqueTypeFor_{}", struct_name),
+                                  Span::call_site());
+
     //----------------------------------------------------------------------------------------------
     let q = quote! {
+        #[doc(hidden)]
+        mod #privmod {
+            pub struct Dummy;
+        }
         impl #impl_generics #gfx::descriptor::DescriptorSetInterface<'a>
             for #struct_name #ty_generics #where_clause {
             const LAYOUT: #gfx::descriptor::DescriptorSetLayoutDescription<'static> =
                 #gfx::descriptor::DescriptorSetLayoutDescription {
                     bindings: &[#(#bindings,)*]
                 };
-            fn do_visit(&self, visitor: &mut impl #gfx::descriptor::DescriptorSetInterfaceVisitor#ty_generics) {
-                visitor.visit_descriptors(
-                   std::iter::empty()#(.chain(#desc_iter))*
-                );
+            type UniqueType = #privmod::Dummy;
+            type IntoInterface = Self;
+            fn into_descriptor_set(self, arena: &'a #gfx::Arena) -> #gfx::descriptor::DescriptorSet<'a, Self> {
+                arena.create_descriptor_set(std::iter::empty()#(.chain(#desc_iter))*)
             }
         }
     };

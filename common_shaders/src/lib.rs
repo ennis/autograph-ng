@@ -4,7 +4,7 @@ use autograph_render::glm;
 use autograph_render::framebuffer::Framebuffer;
 use autograph_render::buffer::Buffer;
 use autograph_render::pipeline::Viewport;
-use autograph_render::descriptor::DescriptorSet;
+use autograph_render::descriptor::DescriptorSetTypeless;
 use autograph_render::vertex::VertexData;
 use autograph_render::buffer::StructuredBufferData;
 
@@ -31,7 +31,7 @@ pub struct Uniforms {
 
 pub struct Blit<'a> {
     pub framebuffer: Framebuffer<'a>,
-    pub per_object: DescriptorSet<'a>,
+    pub per_object: DescriptorSetTypeless<'a>,
     pub viewport: Viewport,
     pub vertex_buffer: Buffer<'a, [Vertex2DTex]>,
 }

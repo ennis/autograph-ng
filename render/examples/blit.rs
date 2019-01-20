@@ -7,9 +7,7 @@ use std::env;
 use self::common::*;
 use autograph_plugin::{load_dev_dylib, load_module};
 use autograph_render::buffer::Buffer;
-use autograph_render::descriptor::DescriptorSet;
-use autograph_render::descriptor::DescriptorSetLayoutBinding;
-use autograph_render::framebuffer::FragmentOutputDescription;
+use autograph_render::descriptor::DescriptorSetTypeless;
 use autograph_render::framebuffer::Framebuffer;
 use autograph_render::glm;
 use autograph_render::image::SampledImage;
@@ -17,7 +15,6 @@ use autograph_render::image::ImageUsageFlags;
 use autograph_render::pipeline::PipelineInterface;
 use autograph_render::pipeline::PipelineInterfaceVisitor;
 use autograph_render::pipeline::Viewport;
-use autograph_render::vertex::VertexLayout;
 use autograph_render::pipeline::GraphicsPipeline;
 use autograph_render::descriptor::DescriptorSetLayout;
 use autograph_render::pipeline::GraphicsPipelineCreateInfo;
@@ -51,6 +48,7 @@ use autograph_render::pipeline::InputAssemblyState;
 use autograph_render::pipeline::PrimitiveTopology;
 use autograph_render::pipeline::ColorBlendState;
 use autograph_render::pipeline::ColorBlendAttachments;
+use autograph_render::descriptor::DescriptorSet;
 //use autograph_render_gl::create_backend_and_window;
 
 //--------------------------------------------------------------------------------------------------
@@ -84,13 +82,19 @@ pub struct PerObject<'a> {
     pub dither: SampledImage<'a>,
 }
 
+#[derive(PipelineInterface)]
 pub struct Blit<'a> {
+    #[pipeline(framebuffer)]
     pub framebuffer: Framebuffer<'a>,
-    pub per_object: DescriptorSet<'a>,
+    #[pipeline(descriptor_set)]
+    pub per_object: DescriptorSet<'a, PerObject<'a>>,
+    #[pipeline(viewport)]
     pub viewport: Viewport,
+    #[pipeline(vertex_buffer)]
     pub vertex_buffer: Buffer<'a, [Vertex]>,
 }
 
+/*
 impl<'a> PipelineInterface<'a> for Blit<'a> {
     const VERTEX_INPUT_INTERFACE: &'static [&'static VertexLayout<'static>] = &[];
     const FRAGMENT_OUTPUT_INTERFACE: &'static [FragmentOutputDescription] = &[];
@@ -102,7 +106,7 @@ impl<'a> PipelineInterface<'a> for Blit<'a> {
         visitor.visit_framebuffer(self.framebuffer);
         visitor.visit_descriptor_sets(std::iter::once(self.per_object));
     }
-}
+}*/
 
 //--------------------------------------------------------------------------------------------------
 // SHADERS & PIPELINES
@@ -112,7 +116,7 @@ struct PipelineAndLayout<'a> {
 }
 
 fn create_pipelines<'a>(arena: &'a Arena, vs: &[u8], fs: &[u8]) -> PipelineAndLayout<'a> {
-    let descriptor_set_layout = arena.create_descriptor_set_layout(PerObject::LAYOUT.bindings);
+    let descriptor_set_layout = arena.create_descriptor_set_layout(None, PerObject::LAYOUT.bindings);
 
     let gci = GraphicsPipelineCreateInfo {
         shader_stages: &GraphicsShaderStages {
@@ -279,20 +283,18 @@ fn main() {
                     resolution: glm::vec2(w as f32, h as f32),
                 });
 
-                let per_object = arena_2.create_descriptor_set(
-                    pipeline.descriptor_set_layout,
-                    PerObject {
+                let per_object = PerObject {
                         uniforms,
                         image,
                         dither,
-                    },
-                );
+                    }.into_descriptor_set(&arena_2);
 
                 let mut cmdbuf = r.create_command_buffer();
                 cmdbuf.clear_image(0x0, color_buffer, &[0.0, 0.2, 0.8, 1.0]);
 
                 cmdbuf.draw(
                     0x0,
+                    &arena_2,
                     pipeline.blit_pipeline,
                     &Blit {
                         framebuffer,

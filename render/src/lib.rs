@@ -104,6 +104,8 @@ use crate::pipeline::ShaderModule;
 use crate::pipeline::ShaderStageFlags;
 use std::mem;
 use std::slice;
+use fxhash::FxHashMap;
+use std::any::TypeId;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -258,9 +260,15 @@ pub trait RendererBackend: Sync {
 
     /// Creates a descriptor set layout, describing the resources and binding points expected
     /// by a shader.
-    fn create_descriptor_set_layout<'a>(
-        &self,
+    ///
+    /// The implementation is expected to cache the descriptor set layout according to the
+    /// given typeid, if it is not None.
+    ///
+    /// TODO explain additional bound (actually it should be present everywhere)
+    fn create_descriptor_set_layout<'a, 'r:'a>(
+        &'r self,
         arena: &'a dyn traits::Arena,
+        typeid: Option<TypeId>,
         bindings: &[crate::DescriptorSetLayoutBinding<'_>],
     ) -> &'a dyn traits::DescriptorSetLayout;
 
@@ -475,19 +483,44 @@ impl<'rcx> Arena<'rcx> {
     #[inline]
     pub fn create_descriptor_set_layout<'a>(
         &'a self,
+        typeid: Option<TypeId>,
         bindings: &[DescriptorSetLayoutBinding],
     ) -> DescriptorSetLayout<'a> {
         DescriptorSetLayout(
             self.backend
-                .create_descriptor_set_layout(self.inner_arena(), bindings)
+                .create_descriptor_set_layout(self.inner_arena(), typeid, bindings)
         )
     }
 
-    pub fn create_descriptor_set<'a>(
+    /// Creates a descriptor set layout, describing the resources and binding points expected
+    /// by a shader.
+    #[inline]
+    pub fn get_descriptor_set_layout<'a, T: DescriptorSetInterface<'a>>(
+        &'a self,
+    ) -> DescriptorSetLayout<'a> {
+        self.create_descriptor_set_layout(Some(TypeId::of::<<T as DescriptorSetInterface>::UniqueType>()), <T as DescriptorSetInterface>::LAYOUT.bindings)
+    }
+
+
+    pub fn create_descriptor_set<'a, T: DescriptorSetInterface<'a>>(
+        &'a self,
+        descriptors: impl IntoIterator<Item = Descriptor<'a>>,
+    ) -> DescriptorSet<'a, T>
+    {
+        let descriptors : Vec<_> = descriptors.into_iter().collect();
+
+        DescriptorSet(
+            self.backend
+                .create_descriptor_set(self.inner_arena(), self.get_descriptor_set_layout::<T>().0, descriptors.as_slice()),
+            PhantomData
+        )
+    }
+
+    /*pub fn create_descriptor_set<'a>(
         &'a self,
         layout: DescriptorSetLayout<'a>,
         interface: impl DescriptorSetInterface<'a>,
-    ) -> DescriptorSet<'a> {
+    ) -> DescriptorSetTypeless<'a> {
         struct Visitor<'a> {
             descriptors: Vec<Descriptor<'a>>,
         }
@@ -504,11 +537,11 @@ impl<'rcx> Arena<'rcx> {
 
         interface.do_visit(&mut visitor);
 
-        DescriptorSet(
+        DescriptorSetTypeless(
             self.backend
                 .create_descriptor_set(self.inner_arena(), layout.0, &visitor.descriptors)
         )
-    }
+    }*/
 }
 
 //--------------------------------------------------------------------------------------------------

@@ -22,7 +22,7 @@ type Buffer<'a, T> = autograph_render::Buffer<'a, Backend, T>;
 type BufferTypeless<'a> = autograph_render::BufferTypeless<'a, Backend>;
 type Image<'a> = autograph_render::Image<'a, Backend>;
 type Framebuffer<'a> = autograph_render::Framebuffer<'a, Backend>;
-type DescriptorSet<'a> = autograph_render::DescriptorSet<'a, Backend>;
+type DescriptorSet<'a> = autograph_render::DescriptorSetTypeless<'a, Backend>;
 type DescriptorSetLayout<'a> = autograph_render::DescriptorSetLayout<'a, Backend>;
 type GraphicsPipeline<'a> = autograph_render::GraphicsPipeline<'a, Backend>;
 

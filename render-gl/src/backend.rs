@@ -50,6 +50,8 @@ use autograph_render::pipeline::GraphicsPipelineCreateInfo;
 use crate::aliaspool::AliasPool;
 use crate::DowncastPanic;
 use crate::buffer::RawBuffer;
+use crate::util::SyncArenaHashMap;
+use std::any::TypeId;
 
 //--------------------------------------------------------------------------------------------------
 extern "system" fn debug_callback(
@@ -241,14 +243,13 @@ pub struct OpenGlBackend {
     frame_num: Mutex<u64>, // replace with AtomicU64 once stabilized
     state_cache: Mutex<StateCache>,
     sampler_cache: Mutex<SamplerCache>,
+    desc_set_layout_cache: SyncArenaHashMap<TypeId, GlDescriptorSetLayout>,
     limits: ImplementationParameters,
     //window: GlWindow,
     def_swapchain: GlSwapchain,
     max_frames_in_flight: u32,
     gl: gl::Gl,
 }
-
-
 
 impl OpenGlBackend {
     pub fn with_gl(cfg: &Config, gl: gl::Gl, default_swapchain: Box<dyn SwapchainInner>) -> OpenGlBackend {
@@ -296,6 +297,7 @@ impl OpenGlBackend {
             def_swapchain: GlSwapchain {
                 inner: default_swapchain
             },
+            desc_set_layout_cache: SyncArenaHashMap::new(),
             gl,
             max_frames_in_flight,
             limits,
@@ -486,16 +488,25 @@ impl RendererBackend for OpenGlBackend
     }
 
     //----------------------------------------------------------------------------------------------
-    fn create_descriptor_set_layout<'a>(
-        &self,
+    fn create_descriptor_set_layout<'a, 'r:'a>(
+        &'r self,
         arena: &'a dyn traits::Arena,
+        typeid: Option<TypeId>,
         bindings: &[DescriptorSetLayoutBinding],
-    ) -> &'a dyn traits::DescriptorSetLayout {
-        let arena: &GlArena = arena.downcast_ref_unwrap();
+    ) -> &'a dyn traits::DescriptorSetLayout
+    {
         assert_ne!(bindings.len(), 0, "descriptor set layout has no bindings");
-        arena.descriptor_set_layouts.alloc(GlDescriptorSetLayout {
-            bindings: bindings.iter().map(|b| b.clone().into()).collect(),
-        })
+
+        if let Some(typeid) = typeid {
+            self.desc_set_layout_cache.get_or_insert_with(typeid, || GlDescriptorSetLayout {
+                bindings: bindings.iter().map(|b| b.clone().into()).collect(),
+            })
+        } else {
+            let arena: &GlArena = arena.downcast_ref_unwrap();
+            arena.descriptor_set_layouts.alloc(GlDescriptorSetLayout {
+                bindings: bindings.iter().map(|b| b.clone().into()).collect(),
+            })
+        }
     }
 
     //----------------------------------------------------------------------------------------------
