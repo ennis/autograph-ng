@@ -4,6 +4,7 @@ use autograph_render::interface::{ImageDataType, PrimitiveType, TypeDesc};
 use spirv_headers::*;
 use std::collections::HashMap;
 use typed_arena::Arena;
+use crate::StructLayout;
 
 #[derive(Debug)]
 pub enum ParsedDecoration {
@@ -240,12 +241,13 @@ fn parse_types<'tcx, 'm>(
                 let mut layout_builder = Std140LayoutBuilder::new();
                 tymap.insert(
                     *result_id,
-                    a.tydesc.alloc(TypeDesc::Struct(a.members.alloc_extend(
+                    a.tydesc.alloc(TypeDesc::Struct(StructLayout{
+                        fields: a.members.alloc_extend(
                         member_types.iter().map(|tyid| {
                             let ty = tymap[tyid];
                             (layout_builder.add_member(ty), ty)
                         }),
-                    ))),
+                    )})),
                 );
             }
             Instruction::TypeOpaque(ITypeOpaque {

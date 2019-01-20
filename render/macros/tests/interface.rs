@@ -2,7 +2,10 @@ extern crate autograph_render;
 #[macro_use]
 extern crate autograph_render_macros;
 
-use autograph_render::{ScissorRect, IndexFormat, DescriptorSet, Viewport, Buffer, BufferTypeless, RendererBackend, Framebuffer};
+use autograph_render::{
+    Buffer, BufferTypeless, DescriptorSet, Framebuffer, IndexFormat, RendererBackend, ScissorRect,
+    Viewport,
+};
 
 #[derive(DescriptorSetInterface)]
 struct TestDescriptorSetInterface<'a, R: RendererBackend> {
@@ -48,13 +51,20 @@ fn test_pipeline_interface() {
         index_buffer: Option<DescriptorSet<'a, R>>,
     };
 
-    impl<'a, R: RendererBackend> autograph_render::interface::PipelineInterfaceVisitor<'a, R> for Visitor<'a, R>
+    impl<'a, R: RendererBackend> autograph_render::interface::PipelineInterfaceVisitor<'a, R>
+        for Visitor<'a, R>
     {
-        fn visit_descriptor_sets<I: IntoIterator<Item=DescriptorSet<'a,R>>>(&mut self, descriptor_sets: I) {
+        fn visit_descriptor_sets<I: IntoIterator<Item = DescriptorSet<'a, R>>>(
+            &mut self,
+            descriptor_sets: I,
+        ) {
             self.descriptor_sets.extend(descriptor_sets);
         }
 
-        fn visit_vertex_buffers<I: IntoIterator<Item=BufferTypeless<'a,R>>>(&mut self, vertex_buffers: I) {
+        fn visit_vertex_buffers<I: IntoIterator<Item = BufferTypeless<'a, R>>>(
+            &mut self,
+            vertex_buffers: I,
+        ) {
             self.vertex_buffers.extend(descriptor_sets);
         }
 
@@ -71,13 +81,12 @@ fn test_pipeline_interface() {
             self.cmdbuf.set_framebuffer(self.sortkey, framebuffer);
         }
 
-        fn visit_dynamic_viewports<I: IntoIterator<Item=Viewport>>(&mut self, viewports: I) {
+        fn visit_dynamic_viewports<I: IntoIterator<Item = Viewport>>(&mut self, viewports: I) {
             self.cmdbuf.set_viewports(self.sortkey, viewports);
         }
 
-        fn visit_dynamic_scissors<I: IntoIterator<Item=ScissorRect>>(&mut self, scissors: I) {
+        fn visit_dynamic_scissors<I: IntoIterator<Item = ScissorRect>>(&mut self, scissors: I) {
             self.cmdbuf.set_scissors(self.sortkey, scissors);
         }
     }
-
 }

@@ -1,4 +1,5 @@
-use super::{OpenGlBackend, SwapchainInner};
+use crate::backend::OpenGlBackend;
+use crate::swapchain::SwapchainInner;
 use config::Config;
 use glutin;
 use winit::{EventsLoop, WindowBuilder};

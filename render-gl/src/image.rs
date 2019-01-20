@@ -1,6 +1,15 @@
-use crate::{api as gl, api::types::*, api::Gl, format::GlFormatInfo};
-use autograph_render::{get_texture_mip_map_count, Dimensions, Format, ImageUsageFlags, MipmapsCount};
-use std::cmp::*;
+use crate::api as gl;
+use crate::api::types::*;
+use crate::api::Gl;
+use crate::format::GlFormatInfo;
+use crate::AliasInfo;
+use autograph_render::get_texture_mip_map_count;
+use autograph_render::Dimensions;
+use autograph_render::Format;
+use autograph_render::ImageUsageFlags;
+use autograph_render::MipmapsCount;
+use std::cmp::max;
+use slotmap::new_key_type;
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -107,6 +116,7 @@ impl ExtentsAndType {
 }
 
 //--------------------------------------------------------------------------------------------------
+
 /// Wrapper for OpenGL textures and renderbuffers.
 #[derive(Copy, Clone, Debug)]
 pub struct RawImage {
@@ -322,3 +332,21 @@ pub unsafe fn upload_image_region(
 
     gl.PixelStorei(gl::UNPACK_ALIGNMENT, prev_unpack_alignment);
 }
+
+//--------------------------------------------------------------------------------------------------
+
+new_key_type! {
+    pub struct ImageAliasKey;
+}
+
+/// OpenGL image.
+///
+/// It can be either a texture object or a renderbuffer object if sampling is not required.
+#[derive(Debug)]
+pub(crate) struct GlImage {
+    pub(crate) raw: RawImage,
+    pub(crate) should_destroy: bool,
+    pub(crate) alias_info: Option<AliasInfo<ImageAliasKey>>,
+}
+
+impl autograph_render::traits::Image for GlImage {}

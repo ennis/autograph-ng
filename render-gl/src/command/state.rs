@@ -1,7 +1,20 @@
 use crate::ImplementationParameters;
-use crate::{api as gl, api::types::*, api::Gl};
-use autograph_render::*;
+use crate::api as gl;
+use crate::api::types::*;
+use crate::api::Gl;
 use ordered_float::NotNan;
+use autograph_render::pipeline::ColorBlendAttachmentState;
+use autograph_render::pipeline::PolygonMode;
+use autograph_render::pipeline::StencilOpState;
+use autograph_render::pipeline::CompareOp;
+use autograph_render::pipeline::PrimitiveTopology;
+use autograph_render::pipeline::StencilOp;
+use autograph_render::pipeline::BlendFactor;
+use autograph_render::pipeline::BlendOp;
+use autograph_render::pipeline::StencilTest;
+use autograph_render::pipeline::CullModeFlags;
+use autograph_render::vertex::IndexFormat;
+use autograph_render::pipeline::Viewport;
 
 pub struct ColorBlendCache {
     all: bool,
@@ -10,7 +23,7 @@ pub struct ColorBlendCache {
 
 pub struct StateCache {
     max_draw_buffers: u32,
-    max_color_attachments: u32,
+    _max_color_attachments: u32,
     max_viewports: u32,
 
     cull_enable: Option<bool>,
@@ -147,7 +160,7 @@ impl StateCache {
     pub fn new(params: &ImplementationParameters) -> StateCache {
         StateCache {
             max_draw_buffers: params.max_draw_buffers,
-            max_color_attachments: params.max_color_attachments,
+            _max_color_attachments: params.max_color_attachments,
             max_viewports: params.max_viewports,
             cull_enable: None,
             cull_mode: None,
@@ -179,7 +192,7 @@ impl StateCache {
             shader_storage_buffer_offsets: None,*/
         }
     }
-
+/*
     pub fn invalidate(&mut self) {
         *self = StateCache {
             max_draw_buffers: self.max_draw_buffers,
@@ -215,7 +228,7 @@ impl StateCache {
             shader_storage_buffer_offsets: None,*/
         };
     }
-
+*/
     pub fn set_program(&mut self, gl: &Gl, program: GLuint) {
         self.program.update_cached(program, || unsafe {
             gl.UseProgram(program);

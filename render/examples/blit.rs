@@ -1,29 +1,57 @@
 #[macro_use]
 extern crate log;
 
-mod common;
+pub mod common;
 
-use self::common::*;
-use autograph_render;
-use autograph_render::glm;
-use autograph_render::interface::DescriptorSetInterface;
-use autograph_render::interface::FragmentOutputDescription;
-use autograph_render::interface::PipelineInterface;
-use autograph_render::interface::PipelineInterfaceVisitor;
-use autograph_render::interface::VertexLayout;
-use autograph_render::*;
-use autograph_render_gl as gl_backend;
-use autograph_plugin::{load_dev_dylib, load_module};
 use std::env;
-
-//--------------------------------------------------------------------------------------------------
-type Backend = gl_backend::OpenGlBackend;
-type Buffer<'a, T> = autograph_render::Buffer<'a, Backend, T>;
-type SampledImage<'a> = autograph_render::SampledImage<'a, Backend>;
-type Framebuffer<'a> = autograph_render::Framebuffer<'a, Backend>;
-type DescriptorSet<'a> = autograph_render::DescriptorSet<'a, Backend>;
-type DescriptorSetLayout<'a> = autograph_render::DescriptorSetLayout<'a, Backend>;
-type GraphicsPipeline<'a> = autograph_render::GraphicsPipeline<'a, Backend>;
+use self::common::*;
+use autograph_plugin::{load_dev_dylib, load_module};
+use autograph_render::buffer::Buffer;
+use autograph_render::descriptor::DescriptorSet;
+use autograph_render::descriptor::DescriptorSetLayoutBinding;
+use autograph_render::framebuffer::FragmentOutputDescription;
+use autograph_render::framebuffer::Framebuffer;
+use autograph_render::glm;
+use autograph_render::image::SampledImage;
+use autograph_render::image::ImageUsageFlags;
+use autograph_render::pipeline::PipelineInterface;
+use autograph_render::pipeline::PipelineInterfaceVisitor;
+use autograph_render::pipeline::Viewport;
+use autograph_render::vertex::VertexLayout;
+use autograph_render::pipeline::GraphicsPipeline;
+use autograph_render::descriptor::DescriptorSetLayout;
+use autograph_render::pipeline::GraphicsPipelineCreateInfo;
+use autograph_render::pipeline::GraphicsShaderStages;
+use autograph_render::pipeline::VertexInputState;
+use autograph_render::pipeline::VertexInputBindingDescription;
+use autograph_render::pipeline::VertexInputAttributeDescription;
+use autograph_render::pipeline::VertexInputRate;
+use autograph_render::pipeline::RasterisationState;
+use autograph_render::pipeline::ColorBlendAttachmentState;
+use autograph_render::pipeline::DepthStencilState;
+use autograph_render::pipeline::AttachmentLayout;
+use autograph_render::AliasScope;
+use autograph_render::format::Format;
+use autograph_render::image::MipmapsCount;
+use autograph_render::image::SamplerDescription;
+use autograph_render::command::DrawParams;
+use autograph_render::pipeline::MultisampleState;
+use autograph_render::pipeline::Scissors;
+use autograph_render::pipeline::Viewports;
+use autograph_render::pipeline::ViewportState;
+use autograph_render::pipeline::PipelineLayout;
+use autograph_render::pipeline::AttachmentDescription;
+use autograph_render::vertex::VertexData;
+use autograph_render::buffer::StructuredBufferData;
+use autograph_render::descriptor::DescriptorSetInterface;
+use autograph_render::pipeline::DynamicStateFlags;
+use autograph_render::pipeline::ShaderStageFlags;
+use autograph_render::Arena;
+use autograph_render::pipeline::InputAssemblyState;
+use autograph_render::pipeline::PrimitiveTopology;
+use autograph_render::pipeline::ColorBlendState;
+use autograph_render::pipeline::ColorBlendAttachments;
+//use autograph_render_gl::create_backend_and_window;
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Copy, Clone, VertexData)]
@@ -47,7 +75,6 @@ pub struct Uniforms {
 }
 
 #[derive(DescriptorSetInterface)]
-#[interface(arguments = "<'a,Backend>")]
 pub struct PerObject<'a> {
     #[descriptor(uniform_buffer)]
     pub uniforms: Buffer<'a, Uniforms>,
@@ -64,12 +91,12 @@ pub struct Blit<'a> {
     pub vertex_buffer: Buffer<'a, [Vertex]>,
 }
 
-impl<'a> PipelineInterface<'a, Backend> for Blit<'a> {
+impl<'a> PipelineInterface<'a> for Blit<'a> {
     const VERTEX_INPUT_INTERFACE: &'static [&'static VertexLayout<'static>] = &[];
     const FRAGMENT_OUTPUT_INTERFACE: &'static [FragmentOutputDescription] = &[];
     const DESCRIPTOR_SET_INTERFACE: &'static [&'static [DescriptorSetLayoutBinding<'static>]] = &[];
 
-    fn do_visit<V: PipelineInterfaceVisitor<'a,Backend>>(&self, visitor: &mut V) {
+    fn do_visit<V: PipelineInterfaceVisitor<'a>>(&self, visitor: &mut V) {
         visitor.visit_dynamic_viewports(std::iter::once(self.viewport));
         visitor.visit_vertex_buffers(std::iter::once(self.vertex_buffer.into()));
         visitor.visit_framebuffer(self.framebuffer);
@@ -84,7 +111,7 @@ struct PipelineAndLayout<'a> {
     descriptor_set_layout: DescriptorSetLayout<'a>,
 }
 
-fn create_pipelines<'a>(arena: &'a Arena<Backend>, vs: &[u8], fs: &[u8]) -> PipelineAndLayout<'a> {
+fn create_pipelines<'a>(arena: &'a Arena, vs: &[u8], fs: &[u8]) -> PipelineAndLayout<'a> {
     let descriptor_set_layout = arena.create_descriptor_set_layout(PerObject::LAYOUT.bindings);
 
     let gci = GraphicsPipelineCreateInfo {

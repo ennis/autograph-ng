@@ -2,17 +2,15 @@ use super::autograph_name;
 use darling::{util::Flag, FromDeriveInput, FromField};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{parse_str, AngleBracketedGenericArguments, Ident};
+use syn::Ident;
 
 #[derive(FromDeriveInput, Debug)]
-#[darling(attributes(interface), forward_attrs(allow, doc, cfg, repr))]
+#[darling(forward_attrs(allow, doc, cfg, repr))]
 struct DescriptorSetInterfaceStruct {
     ident: syn::Ident,
     generics: syn::Generics,
     vis: syn::Visibility,
     attrs: Vec<syn::Attribute>,
-    #[darling(default)]
-    arguments: Option<String>,
 }
 
 #[derive(FromField)]
@@ -99,18 +97,18 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
             "expected one of `storage_image`, `sampled_image`, `uniform_buffer`, `storage_buffer`",
         );
 
-        desc_iter.push(quote!{
+        desc_iter.push(quote! {
             // Into<Descriptor>
             std::iter::once(self.#name.into())
         });
 
         bindings.push(quote! {
-            #gfx::DescriptorSetLayoutBinding {
+            #gfx::descriptor::DescriptorSetLayoutBinding {
                 binding: #index,
-                descriptor_type: #gfx::DescriptorType::#descriptor_type,
-                stage_flags: #gfx::ShaderStageFlags::ALL_GRAPHICS,
+                descriptor_type: #gfx::descriptor::DescriptorType::#descriptor_type,
+                stage_flags: #gfx::pipeline::ShaderStageFlags::ALL_GRAPHICS,
                 count: 1,
-                tydesc: <#field_ty as #gfx::interface::DescriptorInterface<_>>::TYPE,
+                tydesc: <#field_ty as #gfx::descriptor::DescriptorInterface>::TYPE,
             }
         });
 
@@ -119,33 +117,17 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     }
 
     //----------------------------------------------------------------------------------------------
-    let q = if let Some(ref args) = s.arguments {
-        let args: AngleBracketedGenericArguments =
-            parse_str(args).expect("failed to parse angle bracketed generic arguments");
-        quote! {
-            impl #impl_generics #gfx::interface::DescriptorSetInterface #args
+    let q = quote! {
+        impl #impl_generics #gfx::descriptor::DescriptorSetInterface<'a>
             for #struct_name #ty_generics #where_clause {
-                const LAYOUT: #gfx::interface::DescriptorSetLayoutDescription<'static> = #gfx::interface::DescriptorSetLayoutDescription {
+            const LAYOUT: #gfx::descriptor::DescriptorSetLayoutDescription<'static> =
+                #gfx::descriptor::DescriptorSetLayoutDescription {
                     bindings: &[#(#bindings,)*]
                 };
-                fn do_visit(&self, visitor: &mut impl #gfx::interface::DescriptorSetInterfaceVisitor#args) {
-                    visitor.visit_descriptors(
-                        std::iter::empty()#(.chain(#desc_iter))*
-                    );
-                }
-            }
-        }
-    } else {
-        quote! {
-            impl #impl_generics #gfx::interface::DescriptorSetInterface #ty_generics for #struct_name #ty_generics #where_clause {
-                const LAYOUT: #gfx::interface::DescriptorSetLayoutDescription<'static> = #gfx::interface::DescriptorSetLayoutDescription {
-                    bindings: &[#(#bindings,)*]
-                };
-                fn do_visit(&self, visitor: &mut impl #gfx::interface::DescriptorSetInterfaceVisitor#ty_generics) {
-                    visitor.visit_descriptors(
-                       std::iter::empty()#(.chain(#desc_iter))*
-                    );
-                }
+            fn do_visit(&self, visitor: &mut impl #gfx::descriptor::DescriptorSetInterfaceVisitor#ty_generics) {
+                visitor.visit_descriptors(
+                   std::iter::empty()#(.chain(#desc_iter))*
+                );
             }
         }
     };

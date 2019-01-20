@@ -4,30 +4,42 @@ use std::fmt;
 use std::mem;
 use std::os::raw::c_void;
 use std::ptr;
-
-//pub mod interface;
-pub mod preprocessor;
-
-pub use self::preprocessor::*;
+use autograph_render::traits;
+use autograph_render::pipeline::ShaderStageFlags;
+use autograph_spirv::TypeDesc;
 use crate::api as gl;
 use crate::api::types::*;
 use crate::api::Gl;
-use crate::pipeline::{BindingSpace, DescriptorMap, FlatBinding};
-use autograph_render::{interface::TypeDesc, ShaderStageFlags};
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Debug)]
-pub struct GlShaderModule {
-    pub obj: GLuint,
-    pub stage: ShaderStageFlags,
+pub(crate) struct GlShaderModule {
+    pub(crate) obj: GLuint,
+    pub(crate) stage: ShaderStageFlags,
     /// SPIR-V bytecode of this shader. If this is not None, then obj is ignored
     /// (the shader is created during program creation).
-    pub spirv: Option<Vec<u32>>,
+    pub(crate) spirv: Option<Vec<u32>>,
 }
+
+impl GlShaderModule {
+    pub(crate) fn from_glsl(
+        gl: &Gl,
+        stage: ShaderStageFlags,
+        source: &[u8]) -> Result<GlShaderModule, ShaderCreationError> {
+        let obj = create_shader_from_glsl(gl, stage, source)?;
+        Ok(GlShaderModule {
+            obj,
+            spirv: None,
+            stage,
+        })
+    }
+}
+
+impl traits::ShaderModule for GlShaderModule {}
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Debug)]
-pub struct ShaderCreationError(pub String);
+pub(crate) struct ShaderCreationError(pub(crate) String);
 
 impl fmt::Display for ShaderCreationError {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
@@ -38,7 +50,7 @@ impl fmt::Display for ShaderCreationError {
 impl Error for ShaderCreationError {}
 
 //--------------------------------------------------------------------------------------------------
-pub fn shader_stage_flags_to_glenum(stage: ShaderStageFlags) -> GLenum {
+pub(crate) fn shader_stage_flags_to_glenum(stage: ShaderStageFlags) -> GLenum {
     match stage {
         ShaderStageFlags::VERTEX => gl::VERTEX_SHADER,
         ShaderStageFlags::FRAGMENT => gl::FRAGMENT_SHADER,
@@ -67,7 +79,7 @@ fn get_shader_info_log(
     }
 }
 
-pub fn create_shader_from_glsl(
+pub(crate) fn create_shader_from_glsl(
     gl: &Gl,
     stage: ShaderStageFlags,
     source: &[u8],
@@ -96,7 +108,7 @@ pub fn create_shader_from_glsl(
     }
 }
 
-pub fn create_specialized_spirv_shader(
+pub(crate) fn create_specialized_spirv_shader(
     gl: &Gl,
     stage: ShaderStageFlags,
     entry_point: &str,
@@ -128,8 +140,31 @@ pub fn create_specialized_spirv_shader(
     }
 }
 
-/*
-pub struct DescriptorMap(Vec<Vec<FlatBinding>>);
+//--------------------------------------------------------------------------------------------------
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub(crate) enum BindingSpace {
+    UniformBuffer,
+    ShaderStorageBuffer,
+    AtomicCounterBuffer,
+    Texture,
+    Image,
+    Empty,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub(crate) struct FlatBinding {
+    pub(crate) space: BindingSpace,
+    pub(crate) location: u32,
+}
+
+/*impl FlatBinding {
+    pub(crate) fn new(space: BindingSpace, location: u32) -> FlatBinding {
+        FlatBinding { space, location }
+    }
+}*/
+
+#[derive(Clone, Debug)]
+pub(crate) struct DescriptorMap(pub(crate) Vec<Vec<FlatBinding>>);
 
 impl DescriptorMap {
     pub fn get_binding_location(&self, set: u32, binding: u32) -> Option<FlatBinding> {
@@ -143,7 +178,7 @@ impl DescriptorMap {
             })
         })
     }
-}*/
+}
 
 #[derive(Clone, Debug)]
 pub struct DescriptorMapBuilder {
@@ -213,12 +248,13 @@ impl From<DescriptorMapBuilder> for DescriptorMap {
 
 //--------------------------------------------------------------------------------------------------
 
-/// Ported from gfx-rs
-///
 /// Translate SPIR-V bytecode into something that OpenGL can understand.
+///
 /// Does two things:
 /// * 'Flattens' descriptor sets and bindings into a single binding number
 /// * Builds image+sampler combinations (unimplemented)
+///
+/// Ported from gfx-rs
 pub fn translate_spirv_to_gl_flavor(
     spv: &[u32],
     _stage: ShaderStageFlags,

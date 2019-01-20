@@ -11,6 +11,7 @@ pub mod layout;
 use std::cell::RefCell;
 use std::fmt;
 use std::marker::PhantomData;
+use spirv_headers::ImageFormat;
 
 //pub use self::inst::*;
 //pub use self::edit::*;
@@ -104,3 +105,81 @@ impl Module {
         })
     }
 }
+
+//--------------------------------------------------------------------------------------------------
+
+/// Primitive SPIR-V data types.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum PrimitiveType {
+    /// 32-bit signed integer
+    Int,
+    /// 32-bit unsigned integer
+    UnsignedInt,
+    /// 16-bit half float (unused)
+    Half,
+    /// 32-bit floating-point value
+    Float,
+    /// 64-bit floating-point value
+    Double,
+    /// Boolean
+    /// TODO size and alignment?
+    Bool,
+}
+
+/// Texture basic data type (NOT storage format)
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum ImageDataType {
+    Float, // and also depth
+    Integer,
+    UnsignedInteger,
+}
+
+/// Describes the memory layout of struct fields.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct StructLayout<'tcx> {
+    pub fields: &'tcx [(usize, &'tcx TypeDesc<'tcx>)],
+}
+
+/// Describes a data type used inside a SPIR-V shader
+/// (e.g. the type of a uniform, or the type of vertex attributes as seen by the shader).
+///
+/// TypeDescs are slightly different from Formats:
+/// the latter describes the precise bit layout, packing, numeric format, and interpretation
+/// of individual data elements, while the former describes unpacked data as seen inside shaders.
+///
+/// For instance, a vertex buffer containing an attribute with format `R16G16B16_UNORM` is unpacked
+/// and fed to the vertex shader as a 3-component vector of floats, which is represented by
+/// `TypeDesc::Vector(PrimitiveType::Float,3)`.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum TypeDesc<'tcx> {
+    /// Primitive type.
+    Primitive(PrimitiveType),
+    /// Array type.
+    Array(&'tcx TypeDesc<'tcx>, usize),
+    /// Vector type (ty,size).
+    Vector(PrimitiveType, u8),
+    /// Matrix type (ty,rows,cols).
+    Matrix(PrimitiveType, u8, u8),
+    /// Structure type (array of (offset, type) tuples).
+    Struct(StructLayout<'tcx>),
+    /// Image type.
+    Image(ImageDataType, Option<ImageFormat>),
+    /// Combination of an image and sampling information.
+    SampledImage(ImageDataType, Option<ImageFormat>),
+    Void,
+    /// Pointer to data.
+    Pointer(&'tcx TypeDesc<'tcx>),
+    Unknown,
+}
+
+pub const TYPE_FLOAT: TypeDesc = TypeDesc::Primitive(PrimitiveType::Float);
+pub const TYPE_INT: TypeDesc = TypeDesc::Primitive(PrimitiveType::Int);
+pub const TYPE_VEC2: TypeDesc = TypeDesc::Vector(PrimitiveType::Float, 2);
+pub const TYPE_VEC3: TypeDesc = TypeDesc::Vector(PrimitiveType::Float, 3);
+pub const TYPE_VEC4: TypeDesc = TypeDesc::Vector(PrimitiveType::Float, 4);
+pub const TYPE_IVEC2: TypeDesc = TypeDesc::Vector(PrimitiveType::Int, 2);
+pub const TYPE_IVEC3: TypeDesc = TypeDesc::Vector(PrimitiveType::Int, 3);
+pub const TYPE_IVEC4: TypeDesc = TypeDesc::Vector(PrimitiveType::Int, 4);
+pub const TYPE_MAT2: TypeDesc = TypeDesc::Matrix(PrimitiveType::Float, 2, 2);
+pub const TYPE_MAT3: TypeDesc = TypeDesc::Matrix(PrimitiveType::Float, 3, 3);
+pub const TYPE_MAT4: TypeDesc = TypeDesc::Matrix(PrimitiveType::Float, 4, 4);

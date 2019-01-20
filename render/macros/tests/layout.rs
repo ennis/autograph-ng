@@ -2,7 +2,10 @@ extern crate autograph_render;
 #[macro_use]
 extern crate autograph_render_macros;
 
-use autograph_render::{interface::StructuredBufferData, BufferTypeless, interface::PrimitiveType, RendererBackend, interface::TypeDesc};
+use autograph_render::{
+    interface::PrimitiveType, interface::StructuredBufferData, interface::TypeDesc, BufferTypeless,
+    RendererBackend,
+};
 
 #[repr(C)]
 #[derive(StructuredBufferData, Copy, Clone)]

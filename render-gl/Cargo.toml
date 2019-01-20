@@ -29,7 +29,8 @@ ordered-float = "1.0.1"
 unreachable = "1.0.0"
 typed-arena = "1.4.1"
 fxhash = "0.2.1"
-derivative = "1.0.2"
+unsafe-any = "0.4.2"
+
 autograph-render = { path = "../render" }
 autograph-spirv = { path = "../spirv" }
 

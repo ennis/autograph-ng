@@ -12,8 +12,8 @@ extern crate proc_macro2;
 extern crate quote;
 extern crate syn;
 
-mod layout;
 mod descriptor_set_interface;
+mod layout;
 mod pipeline_interface;
 
 fn autograph_name() -> syn::Path {
@@ -44,7 +44,7 @@ pub fn vertex_data_derive(input: proc_macro::TokenStream) -> proc_macro::TokenSt
     result.into()
 }
 
-#[proc_macro_derive(DescriptorSetInterface, attributes(interface, descriptor))]
+#[proc_macro_derive(DescriptorSetInterface, attributes(descriptor))]
 pub fn descriptor_set_interface_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast: syn::DeriveInput = syn::parse(input).expect("Couldn't parse item");
 
@@ -56,18 +56,22 @@ pub fn descriptor_set_interface_derive(input: proc_macro::TokenStream) -> proc_m
     result.into()
 }
 
-#[proc_macro_derive(PipelineInterface, attributes(
-    interface,
-    framebuffer,
-    descriptor_set,
-    descriptor_set_array,
-    viewport,
-    viewport_array,
-    scissor,
-    scissor_array,
-    vertex_buffer,
-    vertex_buffer_array,
-    index_buffer))]
+#[proc_macro_derive(
+    PipelineInterface,
+    attributes(
+        interface,
+        framebuffer,
+        descriptor_set,
+        descriptor_set_array,
+        viewport,
+        viewport_array,
+        scissor,
+        scissor_array,
+        vertex_buffer,
+        vertex_buffer_array,
+        index_buffer
+    )
+)]
 pub fn pipeline_interface_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast: syn::DeriveInput = syn::parse(input).expect("Couldn't parse item");
 

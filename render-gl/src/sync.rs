@@ -1,4 +1,6 @@
-use crate::{api as gl, api::types::*, api::Gl};
+use crate::api as gl;
+use crate::api::types::*;
+use crate::api::Gl;
 use std::collections::vec_deque::VecDeque;
 use std::time::Duration;
 

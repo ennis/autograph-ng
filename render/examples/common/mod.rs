@@ -1,9 +1,9 @@
 //! Boilerplate code for creating a window and an OpenGL context with winit/glutin.
 extern crate image as img;
 use self::img::GenericImageView;
-use config;
 use autograph_render::*;
-use autograph_render_gl::{create_backend_and_window, OpenGlBackend};
+use autograph_render_gl::create_backend_and_window;
+use config;
 use pretty_env_logger;
 use std::cell::RefCell;
 use std::error;
@@ -45,10 +45,10 @@ impl fmt::Display for ImageLoadError {
 impl error::Error for ImageLoadError {}
 
 //
-pub fn load_image_2d<'a, P: AsRef<Path>, R: RendererBackend>(
-    arena: &'a Arena<R>,
+pub fn load_image_2d<'a, P: AsRef<Path>>(
+    arena: &'a Arena,
     path: P,
-) -> Result<Image<'a, R>, ImageLoadError> {
+) -> Result<Image<'a>, ImageLoadError> {
     let img = img::open(path)?;
     let (width, height) = img.dimensions();
     let format = match img.color() {
@@ -75,7 +75,7 @@ pub fn load_image_2d<'a, P: AsRef<Path>, R: RendererBackend>(
 pub struct App {
     pub cfg: config::Config,
     pub events_loop: RefCell<winit::EventsLoop>,
-    pub renderer: Renderer<OpenGlBackend>,
+    pub renderer: Renderer,
 }
 
 impl Default for App {
@@ -134,7 +134,7 @@ impl App {
         should_close
     }
 
-    pub fn renderer(&self) -> &Renderer<OpenGlBackend> {
+    pub fn renderer(&self) -> &Renderer {
         &self.renderer
     }
 }

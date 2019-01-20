@@ -30,6 +30,8 @@ derivative = "1.0.2"
 nalgebra-glm = { version = "0.2.0", optional = true }
 autograph-render-macros = { path = "macros" }
 autograph-shader-macros = { path = "../shader/macros" }
+unsafe-any = "0.4.2"
+downcast-rs = "1.0.3"
 
 [features]
 glm-types = ["nalgebra-glm"]

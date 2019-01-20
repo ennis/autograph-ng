@@ -1,21 +1,23 @@
 //! Upload buffers
 use crate::buffer::create_buffer;
-use crate::{api as gl, api::types::*, api::Gl};
+use crate::api as gl;
+use crate::api::types::*;
+use crate::api::Gl;
 use autograph_render::align_offset;
 use std::ptr::copy_nonoverlapping;
 use std::sync::Mutex;
 
-pub struct MappedBuffer {
+pub(crate) struct MappedBuffer {
     buffer: GLuint,
     ptr: *mut u8,
     size: usize,
-    flags: GLenum,
+    _flags: GLenum,
 }
 
 unsafe impl Send for MappedBuffer {}
 
 impl MappedBuffer {
-    pub fn new(gl: &Gl, size: usize) -> MappedBuffer {
+    pub(crate) fn new(gl: &Gl, size: usize) -> MappedBuffer {
         let buffer = create_buffer(
             gl,
             size,
@@ -34,26 +36,26 @@ impl MappedBuffer {
             buffer,
             ptr,
             size,
-            flags: map_flags,
+            _flags: map_flags,
         }
     }
 
-    pub fn write(&self, data: &[u8], offset: usize) {
+    pub(crate) fn write(&self, data: &[u8], offset: usize) {
         unsafe {
             copy_nonoverlapping(data.as_ptr(), self.ptr.add(offset), data.len());
         }
     }
 
-    pub fn flush(&self, _gl: &Gl) {
+    /*pub(crate) fn flush(&self, _gl: &Gl) {
         if (self.flags & gl::MAP_COHERENT_BIT) != 0 {
             // do nothing, data is already visible to the CPU
         } else {
             // TODO glFlushMappedBufferRange
             unimplemented!()
         }
-    }
+    }*/
 
-    pub fn raw_buffer(&self) -> GLuint {
+    pub(crate) fn raw_buffer(&self) -> GLuint {
         self.buffer
     }
 }
@@ -63,15 +65,15 @@ struct UploadBufferInner {
     offset: usize,
 }
 
-pub struct UploadBuffer(Mutex<UploadBufferInner>);
+pub(crate) struct UploadBuffer(Mutex<UploadBufferInner>);
 
 impl UploadBuffer {
-    pub fn new(buffer: MappedBuffer) -> UploadBuffer {
+    pub(crate) fn new(buffer: MappedBuffer) -> UploadBuffer {
         UploadBuffer(Mutex::new(UploadBufferInner { buffer, offset: 0 }))
     }
 
     /// Returns the offset.
-    pub fn write(&self, data: &[u8], align: usize) -> Option<(GLuint, usize)> {
+    pub(crate) fn write(&self, data: &[u8], align: usize) -> Option<(GLuint, usize)> {
         let mut self_ = self.0.lock().unwrap();
 
         let offset = align_offset(
@@ -84,11 +86,11 @@ impl UploadBuffer {
         Some((self_.buffer.raw_buffer(), offset))
     }
 
-    pub fn flush(&self, gl: &Gl) {
+    /*pub(crate) fn flush(&self, gl: &Gl) {
         self.0.lock().unwrap().buffer.flush(gl)
-    }
+    }*/
 
-    pub fn into_inner(self) -> MappedBuffer {
+    pub(crate) fn into_inner(self) -> MappedBuffer {
         self.0.into_inner().unwrap().buffer
     }
 }

@@ -1,8 +1,14 @@
 #![feature(proc_macro_hygiene)]
-use autograph_render::glm;
-use autograph_render::*;
 use autograph_plugin::hot_reload_module;
+use autograph_render::glm;
+use autograph_render::framebuffer::Framebuffer;
+use autograph_render::buffer::Buffer;
+use autograph_render::pipeline::Viewport;
+use autograph_render::descriptor::DescriptorSet;
+use autograph_render::vertex::VertexData;
+use autograph_render::buffer::StructuredBufferData;
 
+#[derive(VertexData)]
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct Vertex2DTex {
@@ -23,11 +29,11 @@ pub struct Uniforms {
     pub resolution: glm::Vec2,
 }
 
-pub struct Blit<'a, R: RendererBackend> {
-    pub framebuffer: Framebuffer<'a, R>,
-    pub per_object: DescriptorSet<'a, R>,
+pub struct Blit<'a> {
+    pub framebuffer: Framebuffer<'a>,
+    pub per_object: DescriptorSet<'a>,
     pub viewport: Viewport,
-    pub vertex_buffer: Buffer<'a, R, [Vertex2DTex]>,
+    pub vertex_buffer: Buffer<'a, [Vertex2DTex]>,
 }
 
 #[hot_reload_module]

@@ -1,12 +1,17 @@
-use crate::{
-    api::types::*,
-    api::Gl,
-    pipeline::{BindingSpace, DescriptorMap},
-    resource::SamplerCache,
-    OpenGlBackend,
-};
+use crate::api::types::*;
+use crate::api::Gl;
+use crate::pipeline::BindingSpace;
 use autograph_render;
-use autograph_render::{Descriptor, DescriptorSetLayoutBinding, DescriptorType, ShaderStageFlags};
+use autograph_render::traits;
+use autograph_render::descriptor::Descriptor;
+use autograph_render::descriptor::DescriptorSetLayoutBinding;
+use autograph_render::descriptor::DescriptorType;
+use autograph_render::pipeline::ShaderStageFlags;
+use crate::sampler::SamplerCache;
+use crate::pipeline::DescriptorMap;
+use crate::image::GlImage;
+use crate::buffer::GlBuffer;
+use crate::DowncastPanic;
 
 const MAX_INLINE_SHADER_RESOURCE_BINDINGS: usize = 10;
 
@@ -104,7 +109,7 @@ pub struct GlDescriptorSet {
 impl GlDescriptorSet {
     pub fn from_descriptors_and_layout(
         gl: &Gl,
-        descriptors: &[Descriptor<OpenGlBackend>],
+        descriptors: &[Descriptor],
         layout: &GlDescriptorSetLayout,
         sampler_cache: &mut SamplerCache,
     ) -> GlDescriptorSet {
@@ -113,43 +118,52 @@ impl GlDescriptorSet {
                 .iter()
                 .enumerate()
                 .map(|(i, d)| match d {
-                    Descriptor::SampledImage(img) => {
+                    &Descriptor::SampledImage {
+                        img, ref sampler
+                    } => {
+                        let img: &GlImage = img.downcast_ref_unwrap();
                         match layout.bindings[i].descriptor_type {
                             DescriptorType::SampledImage => RawDescriptor::Texture {
-                                image: img.0.obj,
-                                sampler: sampler_cache.get_sampler(gl, &img.1),
+                                image: img.raw.obj,
+                                sampler: sampler_cache.get_sampler(gl, sampler),
                             },
                             _ => panic!("unexpected descriptor type"),
                         }
                     }
-                    Descriptor::Image { img } => match layout.bindings[i].descriptor_type {
-                        DescriptorType::StorageImage => RawDescriptor::Image { image: img.0.obj },
-                        _ => panic!("unexpected descriptor type"),
+                    &Descriptor::Image { img } => {
+                        let img: &GlImage = img.downcast_ref_unwrap();
+                        match layout.bindings[i].descriptor_type {
+                            DescriptorType::StorageImage => RawDescriptor::Image { image: img.raw.obj },
+                            _ => panic!("unexpected descriptor type"),
+                        }
                     },
-                    Descriptor::Buffer {
+                    &Descriptor::Buffer {
                         buffer,
                         offset,
                         size,
-                    } => match layout.bindings[i].descriptor_type {
-                        DescriptorType::StorageBuffer => RawDescriptor::StorageBuffer {
-                            buffer: buffer.0.obj,
-                            offset: buffer.0.offset + *offset,
-                            size: *size,
-                        },
-                        DescriptorType::UniformBuffer => RawDescriptor::UniformBuffer {
-                            buffer: buffer.0.obj,
-                            offset: buffer.0.offset + *offset,
-                            size: *size,
-                        },
-                        _ => panic!("unexpected descriptor type"),
-                    },
-                    Descriptor::Empty => panic!("unexpected empty descriptor"),
+                    } => {
+                        let buffer: &GlBuffer = buffer.downcast_ref_unwrap();
+                        match layout.bindings[i].descriptor_type {
+                            DescriptorType::StorageBuffer => RawDescriptor::StorageBuffer {
+                                buffer: buffer.raw.obj,
+                                offset: buffer.offset + offset,
+                                size,
+                            },
+                            DescriptorType::UniformBuffer => RawDescriptor::UniformBuffer {
+                                buffer: buffer.raw.obj,
+                                offset: buffer.offset + offset,
+                                size,
+                            },
+                            _ => panic!("unexpected descriptor type"),
+                        }
+                    }
+                    &Descriptor::Empty => panic!("unexpected empty descriptor"),
                 })
                 .collect(),
         }
     }
 
-    pub fn collect(
+    pub(crate) fn collect(
         &self,
         this_set_index: u32,
         map: &DescriptorMap,
@@ -245,3 +259,7 @@ impl GlDescriptorSet {
         }
     }
 }
+
+impl traits::DescriptorSetLayout for GlDescriptorSetLayout {}
+
+impl traits::DescriptorSet for GlDescriptorSet {}

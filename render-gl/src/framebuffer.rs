@@ -1,10 +1,14 @@
-use crate::{api as gl, api::types::*, api::Gl, OpenGlBackend as R};
-use autograph_render;
+use crate::api as gl;
+use crate::api::types::*;
+use crate::api::Gl;
+use autograph_render::traits;
+use crate::image::GlImage;
+use crate::DowncastPanic;
 
 /// Wrapper around OpenGL framebuffers.
 #[derive(Debug)]
-pub struct GlFramebuffer {
-    pub obj: GLuint,
+pub(crate) struct GlFramebuffer {
+    pub(crate) obj: GLuint,
 }
 
 impl GlFramebuffer {
@@ -16,10 +20,12 @@ impl GlFramebuffer {
     /// For texture attachments, the topmost layer is attached.
     ///
     /// Panics if the number of color attachments is greater than 8.
-    pub fn new(
+    ///
+    /// Unsafety: performs an unchecked downcast from `traits::Image` to `GlImage`
+    pub(crate) fn new(
         gl: &Gl,
-        color_attachments: &[autograph_render::Image<R>],
-        depth_stencil_attachment: Option<autograph_render::Image<R>>,
+        color_attachments: &[&dyn traits::Image],
+        depth_stencil_attachment: Option<&dyn traits::Image>,
     ) -> Result<GlFramebuffer, GLenum> {
 
         assert!(color_attachments.len() < 8);
@@ -30,22 +36,23 @@ impl GlFramebuffer {
         }
 
         // color attachments
-        for (index, img) in color_attachments.iter().enumerate() {
+        for (index, &img) in color_attachments.iter().enumerate() {
             let index = index as u32;
-            match img.0.target {
+            let img = img.downcast_ref_unwrap::<GlImage>();
+            match img.raw.target {
                 gl::RENDERBUFFER => unsafe {
                     gl.NamedFramebufferRenderbuffer(
                         obj,
                         gl::COLOR_ATTACHMENT0 + index,
                         gl::RENDERBUFFER,
-                        img.0.obj,
+                        img.raw.obj,
                     );
                 },
                 _ => unsafe {
                     gl.NamedFramebufferTexture(
                         obj,
                         gl::COLOR_ATTACHMENT0 + index,
-                        img.0.obj,
+                        img.raw.obj,
                         0, // TODO
                     );
                 },
@@ -54,20 +61,21 @@ impl GlFramebuffer {
 
         // depth-stencil attachment
         if let Some(img) = depth_stencil_attachment {
-            match img.0.target {
+            let img = img.downcast_ref_unwrap::<GlImage>();
+            match img.raw.target {
                 gl::RENDERBUFFER => unsafe {
                     gl.NamedFramebufferRenderbuffer(
                         obj,
                         gl::DEPTH_ATTACHMENT,
                         gl::RENDERBUFFER,
-                        img.0.obj,
+                        img.raw.obj,
                     );
                 },
                 _ => unsafe {
                     gl.NamedFramebufferTexture(
                         obj,
                         gl::DEPTH_ATTACHMENT,
-                        img.0.obj,
+                        img.raw.obj,
                         0, // TODO
                     );
                 },
@@ -104,9 +112,11 @@ impl GlFramebuffer {
     }
 
     /// Destroys this framebuffer object.
-    pub fn destroy(self, gl: &Gl) {
+    pub(crate) fn destroy(self, gl: &Gl) {
         unsafe {
             gl.DeleteFramebuffers(1, &self.obj);
         }
     }
 }
+
+impl traits::Framebuffer for GlFramebuffer {}

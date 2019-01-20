@@ -1,6 +1,4 @@
-use super::image::{ImageDescription, RawImage};
 use autograph_render::AliasScope;
-use slotmap::new_key_type;
 
 //--------------------------------------------------------------------------------------------------
 pub struct AliasedObject<D: Eq + Clone, T> {
@@ -16,13 +14,13 @@ impl<D: Eq + Clone, T> AliasedObject<D, T> {
 }
 
 //--------------------------------------------------------------------------------------------------
-pub struct Pool<D: Eq + Clone, K: slotmap::Key + Copy, T> {
+pub struct AliasPool<D: Eq + Clone, K: slotmap::Key + Copy, T> {
     entries: slotmap::SlotMap<K, AliasedObject<D, T>>,
 }
 
-impl<D: Eq + Clone, K: slotmap::Key + Copy, T> Pool<D, K, T> {
-    pub fn new() -> Pool<D, K, T> {
-        Pool {
+impl<D: Eq + Clone, K: slotmap::Key + Copy, T> AliasPool<D, K, T> {
+    pub fn new() -> AliasPool<D, K, T> {
+        AliasPool {
             entries: slotmap::SlotMap::with_key(),
         }
     }
@@ -78,6 +76,7 @@ impl<D: Eq + Clone, K: slotmap::Key + Copy, T> Pool<D, K, T> {
         }*/
     }
 
+    // TODO
     fn _evict<F: FnMut(T)>(&mut self, _until_frame: u64, _deleter: F) {
         /*self.store.retain(|k, e| {
             if e.last_used_frame > until_frame {
@@ -99,10 +98,9 @@ impl<D: Eq + Clone, K: slotmap::Key + Copy, T> Pool<D, K, T> {
     }*/
 }
 
-new_key_type! {
-pub struct ImageAliasKey;
-pub struct BufferAliasKey;
-}
 
-pub type ImagePool = Pool<ImageDescription, ImageAliasKey, RawImage>;
+/*
+*/
+
+//pub type ImagePool = Pool<ImageDescription, ImageAliasKey, RawImage>;
 //pub type BufferPool = Pool<BufferDescription, BufferAliasKey, RawBuffer>;

@@ -58,6 +58,7 @@
 		* ultimate solution: allow only one renderer instance at runtime
 		    * multi-device handled in backend
 		    * can unchecked_downcast as needed
+		        * issue: can forge a Backend object by manually implementing the trait...
     * Q: is there a reasonable scenario that would require instantiating more than one renderer at the same time?
         * multi-window? no -> in backend
         * multi-device? no -> in backend
