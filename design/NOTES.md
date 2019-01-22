@@ -1065,6 +1065,13 @@ Alternative: arena-based GPU synchronization
     - and statically check against existing interfaces, 'cause why not
         - basically, typecheck shader interfaces during compilation
         - lift typedesc 
+    - use rust types in GLSL?
+        - GLSL included as proc macro, but no way to make rust types visible (must be later in compilation)
+        - however, can do the reverse:
+            - create structs from GLSL 
+            - entirely possible with SPIR-V parser
+            - write the interface once, in the shader
+            - automatically generate interfaces (descriptorsetinterface, pipelineinterface) depending on shader        
     - issue: specialization may change the interface
     - issue: poor error messages (no const_assert! yet)
         - so, not a priority currently
@@ -1292,3 +1299,95 @@ impl Playgrounds<'outer, 'frame> for App<'a> {
     - descriptor set layouts derived in backend when creating pipeline
         - or maybe not in backend? cache in renderer, where typeids are known?
     - cached via hashing / typeid
+    
+#### Interface check
+- In create_graphics_pipeline_typeless
+    - submodule pipeline::validate
+    - issue: no access to DescriptorSetLayoutBindings
+        - do away with DescriptorSetLayout bindings in backend?
+        - manage in backend, cached by typeid
+        - rename DescriptorSetLayoutDescription -> DescriptorSetLayout
+        - no explicit creation
+        - gain in clarity
+- GraphicsPipelineCreateInfoTypeless contains everything needed
+    - vertex input
+    - descriptor set layouts
+    - fragment outputs
+- double down on SPIR-V shader input
+    - SPIR-V becomes mandatory for interface checking
+- issue: SPIR-V binary is lost when we reach pipeline creation
+    - have only opaque ShaderModules
+    - Option A: ShaderModules keep a copy of the SPIR-V binary
+        - duplication?
+        - could also just keep the interface
+        - in vulkano: everything encoded in the type
+    - Option B: generate one type per shader => type reflection data + uniform types
+        - good (this is what vulkano does, basically)
+        - but can't hot-reload types
+        - can associate a dynamic library to a type 
+            - when querying the type, reload dynamic library
+            - issue: costly to check on each access
+            - issue: statics are not really static
+            ```
+            #[derive(Shader)]
+            #[shader(file="...")]   
+            struct BlitVertexShader;    // this is NOT hot-reloadable... but convenient
+            ```
+    - Option C: ShaderModules keep a ref to the SPIR-V source
+        - actually, keep a ref to a ShaderModuleInterface, from which it's possible to get the interface (or just the SPIR-V bytecode)
+        - ShaderModuleInterface + StaticShaderModule
+        - DescriptorSetInterface + StaticDescriptorSet
+        - PipelineInterface + StaticPipeline
+    
+    - Remark: hot-reload cannot be specific to shaders
+        - reload whole crates or nothing
+    - do not force hot-reload
+- A: a shader is basically a function
+- B: a shader is basically a type
+    - with members for SPIR-V bytecode
+    
+        
+#### Goals & issues of hot-reload
+- not losing application state (that results from user input, or that is costly to regenerate)
+- issue: if types are changed, becomes unsafe (must compare types for equality somehow?)
+- way forward:
+    - granularity of hot reload must be bigger, only loosely connected modules
+    - e.g. 
+        - module containing the application state
+        - module containing the renderer implementation
+    - don't reload individual shaders: too tightly coupled with the rest of the application
+    - BUT, typical scenario:
+        - user loads a 'style module' from a file
+        - file contains shaders
+        - and possibly custom interfaces (custom parameters, etc.)
+            - cannot require SPIR-V to be available statically
+            - cannot require Descriptor Set Layouts (!) to be available statically
+        - alt resolution: the module does the whole rendering (calls functions, etc.)
+            - just a function fn(renderer, arena, images, pipelinetypeless)
+            - and a function fn(renderer) -> pipelinetypeless
+            - but: need type erasure
+    
+#### Shall we talk about render passes again?
+- RenderPasses = list of passes that share framebuffer attachments 
+    - can keep fbo data in fast framebuffer memory
+- in Vulkan: renderpass referenced by pipeline
+
+#### Issue: data streaming
+- allocate / free resources in an unscoped manner
+- deletion of a resource must correspond to a scope exit in code
+    - impractical: streaming of resources when moving into a level?
+    - in renderer (or in backend): swap resources in/out depending on usage?
+    - 'unloaded' resources: ref still valid, but not in main memory
+        - automatically reload on usage
+        - something like a cache, or an 'unloader'
+            - memory hierarchies?
+            - reloaders?
+                - callback when resource needs to be reloaded
+        - resources are not unloaded within a command buffer
+            - done before execution of command buffers
+            - how does this affect resources used in command buffers?
+                - silently invalidated?
+                - undefined behavior?
+                - panic?
+                - error?
+                - replaced with another resource?

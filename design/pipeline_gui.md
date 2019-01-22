@@ -37,4 +37,15 @@ Idea: GUI for graphics pipeline configuration
 - Solution:
     - keep current id_tree
     - but remove "virtual DOM": update the UI tree piecewise
-    
+
+#### GUI rendering
+- webrender?
+    - maybe, but cannot change backend (stuck with OpenGL)
+- custom stuff on top of autograph-render?
+    - lyon + font-kit ?
+    - native 2D?
+        - piet?
+        - issues with interop
+    - ideally: 
+        - backend gets a list of vertices
+        - some way to cache glyphs

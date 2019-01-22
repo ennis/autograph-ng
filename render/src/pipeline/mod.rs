@@ -1,5 +1,4 @@
 use crate::descriptor::DescriptorSetLayout;
-use crate::descriptor::DescriptorSetLayoutDescription;
 use crate::descriptor::DescriptorSetTypeless;
 use crate::format::Format;
 use crate::framebuffer::FragmentOutputDescription;
@@ -11,10 +10,11 @@ use crate::vertex::VertexLayout;
 use crate::Arena;
 pub use autograph_render_macros::PipelineInterface;
 use bitflags::bitflags;
-use derivative::Derivative;
 use ordered_float::NotNan;
 use std::marker::PhantomData;
 use std::mem;
+
+pub(crate) mod validate;
 
 bitflags! {
     #[derive(Default)]
@@ -51,13 +51,13 @@ pub enum ShaderFormat {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct GraphicsShaderStages<'a> {
+pub struct GraphicsShaderStages<'a, 'spv> {
     //pub format: ShaderFormat,
-    pub vertex: ShaderModule<'a>,
-    pub geometry: Option<ShaderModule<'a>>,
-    pub fragment: Option<ShaderModule<'a>>,
-    pub tess_eval: Option<ShaderModule<'a>>,
-    pub tess_control: Option<ShaderModule<'a>>,
+    pub vertex: ShaderModule<'a, 'spv>,
+    pub geometry: Option<ShaderModule<'a, 'spv>>,
+    pub fragment: Option<ShaderModule<'a, 'spv>>,
+    pub tess_eval: Option<ShaderModule<'a, 'spv>>,
+    pub tess_control: Option<ShaderModule<'a, 'spv>>,
 }
 
 bitflags! {
@@ -243,12 +243,6 @@ pub struct VertexInputBindingDescription {
 pub struct VertexInputState<'a> {
     pub bindings: &'a [VertexInputBindingDescription],
     pub attributes: &'a [VertexInputAttributeDescription],
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct PipelineLayout<'a, 'rcx> {
-    pub descriptor_set_layouts: &'a [DescriptorSetLayout<'rcx>],
-    //pub push_constants: &'a [PushConstant]
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -450,7 +444,7 @@ pub struct ColorBlendState<'a> {
 
 #[derive(Copy, Clone)]
 pub struct GraphicsPipelineCreateInfoTypeless<'a, 'rcx> {
-    pub shader_stages: &'a GraphicsShaderStages<'rcx>,
+    pub shader_stages: &'a GraphicsShaderStages<'rcx, 'a>,
     pub vertex_input_state: &'a VertexInputState<'a>,
     pub viewport_state: &'a ViewportState<'a>,
     pub rasterization_state: &'a RasterisationState,
@@ -459,7 +453,7 @@ pub struct GraphicsPipelineCreateInfoTypeless<'a, 'rcx> {
     pub input_assembly_state: &'a InputAssemblyState,
     pub color_blend_state: &'a ColorBlendState<'a>,
     pub dynamic_state: DynamicStateFlags,
-    pub pipeline_layout: &'a PipelineLayout<'a, 'rcx>,
+    pub descriptor_set_layouts: &'a [DescriptorSetLayout<'a>],
     pub attachment_layout: &'a AttachmentLayout<'a>,
 }
 
@@ -467,7 +461,7 @@ pub struct GraphicsPipelineCreateInfoTypeless<'a, 'rcx> {
 /// passed to [Arena::create_graphics_pipeline].
 #[derive(Copy, Clone)]
 pub struct GraphicsPipelineCreateInfo<'a, 'rcx> {
-    pub shader_stages: &'a GraphicsShaderStages<'rcx>,
+    pub shader_stages: &'a GraphicsShaderStages<'rcx, 'a>,
     pub viewport_state: &'a ViewportState<'a>,
     pub rasterization_state: &'a RasterisationState,
     pub multisample_state: &'a MultisampleState,
@@ -479,8 +473,10 @@ pub struct GraphicsPipelineCreateInfo<'a, 'rcx> {
 //--------------------------------------------------------------------------------------------------
 
 /// Shader module.
+///
+/// We keep a reference to the SPIR-V bytecode for interface checking when building pipelines.
 #[derive(Copy, Clone, Debug)]
-pub struct ShaderModule<'a>(pub &'a dyn traits::ShaderModule);
+pub struct ShaderModule<'a, 'spv>(pub &'a dyn traits::ShaderModule, pub &'spv [u8]);
 
 /// Graphics pipeline.
 #[derive(Copy, Clone, Debug)]
@@ -590,17 +586,30 @@ pub trait PipelineInterfaceVisitor<'a> {
 /// ```
 ///
 pub trait PipelineInterface<'a> {
-    const VERTEX_INPUT_INTERFACE: &'static [VertexLayout<'static>];
-    const FRAGMENT_OUTPUT_INTERFACE: &'static [FragmentOutputDescription];
-    const DESCRIPTOR_SET_INTERFACE: &'static [DescriptorSetLayoutDescription<'static>];
-
+    const LAYOUT: &'static PipelineLayout<'static>;
     fn do_visit<V: PipelineInterfaceVisitor<'a>>(&self, arena: &'a Arena, visitor: &mut V);
-
     // Use this interface when rust supports impl Trait in Traits
     /*fn vertex_inputs<'a,'rcx>(&'a self) -> impl Iterator<Item=&'rcx R::Buffer> + 'a;
     fn fragment_outputs<'a,'rcx>(&'a self) -> impl Iterator<Item=&'rcx R::Image> + 'a;
     fn descriptor_sets<'a,'rcx>(&'a self) -> impl Iterator<Item=&'rcx R::DescriptorSet> + 'a;
     fn index_buffer(&self) -> Option<R::BufferHandle>;*/
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct PipelineLayout<'a> {
+    pub descriptor_set_layouts: &'a [DescriptorSetLayout<'a>],
+    pub vertex_layouts: &'a [VertexLayout<'a>],
+    pub fragment_outputs: &'a [FragmentOutputDescription], //pub push_constants: &'a [PushConstant]
+}
+
+impl<'a> Default for PipelineLayout<'a> {
+    fn default() -> Self {
+        PipelineLayout {
+            descriptor_set_layouts: &[],
+            vertex_layouts: &[],
+            fragment_outputs: &[],
+        }
+    }
 }
 
 /// Converts a sequence of VertexLayouts (one for each vertex buffer) into binding descriptions

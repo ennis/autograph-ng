@@ -117,7 +117,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     }
 
     let privmod = syn::Ident::new(
-        &format!("__DescriptorSetLayout_UniqueTypeFor_{}", struct_name),
+        &format!("__DescriptorSetInterface_UniqueTypeFor_{}", struct_name),
         Span::call_site(),
     );
 
@@ -129,8 +129,8 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
         }
         impl #impl_generics #gfx::descriptor::DescriptorSetInterface<'a>
             for #struct_name #ty_generics #where_clause {
-            const LAYOUT: #gfx::descriptor::DescriptorSetLayoutDescription<'static> =
-                #gfx::descriptor::DescriptorSetLayoutDescription {
+            const LAYOUT: #gfx::descriptor::DescriptorSetLayout<'static> =
+                #gfx::descriptor::DescriptorSetLayout {
                     bindings: &[#(#bindings,)*],
                     typeid: Some(std::any::TypeId::of::<#privmod::Dummy>())
                 };

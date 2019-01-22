@@ -1,6 +1,3 @@
-use fxhash::FxBuildHasher;
-use fxhash::FxHashMap;
-use std::hash::Hash;
 use std::mem;
 use std::sync::Mutex;
 use typed_arena::Arena;
@@ -47,6 +44,7 @@ impl<T> SyncArena<T> {
     }
 }
 
+/*
 /// Combination of SyncArena + HashMap, used for interning stuff.
 ///
 /// Basically an insert-only HashMap which can hand const references to its elements.
@@ -85,3 +83,4 @@ impl<K: Eq + Hash, V> SyncArenaHashMap<K, V> {
         }
     }
 }
+*/

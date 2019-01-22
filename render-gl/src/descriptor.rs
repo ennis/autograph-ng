@@ -8,9 +8,8 @@ use crate::sampler::SamplerCache;
 use crate::DowncastPanic;
 use autograph_render;
 use autograph_render::descriptor::Descriptor;
-use autograph_render::descriptor::DescriptorSetLayoutBinding;
+use autograph_render::descriptor::DescriptorSetLayout;
 use autograph_render::descriptor::DescriptorType;
-use autograph_render::pipeline::ShaderStageFlags;
 use autograph_render::traits;
 
 const MAX_INLINE_SHADER_RESOURCE_BINDINGS: usize = 10;
@@ -53,30 +52,6 @@ impl ShaderResourceBindings {
     }
 }
 
-#[derive(Debug)]
-pub struct TypelessDescriptorSetLayoutBinding {
-    pub binding: u32,
-    pub descriptor_type: DescriptorType,
-    pub stage_flags: ShaderStageFlags,
-    pub count: usize,
-}
-
-impl<'tcx> From<DescriptorSetLayoutBinding<'tcx>> for TypelessDescriptorSetLayoutBinding {
-    fn from(b: DescriptorSetLayoutBinding<'tcx>) -> Self {
-        TypelessDescriptorSetLayoutBinding {
-            binding: b.binding,
-            descriptor_type: b.descriptor_type,
-            stage_flags: b.stage_flags,
-            count: b.count,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct GlDescriptorSetLayout {
-    pub bindings: Vec<TypelessDescriptorSetLayoutBinding>,
-}
-
 /// Backend version of descriptors. Cannot contain borrows because of the lack of ATCs, so
 /// directly store OpenGL objects and rely on the renderer wrapper to statically check the lifetimes
 /// for us.
@@ -110,7 +85,7 @@ impl GlDescriptorSet {
     pub fn from_descriptors_and_layout(
         gl: &Gl,
         descriptors: &[Descriptor],
-        layout: &GlDescriptorSetLayout,
+        layout: &DescriptorSetLayout,
         sampler_cache: &mut SamplerCache,
     ) -> GlDescriptorSet {
         GlDescriptorSet {
@@ -259,7 +234,5 @@ impl GlDescriptorSet {
         }
     }
 }
-
-impl traits::DescriptorSetLayout for GlDescriptorSetLayout {}
 
 impl traits::DescriptorSet for GlDescriptorSet {}

@@ -9,7 +9,6 @@ use crate::buffer::UploadBuffer;
 use crate::command::StateCache;
 use crate::command::SubmissionContext;
 use crate::descriptor::GlDescriptorSet;
-use crate::descriptor::GlDescriptorSetLayout;
 use crate::framebuffer::GlFramebuffer;
 use crate::image::upload_image_region;
 use crate::image::GlImage;
@@ -25,13 +24,12 @@ use crate::swapchain::SwapchainInner;
 use crate::sync::GpuSyncObject;
 use crate::sync::Timeline;
 use crate::util::SyncArena;
-use crate::util::SyncArenaHashMap;
 use crate::AliasInfo;
 use crate::DowncastPanic;
 use crate::ImplementationParameters;
 use autograph_render::command::Command;
 use autograph_render::descriptor::Descriptor;
-use autograph_render::descriptor::DescriptorSetLayoutBinding;
+use autograph_render::descriptor::DescriptorSetLayout;
 use autograph_render::format::Format;
 use autograph_render::image::Dimensions;
 use autograph_render::image::ImageUsageFlags;
@@ -42,7 +40,6 @@ use autograph_render::traits;
 use autograph_render::AliasScope;
 use autograph_render::RendererBackend;
 use config::Config;
-use std::any::TypeId;
 use std::collections::VecDeque;
 use std::ffi::CStr;
 use std::mem;
@@ -82,7 +79,7 @@ pub(crate) struct GlArena {
     pub(crate) buffers: SyncArena<GlBuffer>,
     pub(crate) images: SyncArena<GlImage>,
     pub(crate) descriptor_sets: SyncArena<GlDescriptorSet>,
-    pub(crate) descriptor_set_layouts: SyncArena<GlDescriptorSetLayout>,
+    //pub(crate) descriptor_set_layouts: SyncArena<GlDescriptorSetLayout>,
     pub(crate) shader_modules: SyncArena<GlShaderModule>,
     pub(crate) graphics_pipelines: SyncArena<GlGraphicsPipeline>,
     pub(crate) framebuffers: SyncArena<GlFramebuffer>,
@@ -96,7 +93,7 @@ impl GlArena {
             buffers: SyncArena::new(),
             images: SyncArena::new(),
             descriptor_sets: SyncArena::new(),
-            descriptor_set_layouts: SyncArena::new(),
+            //descriptor_set_layouts: SyncArena::new(),
             shader_modules: SyncArena::new(),
             graphics_pipelines: SyncArena::new(),
             framebuffers: SyncArena::new(),
@@ -244,7 +241,7 @@ pub struct OpenGlBackend {
     frame_num: Mutex<u64>, // replace with AtomicU64 once stabilized
     state_cache: Mutex<StateCache>,
     sampler_cache: Mutex<SamplerCache>,
-    desc_set_layout_cache: SyncArenaHashMap<TypeId, GlDescriptorSetLayout>,
+    //desc_set_layout_cache: SyncArenaHashMap<TypeId, GlDescriptorSetLayout>,
     limits: ImplementationParameters,
     //window: GlWindow,
     def_swapchain: GlSwapchain,
@@ -302,7 +299,7 @@ impl OpenGlBackend {
             def_swapchain: GlSwapchain {
                 inner: default_swapchain,
             },
-            desc_set_layout_cache: SyncArenaHashMap::new(),
+            //desc_set_layout_cache: SyncArenaHashMap::new(),
             gl,
             max_frames_in_flight,
             limits,
@@ -495,7 +492,7 @@ impl RendererBackend for OpenGlBackend {
         create_graphics_pipeline_internal(&self.gl, arena, create_info)
     }
 
-    //----------------------------------------------------------------------------------------------
+    /*//----------------------------------------------------------------------------------------------
     fn create_descriptor_set_layout<'a, 'r: 'a>(
         &'r self,
         arena: &'a dyn traits::Arena,
@@ -515,23 +512,25 @@ impl RendererBackend for OpenGlBackend {
                 bindings: bindings.iter().map(|b| b.clone().into()).collect(),
             })
         }
-    }
+    }*/
 
     //----------------------------------------------------------------------------------------------
     fn create_descriptor_set<'a>(
         &self,
         arena: &'a dyn traits::Arena,
-        layout: &dyn traits::DescriptorSetLayout,
+        layout: &DescriptorSetLayout,
         descriptors: &[Descriptor],
     ) -> &'a dyn traits::DescriptorSet {
         let arena: &GlArena = arena.downcast_ref_unwrap();
         let mut sampler_cache = self.sampler_cache.lock().unwrap();
+
         let descriptor_set = GlDescriptorSet::from_descriptors_and_layout(
             &self.gl,
             descriptors,
-            layout.downcast_ref_unwrap(),
+            layout,
             &mut sampler_cache,
         );
+
         arena.descriptor_sets.alloc(descriptor_set)
     }
 

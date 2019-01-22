@@ -99,6 +99,7 @@ use std::marker::PhantomData;
 use crate::descriptor::DescriptorSetInterface;
 use crate::framebuffer::Framebuffer;
 use crate::pipeline::build_vertex_input_interface;
+use crate::pipeline::validate::validate_graphics;
 use crate::pipeline::AttachmentLayout;
 use crate::pipeline::DynamicStateFlags;
 use crate::pipeline::GraphicsPipeline;
@@ -110,7 +111,6 @@ use crate::pipeline::PipelineLayout;
 use crate::pipeline::ShaderModule;
 use crate::pipeline::ShaderStageFlags;
 use crate::pipeline::VertexInputState;
-use std::any::TypeId;
 use std::mem;
 use std::slice;
 
@@ -258,26 +258,12 @@ pub trait RendererBackend: Sync {
         create_info: &GraphicsPipelineCreateInfoTypeless<'_, 'a>,
     ) -> &'a dyn traits::GraphicsPipeline;
 
-    /// Creates a descriptor set layout, describing the resources and binding points expected
-    /// by a shader.
-    ///
-    /// The implementation is expected to cache the descriptor set layout according to the
-    /// given typeid, if it is not None.
-    ///
-    /// TODO explain additional bound (actually it should be present everywhere)
-    fn create_descriptor_set_layout<'a, 'r: 'a>(
-        &'r self,
-        arena: &'a dyn traits::Arena,
-        typeid: Option<TypeId>,
-        bindings: &[crate::DescriptorSetLayoutBinding<'_>],
-    ) -> &'a dyn traits::DescriptorSetLayout;
-
     /// Creates a new descriptor set, which describes a set of resources to be bound to the graphics
     /// pipeline.
     fn create_descriptor_set<'a>(
         &self,
         arena: &'a dyn traits::Arena,
-        layout: &dyn traits::DescriptorSetLayout,
+        layout: &DescriptorSetLayout,
         descriptors: &[Descriptor<'a>],
     ) -> &'a dyn traits::DescriptorSet;
 
@@ -351,10 +337,15 @@ impl<'rcx> Arena<'rcx> {
 
     /// Creates a shader module from SPIR-V bytecode.
     #[inline]
-    pub fn create_shader_module(&self, data: &[u8], stage: ShaderStageFlags) -> ShaderModule {
+    pub fn create_shader_module<'a, 'spv>(
+        &'a self,
+        data: &'spv [u8],
+        stage: ShaderStageFlags,
+    ) -> ShaderModule<'a, 'spv> {
         ShaderModule(
             self.backend
                 .create_shader_module(self.inner_arena(), data, stage),
+            data,
         )
     }
 
@@ -373,28 +364,31 @@ impl<'rcx> Arena<'rcx> {
     /// Creates a graphics pipeline given the pipeline description passed in create_info
     /// and information derived from the pipeline interface type.
     #[inline]
-    pub fn create_graphics_pipeline<'a, T: PipelineInterface<'a>>(
+    pub fn create_graphics_pipeline<'a, Pipeline: PipelineInterface<'a>>(
         &'a self,
         create_info: &GraphicsPipelineCreateInfo<'_, 'a>,
-    ) -> GraphicsPipeline<'a, T> {
-        let (vtx_input_bindings, vtx_input_attribs) =
-            build_vertex_input_interface(<T as PipelineInterface<'a>>::VERTEX_INPUT_INTERFACE);
+        dyn_layout: &PipelineLayout,
+    ) -> GraphicsPipeline<'a, Pipeline> {
+        // combine static & dynamic
+        let vertex_layouts = <Pipeline as PipelineInterface<'a>>::LAYOUT
+            .vertex_layouts
+            .iter()
+            .cloned()
+            .chain(dyn_layout.vertex_layouts.iter().cloned())
+            .collect::<Vec<_>>();
+        let (vtx_input_bindings, vtx_input_attribs) = build_vertex_input_interface(&vertex_layouts);
 
         let vertex_input_state = VertexInputState {
             bindings: &vtx_input_bindings,
             attributes: &vtx_input_attribs,
         };
 
-        let ds_interface: &[DescriptorSetLayoutDescription] =
-            <T as PipelineInterface<'a>>::DESCRIPTOR_SET_INTERFACE;
-        let descriptor_set_layouts = ds_interface
+        let descriptor_set_layouts = <Pipeline as PipelineInterface<'a>>::LAYOUT
+            .descriptor_set_layouts
             .iter()
-            .map(|ds| self.create_descriptor_set_layout(ds.typeid, ds.bindings))
+            .cloned()
+            .chain(dyn_layout.descriptor_set_layouts.iter().cloned())
             .collect::<Vec<_>>();
-
-        let pipeline_layout = PipelineLayout {
-            descriptor_set_layouts: &descriptor_set_layouts,
-        };
 
         let create_info_full = GraphicsPipelineCreateInfoTypeless {
             shader_stages: create_info.shader_stages,
@@ -406,7 +400,7 @@ impl<'rcx> Arena<'rcx> {
             input_assembly_state: create_info.input_assembly_state,
             color_blend_state: create_info.color_blend_state,
             dynamic_state: DynamicStateFlags::empty(),
-            pipeline_layout: &pipeline_layout,
+            descriptor_set_layouts: &descriptor_set_layouts,
             attachment_layout: &AttachmentLayout {
                 // TODO (this is currently ignored by the GL backend anyway)
                 input_attachments: &[],
@@ -414,6 +408,12 @@ impl<'rcx> Arena<'rcx> {
                 color_attachments: &[],
             },
         };
+
+        // validate the pipeline
+        let validation_result = validate_graphics(&create_info_full);
+        if let Err(e) = validation_result {
+            panic!("graphics pipeline validation failed: {}", e);
+        }
 
         GraphicsPipeline(
             self.backend
@@ -521,75 +521,39 @@ impl<'rcx> Arena<'rcx> {
         )
     }
 
-    /// Creates a descriptor set layout, describing the resources and binding points expected
-    /// by a shader.
-    #[inline]
-    pub fn create_descriptor_set_layout<'a>(
-        &'a self,
-        typeid: Option<TypeId>,
-        bindings: &[DescriptorSetLayoutBinding],
-    ) -> DescriptorSetLayout<'a> {
-        DescriptorSetLayout(self.backend.create_descriptor_set_layout(
-            self.inner_arena(),
-            typeid,
-            bindings,
-        ))
-    }
-
-    /// Creates a descriptor set layout, describing the resources and binding points expected
-    /// by a shader.
-    #[inline]
-    pub fn get_descriptor_set_layout<'a, T: DescriptorSetInterface<'a>>(
-        &'a self,
-    ) -> DescriptorSetLayout<'a> {
-        self.create_descriptor_set_layout(
-            Some(TypeId::of::<<T as DescriptorSetInterface>::UniqueType>()),
-            <T as DescriptorSetInterface>::LAYOUT.bindings,
-        )
-    }
-
+    /// Creates a descriptor set.
+    ///
+    /// You might want to use [DescriptorSetInterface::into_descriptor_set] instead.
     pub fn create_descriptor_set<'a, T: DescriptorSetInterface<'a>>(
         &'a self,
         descriptors: impl IntoIterator<Item = Descriptor<'a>>,
     ) -> DescriptorSet<'a, T> {
-        let descriptors: Vec<_> = descriptors.into_iter().collect();
-
         DescriptorSet(
-            self.backend.create_descriptor_set(
-                self.inner_arena(),
-                self.get_descriptor_set_layout::<T>().0,
-                descriptors.as_slice(),
-            ),
+            self.create_descriptor_set_typeless(
+                &<T as DescriptorSetInterface<'a>>::LAYOUT,
+                descriptors,
+            )
+            .0,
             PhantomData,
         )
     }
 
-    /*pub fn create_descriptor_set<'a>(
+    /// Creates a descriptor set.
+    ///
+    /// You might want to use [DescriptorSetInterface::into_descriptor_set] instead.
+    pub fn create_descriptor_set_typeless<'a>(
         &'a self,
-        layout: DescriptorSetLayout<'a>,
-        interface: impl DescriptorSetInterface<'a>,
+        layout: &DescriptorSetLayout,
+        descriptors: impl IntoIterator<Item = Descriptor<'a>>,
     ) -> DescriptorSetTypeless<'a> {
-        struct Visitor<'a> {
-            descriptors: Vec<Descriptor<'a>>,
-        }
+        let descriptors: Vec<_> = descriptors.into_iter().collect();
 
-        impl<'a> DescriptorSetInterfaceVisitor<'a> for Visitor<'a> {
-            fn visit_descriptors(&mut self, descriptors: impl IntoIterator<Item = Descriptor<'a>>) {
-                self.descriptors.extend(descriptors)
-            }
-        }
-
-        let mut visitor = Visitor {
-            descriptors: Vec::new(),
-        };
-
-        interface.do_visit(&mut visitor);
-
-        DescriptorSetTypeless(
-            self.backend
-                .create_descriptor_set(self.inner_arena(), layout.0, &visitor.descriptors)
-        )
-    }*/
+        DescriptorSetTypeless(self.backend.create_descriptor_set(
+            self.inner_arena(),
+            layout,
+            descriptors.as_slice(),
+        ))
+    }
 }
 
 //--------------------------------------------------------------------------------------------------

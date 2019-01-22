@@ -13,11 +13,6 @@ pub use autograph_render_macros::DescriptorSetInterface;
 use std::any::TypeId;
 use std::marker::PhantomData;
 
-/// Descriptor set layout.
-#[derive(Copy, Clone, Debug)]
-#[repr(transparent)]
-pub struct DescriptorSetLayout<'a>(pub &'a dyn traits::DescriptorSetLayout);
-
 /// Descriptor set.
 #[derive(Copy, Clone, Debug)]
 #[repr(transparent)]
@@ -28,7 +23,7 @@ pub struct DescriptorSetTypeless<'a>(pub &'a dyn traits::DescriptorSet);
 #[repr(transparent)]
 pub struct DescriptorSet<'a, T: DescriptorSetInterface<'a>>(
     pub &'a dyn traits::DescriptorSet,
-    pub(crate) PhantomData<T>,
+    pub PhantomData<T>,
 );
 
 impl<'a, T: DescriptorSetInterface<'a>> Clone for DescriptorSet<'a, T> {
@@ -75,10 +70,10 @@ pub enum Descriptor<'a> {
         sampler: SamplerDescription,
     },
     Image {
-        img: Image<'a, R>,
+        img: &'a dyn traits::Image,
     },
     Buffer {
-        buffer: BufferTypeless<'a, R>,
+        buffer: &'a dyn traits::Buffer,
         offset: usize,
         size: usize,
     },
@@ -93,12 +88,12 @@ pub trait DescriptorSetInterfaceVisitor<'a> {
 
 /// Layout of a descriptor set.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct DescriptorSetLayoutDescription<'tcx> {
+pub struct DescriptorSetLayout<'tcx> {
     pub bindings: &'tcx [DescriptorSetLayoutBinding<'tcx>],
     pub typeid: Option<TypeId>,
 }
 
-/// Trait implemented by types that can be converted to descriptor sets.
+/// Objects that can be converted to descriptor sets, and whose layouts are known at compile-time.
 ///
 /// This trait can be automatically derived for structs via a custom derive, each field
 /// representing either one or an array of descriptor bindings.
@@ -112,9 +107,12 @@ pub struct DescriptorSetLayoutDescription<'tcx> {
 /// }
 /// ```
 ///
+/// TODO support dynamic DescriptorSetInterfaces, where the layout is not known statically.
+/// Plan: split into DescriptorSetInterface, and StaticDescriptorSetInterface: DescriptorSetInterface,
+/// which has a const layout
 pub trait DescriptorSetInterface<'a> {
     /// List of binding descriptions. This can be used to build a [DescriptorSetLayout].
-    const LAYOUT: DescriptorSetLayoutDescription<'static>;
+    const LAYOUT: DescriptorSetLayout<'static>;
 
     /// A 'static marker type that uniquely identifies Self: this is for getting a TypeId.
     type UniqueType: 'static;
@@ -188,8 +186,7 @@ impl<'a> From<SampledImage<'a>> for Descriptor<'a> {
 }
 
 impl<'a, T: DescriptorSetInterface<'a>> DescriptorSetInterface<'a> for DescriptorSet<'a, T> {
-    const LAYOUT: DescriptorSetLayoutDescription<'static> =
-        <T as DescriptorSetInterface<'a>>::LAYOUT;
+    const LAYOUT: DescriptorSetLayout<'static> = <T as DescriptorSetInterface<'a>>::LAYOUT;
 
     type UniqueType = <T as DescriptorSetInterface<'a>>::UniqueType;
     type IntoInterface = T;
@@ -199,6 +196,9 @@ impl<'a, T: DescriptorSetInterface<'a>> DescriptorSetInterface<'a> for Descripto
     }
 }
 
-#[cfg(feature = "intellij")]
-impl<'a, R: RendererBackend> Copy for Descriptor<'a,R> {}
-*/
+// Type erasure for DescriptorSets
+impl<'a, T: DescriptorSetInterface<'a>> From<DescriptorSet<'a, T>> for DescriptorSetTypeless<'a> {
+    fn from(ds: DescriptorSet<'a, T>) -> Self {
+        DescriptorSetTypeless(ds.0)
+    }
+}

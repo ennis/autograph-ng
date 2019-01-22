@@ -17,6 +17,7 @@ use std::marker::PhantomData;
 //pub use self::edit::*;
 pub use self::decode::DecodedInstruction;
 pub use self::layout::*;
+pub use spirv_headers as headers;
 
 /// Error that can happen when parsing.
 #[derive(Debug, Clone)]

@@ -1,6 +1,12 @@
 //use super::parse::SpirvModule;
-use super::{inst::*, IPtr, Module, Std140LayoutBuilder};
-use autograph_render::interface::{ImageDataType, PrimitiveType, TypeDesc};
+use crate::inst::*;
+use crate::layout::Std140LayoutBuilder;
+use crate::IPtr;
+use crate::ImageDataType;
+use crate::Module;
+use crate::PrimitiveType;
+use crate::StructLayout;
+use crate::TypeDesc;
 use spirv_headers::*;
 use std::collections::HashMap;
 use typed_arena::Arena;
@@ -108,6 +114,8 @@ impl<'tcx, 'm> Ast<'tcx, 'm> {
     pub fn variables(&self) -> impl Iterator<Item = &'tcx (IPtr<'m>, Variable<'tcx, 'm>)> {
         self.vars.iter()
     }
+
+    //pub fn uniform_buffers(&self)
 }
 
 fn parse_types<'tcx, 'm>(
