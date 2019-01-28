@@ -31,6 +31,11 @@ static GLF_R8_SINT: GlFormatInfo = GlFormatInfo {
     upload_components: gl::RED,
     upload_ty: gl::BYTE,
 };
+static GLF_R32_SINT: GlFormatInfo = GlFormatInfo {
+    internal_fmt: gl::R32I,
+    upload_components: gl::RED,
+    upload_ty: gl::INT,
+};
 static GLF_R16G16_SFLOAT: GlFormatInfo = GlFormatInfo {
     internal_fmt: gl::RG16F,
     upload_components: gl::RG,
@@ -100,6 +105,7 @@ impl GlFormatInfo {
             Format::R8_SNORM => &GLF_R8_SNORM,
             Format::R8_UINT => &GLF_R8_UINT,
             Format::R8_SINT => &GLF_R8_SINT,
+            Format::R32_SINT => &GLF_R32_SINT,
             Format::R16G16_SFLOAT => &GLF_R16G16_SFLOAT,
             Format::R16G16B16A16_SFLOAT => &GLF_R16G16B16A16_SFLOAT,
             Format::R32G32_SFLOAT => &GLF_R32G32_SFLOAT,

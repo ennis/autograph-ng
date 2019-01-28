@@ -167,11 +167,12 @@ pub(crate) struct DescriptorMap(pub(crate) Vec<Vec<FlatBinding>>);
 
 impl DescriptorMap {
     pub fn get_binding_location(&self, set: u32, binding: u32) -> Option<FlatBinding> {
-        self.0.get(set as usize).and_then(|set| {
-            set.get(binding as usize).and_then(|loc| {
+        self.0.get(set as usize).and_then(|s| {
+            s.get(binding as usize).and_then(|loc| {
                 if loc.space == BindingSpace::Empty {
                     None
                 } else {
+                    //eprintln!("(set={},binding={}) -> {:?}", set, binding, loc);
                     Some(*loc)
                 }
             })
@@ -303,15 +304,21 @@ pub fn translate_spirv_to_gl_flavor(
             // remove descriptor set and binding, replace with GL binding
             m.edit_remove_instruction(iptr_ds);
             m.edit_remove_instruction(iptr_b);
-            m.edit_write_instruction(&spirv::inst::IDecorate {
+
+            // Place the new decoration where the old was before.
+            // We can't just append it to the end of the instruction stream,
+            // as this violates the logical layout of instructions mandated by the SPIR-V spec.
+            // (2.4. Logical Layout of a Module)
+            m.edit_write_instruction(iptr_ds, &spirv::inst::IDecorate {
                 decoration: Decoration::Binding,
                 params: &[new_binding.location],
                 target_id: v.id,
             });
-            debug!(
+
+            /*eprintln!(
                 "mapping (set={},binding={}) to ({:?},binding={})",
                 ds, binding, space, new_binding.location
-            );
+            );*/
         }
         // drop AST
     }

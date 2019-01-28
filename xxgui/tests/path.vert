@@ -7,6 +7,7 @@ layout(std140, set=0, binding=0) uniform Globals {
     float u_zoom;
 };
 
+
 struct Primitive {
     vec4 color;
     int z_index;
@@ -15,8 +16,11 @@ struct Primitive {
 };
 
 layout(std140, set=0, binding=1) uniform Primitives {
-    Primitive primitives[PRIM_BUFFER_LEN];
-};
+    vec4 color;
+    int z_index;
+    float width;
+    vec2 translate;
+} prim;
 
 
 layout(location=0) in vec2 a_position;
@@ -26,8 +30,8 @@ layout(location=2) in int a_prim_id;
 layout(location=0) out vec4 v_color;
 
 void main() {
-    int id = a_prim_id + gl_InstanceIndex;
-    Primitive prim = primitives[id];
+    //int id = a_prim_id + gl_InstanceIndex;
+    //Primitive prim = primitives;
     vec2 local_pos = a_position + a_normal * prim.width;
     vec2 world_pos = local_pos - u_scroll_offset + prim.translate;
     vec2 transformed_pos = world_pos * u_zoom / (vec2(0.5, -0.5) * u_resolution);

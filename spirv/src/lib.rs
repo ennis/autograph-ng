@@ -40,9 +40,14 @@ impl<'m> fmt::Debug for IPtr<'m> {
 }
 
 #[derive(Debug, Clone)]
+enum Edit {
+    Insert(usize, Vec<u32>),
+    Remove(usize),
+}
+
+#[derive(Debug, Clone)]
 pub struct Module {
-    pub adds: RefCell<Vec<u32>>,
-    pub removals: RefCell<Vec<usize>>,
+    edits: RefCell<Vec<Edit>>,
     pub data: Vec<u32>,
     pub version: (u8, u8),
     pub bound: u32,
@@ -98,8 +103,7 @@ impl Module {
         );
 
         Ok(Module {
-            adds: RefCell::new(Vec::new()),
-            removals: RefCell::new(Vec::new()),
+            edits: RefCell::new(Vec::new()),
             version,
             bound: i[3],
             data: i.to_vec(),
@@ -173,11 +177,6 @@ pub enum TypeDesc<'tcx> {
     Unknown,
 }
 
-/*
-    struct {
-        mat3 stuff;
-    }[64];  // -> array(64, struct(0, mat3))
-*/
 
 pub const TYPE_FLOAT: TypeDesc = TypeDesc::Primitive(PrimitiveType::Float);
 pub const TYPE_INT: TypeDesc = TypeDesc::Primitive(PrimitiveType::Int);

@@ -60,6 +60,10 @@ impl Module {
     pub fn decode_raw_at<'a>(&'a self, iptr: IPtr) -> Result<RawInstruction<'a>, ParseError> {
         decode_raw_instruction(&self.data[iptr.0..]).map(|(inst, _)| inst)
     }
+
+    pub fn next_iptr<'a>(&'a self, ptr: IPtr) -> Result<IPtr<'a>, ParseError> {
+        Ok(IPtr(ptr.0 + self.decode_raw_at(ptr)?.word_count as usize, PhantomData))
+    }
 }
 
 pub trait DecodedInstruction<'m>: 'm {

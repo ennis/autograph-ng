@@ -227,7 +227,7 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
         ty: IndexFormat,
     ) {
         self.state_cache
-            .set_index_buffer(self.gl, index_buffer.raw.obj, offset, ty);
+            .set_index_buffer(self.gl, index_buffer.raw.obj, index_buffer.offset + offset, ty);
     }
 
     fn cmd_draw(

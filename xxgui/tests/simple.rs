@@ -48,6 +48,7 @@ use lyon::tessellation::StrokeVertex;
 use lyon::tessellation::FillOptions;
 use lyon::tessellation::StrokeTessellator;
 use lyon::tessellation::StrokeOptions;
+use autograph_render::command::DrawIndexedParams;
 
 static BACKGROUND_VERT: &[u8] = include_shader!("background.vert");
 static BACKGROUND_FRAG: &[u8] = include_shader!("background.frag");
@@ -129,13 +130,12 @@ struct PrimitiveArray {
     primitives: [Primitive; 32]
 }
 
-
 #[derive(DescriptorSetInterface, Copy, Clone)]
 struct PathDescriptorSet<'a> {
     #[descriptor(uniform_buffer)]
     params: Buffer<'a, BackgroundParams>,
     #[descriptor(uniform_buffer)]
-    primitives: Buffer<'a, PrimitiveArray>,
+    primitives: Buffer<'a, Primitive>,
 }
 
 
@@ -148,7 +148,9 @@ struct PathPipeline<'a> {
     #[pipeline(viewport)]
     viewport: Viewport,
     #[pipeline(vertex_buffer)]
-    vertex_buffer: Buffer<'a, [Vertex2D]>,
+    vertex_buffer: Buffer<'a, [VertexPath]>,
+    #[pipeline(index_buffer)]
+    index_buffer: Buffer<'a, [u16]>,
 }
 
 struct Pipelines<'a> {
@@ -218,7 +220,14 @@ fn create_pipelines<'a>(arena: &'a Arena) -> Pipelines<'a> {
 
 //--------------------------------------------------------------------------------------------------
 // Lyon test
-fn rasterize_path<'a>(arena: &'a Arena, pipeline: GraphicsPipeline<'a, PathPipeline<'a>>)
+struct TessPath<'a> {
+    num_vertices: usize,
+    num_indices: usize,
+    vertex_buffer: Buffer<'a, [VertexPath]>,
+    index_buffer: Buffer<'a, [u16]>
+}
+
+fn tesselate_path<'a>(arena: &'a Arena) -> TessPath<'a>
 {
     let mut builder = SvgPathBuilder::new(Path::builder());
     build_logo_path(&mut builder);
@@ -247,6 +256,15 @@ fn rasterize_path<'a>(arena: &'a Arena, pipeline: GraphicsPipeline<'a, PathPipel
         &mut BuffersBuilder::new(&mut buffers, VertexCtor)
     );
 
+    let vb = arena.upload_slice(&buffers.vertices);
+    let ib = arena.upload_slice(&buffers.indices);
+
+    TessPath {
+        num_vertices: buffers.vertices.len(),
+        num_indices: buffers.indices.len(),
+        vertex_buffer: vb,
+        index_buffer: ib
+    }
 }
 
 #[test]
@@ -260,6 +278,7 @@ fn test_simple() {
     let arena_0 = r.create_arena();
     // pipelines
     let pipelines = create_pipelines(&arena_0);
+    let tess_path = tesselate_path(&arena_0);
 
     'outer: loop {
         let default_swapchain = r.default_swapchain().unwrap();
@@ -311,21 +330,21 @@ fn test_simple() {
             });
 
             let arena_2 = r.create_arena();
+            let mut cmdbuf = r.create_command_buffer();
+            cmdbuf.clear_image(0x0, color_buffer, &[0.0, 0.2, 0.8, 1.0]);
 
             //----------------------------------------------------------------------------------
             // Draw background
             let background_params = arena_2.upload(&BackgroundParams {
                 resolution: glm::vec2(w as f32, h as f32),
                 scroll_offset: glm::vec2(0.0, 0.0),
-                zoom: 1.0,
+                zoom: 5.0,
             });
 
             let background_descriptor_set = BackgroundDescriptorSet {
                 params: background_params,
             };
 
-            let mut cmdbuf = r.create_command_buffer();
-            cmdbuf.clear_image(0x0, color_buffer, &[0.0, 0.2, 0.8, 1.0]);
 
             cmdbuf.draw(
                 0x0,
@@ -345,6 +364,37 @@ fn test_simple() {
                 },
             );
 
+            //----------------------------------------------------------------------------------
+            // Draw path
+            let prim = Primitive {
+                color: glm::vec4(1.0, 0.4, 0.2, 1.0),
+                z_index: 0,
+                width: 1.0,
+                translate: glm::vec2(-70.0, -70.0)
+            };
+
+            let prim_descriptor_set = PathDescriptorSet {
+                params: background_params,
+                primitives: arena_2.upload(&prim)
+            };
+
+            cmdbuf.draw_indexed(0x0, &arena_2, pipelines.path, &PathPipeline {
+                descriptor_set: prim_descriptor_set,
+                framebuffer,
+                viewport: (w, h).into(),
+                vertex_buffer: tess_path.vertex_buffer,
+                index_buffer: tess_path.index_buffer
+            },
+            DrawIndexedParams {
+                first_index: 0,
+                index_count: tess_path.num_indices as u32,
+                vertex_offset: 0,
+                first_instance: 0,
+                instance_count: 1
+            });
+
+            //----------------------------------------------------------------------------------
+            // Present
             cmdbuf.present(0x0, color_buffer, default_swapchain);
             r.submit_frame(vec![cmdbuf]);
 
