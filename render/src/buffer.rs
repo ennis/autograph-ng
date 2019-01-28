@@ -2,6 +2,7 @@ use crate::traits;
 use crate::typedesc::PrimitiveType;
 use crate::typedesc::TypeDesc;
 use std::marker::PhantomData;
+use std::mem;
 
 pub struct BufferSlice<'a, R: RendererBackend> {
     pub buffer: &'a R::Buffer,

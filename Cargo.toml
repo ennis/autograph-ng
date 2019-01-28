@@ -4,9 +4,12 @@ members = [
     "render",
     "render/macros",
     "render-gl",
+    "render-boilerplate",
     "shader/macros",
     "spirv",
     "common_shaders",
+    "style-test",
+    "xxgui",
     # for testing
     "plugin/tests/test_dylib"
 ]

@@ -18,6 +18,8 @@ use syn;
 use syn::parse::ParseStream;
 use syn::punctuated::Punctuated;
 //use syn::spanned::Spanned;
+use shaderc::IncludeType;
+use shaderc::ResolvedInclude;
 use syn::Token;
 
 mod preprocessor;
@@ -110,6 +112,26 @@ fn compile_glsl_shader(
     let mut opt = shaderc::CompileOptions::new().unwrap();
     opt.set_target_env(shaderc::TargetEnv::Vulkan, 0);
     opt.set_optimization_level(shaderc::OptimizationLevel::Zero);
+    opt.set_include_callback(
+        |name: &str, include_type: IncludeType, source_name: &str, depth: usize| {
+            let path = Path::new(file);
+            let mut inc = path.parent().unwrap().to_owned();
+            inc.push(name);
+
+            match File::open(&inc) {
+                Ok(mut incfile) => {
+                    let mut content = String::new();
+                    incfile.read_to_string(&mut content).unwrap();
+                    Ok(ResolvedInclude {
+                        resolved_name: inc.canonicalize().unwrap().to_str().unwrap().to_owned(),
+                        content,
+                    })
+                }
+                Err(e) => Err("include file not found".to_owned()),
+            }
+        },
+    );
+
     compile_glsl_shader_inner(&mut compiler, &opt, src, span, file, file_span, stage)
 }
 
@@ -383,6 +405,9 @@ pub fn include_shader(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 
     // TODO maybe it's better to return a compile_error!{} ?
     let src = fs::read_to_string(&path).expect("failed to open GLSL shader source");
+
+    // preprocess shader
+    //let pp = preprocessor::process_includes(&src, Some(&path), &[]).expect("preprocessing failed");
 
     let bytecode = compile_glsl_shader(
         &src,

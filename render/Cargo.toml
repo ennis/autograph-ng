@@ -6,6 +6,7 @@ edition = '2018'
 
 [dev-dependencies]
 image = "0.20.1"
+autograph-render-boilerplate = { path = "../render-boilerplate" }
 autograph-render-macros = { path = "macros" }
 autograph-render-gl = { path = "../render-gl" }
 autograph-plugin = { path = "../plugin" }
@@ -28,6 +29,7 @@ ordered-float = "1.0.1"
 fxhash = "0.2.1"
 derivative = "1.0.2"
 nalgebra-glm = { version = "0.2.0", optional = true }
+autograph-spirv = { path = "../spirv" }
 autograph-render-macros = { path = "macros" }
 autograph-shader-macros = { path = "../shader/macros" }
 unsafe-any = "0.4.2"

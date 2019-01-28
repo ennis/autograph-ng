@@ -1,11 +1,7 @@
 #![feature(const_type_id)]
-
 #[macro_use]
 extern crate log;
 
-pub mod common;
-
-use self::common::*;
 use autograph_plugin::{load_dev_dylib, load_module};
 use autograph_render::buffer::Buffer;
 use autograph_render::buffer::StructuredBufferData;
@@ -40,6 +36,7 @@ use autograph_render::pipeline::Viewports;
 use autograph_render::vertex::VertexData;
 use autograph_render::AliasScope;
 use autograph_render::Arena;
+use autograph_render_boilerplate::*;
 use std::env;
 
 //--------------------------------------------------------------------------------------------------
@@ -76,6 +73,28 @@ pub struct PerObject<'a> {
 }
 
 #[derive(PipelineInterface)]
+// could also be an associated const...
+// more concise this way?
+/*#[pipeline(
+    vertex_shader="blit.vs",
+    fragment_shader="blit.fs",
+    topology="triangle",
+    multisample(
+        alpha_to_coverage_enable=false,
+        alpha_to_one_enable=false,
+    ),
+    depth_test_enable=false,
+    depth_write_enable=false,
+    stencil_test(front(
+         fail_op="",
+         pass_op="",
+         depth_fail_op="",
+         compare_op="",
+         compare_mask="",
+         write_mask="",
+         reference="")),
+    color_blend(all(disabled))
+)]*/
 pub struct Blit<'a> {
     #[pipeline(framebuffer)]
     pub framebuffer: Framebuffer<'a>,
@@ -148,7 +167,7 @@ fn main() {
             )
             .into_sampled(SamplerDescription::NEAREST_MIPMAP_NEAREST);
 
-        let dither = common::load_image_2d(&arena_0, "tests/data/img/HDR_RGB_0.png")
+        let dither = load_image_2d(&arena_0, "tests/data/img/HDR_RGB_0.png")
             .unwrap()
             .into_sampled(SamplerDescription::WRAP_NEAREST_MIPMAP_NEAREST);
 

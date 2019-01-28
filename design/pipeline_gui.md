@@ -43,6 +43,7 @@ Idea: GUI for graphics pipeline configuration
     - maybe, but cannot change backend (stuck with OpenGL)
 - custom stuff on top of autograph-render?
     - lyon + font-kit ?
+        - +autograph-render
     - native 2D?
         - piet?
         - issues with interop

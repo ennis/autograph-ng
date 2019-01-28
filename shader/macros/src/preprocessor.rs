@@ -196,34 +196,34 @@ fn process_includes_internal<'a>(
 
             should_output_line_directive = true;
             continue 'line;
-        } else if let Some(cap) = RE_VERSION.captures(line) {
-            // VERSION LINE ------------------------------------------------------------------------
-            if let Ok(ver) = (&cap["version"]).parse::<u32>() {
-                if let Some(prev_ver) = result.version {
-                    if prev_ver != ver {
-                        /*warn!(
-                            "{:?}({:?}): version differs from previously specified version ({:?}, was {:?})",
-                            file.path,
-                            linei,
-                            prev_ver,
-                            ver
-                        );*/
-                        result.version = Some(ver);
-                    }
-                } else {
-                    result.version = Some(ver);
-                }
-            } else {
-                errs.push(Error::new(
-                    filei,
-                    linei,
-                    PreprocessErrorKind::MalformedVersionDirective,
-                ));
-            }
+        } /*else if let Some(cap) = RE_VERSION.captures(line) {
+          // VERSION LINE ------------------------------------------------------------------------
+          if let Ok(ver) = (&cap["version"]).parse::<u32>() {
+              if let Some(prev_ver) = result.version {
+                  if prev_ver != ver {
+                      /*warn!(
+                          "{:?}({:?}): version differs from previously specified version ({:?}, was {:?})",
+                          file.path,
+                          linei,
+                          prev_ver,
+                          ver
+                      );*/
+          result.version = Some(ver);
+          }
+          } else {
+          result.version = Some(ver);
+          }
+          } else {
+          errs.push(Error::new(
+          filei,
+          linei,
+          PreprocessErrorKind::MalformedVersionDirective,
+          ));
+          }
 
-            should_output_line_directive = true;
-            continue 'line;
-        }
+          should_output_line_directive = true;
+          continue 'line;
+          }*/
 
         // NORMAL LINE PROCESSING --------------------------------------------------------------
         if should_output_line_directive {

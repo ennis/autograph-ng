@@ -124,6 +124,7 @@ fn parse_types<'tcx, 'm>(
 ) -> HashMap<u32, &'tcx TypeDesc<'tcx>> {
     // build a map from id to type
     let mut tymap = HashMap::<u32, &'tcx TypeDesc<'tcx>>::new();
+    //let mut cstmap = HashMap::<>
 
     // can process types in order, since the spec specifies that:
     // "Types are built bottom up: A parameterizing operand in a type must be defined before being used."
@@ -236,11 +237,13 @@ fn parse_types<'tcx, 'm>(
             }) => {
                 let ty = tymap[type_id];
                 // TODO eval length
-                tymap.insert(*result_id, a.tydesc.alloc(TypeDesc::Array(ty, 0)));
+                let stride = Std140AlignAndSize::of(ty).size;
+                tymap.insert(*result_id, a.tydesc.alloc(TypeDesc::Array(ty, 0, stride)));
             }
             Instruction::TypeRuntimeArray(ITypeRuntimeArray { result_id, type_id }) => {
                 let ty = tymap[type_id];
-                tymap.insert(*result_id, a.tydesc.alloc(TypeDesc::Array(ty, 0)));
+                let stride = Std140AlignAndSize::of(ty).size;
+                tymap.insert(*result_id, a.tydesc.alloc(TypeDesc::Array(ty, 0, stride)));
             }
             Instruction::TypeStruct(ITypeStruct {
                 result_id,

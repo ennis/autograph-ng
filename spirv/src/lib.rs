@@ -155,8 +155,8 @@ pub struct StructLayout<'tcx> {
 pub enum TypeDesc<'tcx> {
     /// Primitive type.
     Primitive(PrimitiveType),
-    /// Array type.
-    Array(&'tcx TypeDesc<'tcx>, usize),
+    /// Array type. (typedesc + length + stride)
+    Array(&'tcx TypeDesc<'tcx>, usize, usize),
     /// Vector type (ty,size).
     Vector(PrimitiveType, u8),
     /// Matrix type (ty,rows,cols).
@@ -172,6 +172,12 @@ pub enum TypeDesc<'tcx> {
     Pointer(&'tcx TypeDesc<'tcx>),
     Unknown,
 }
+
+/*
+    struct {
+        mat3 stuff;
+    }[64];  // -> array(64, struct(0, mat3))
+*/
 
 pub const TYPE_FLOAT: TypeDesc = TypeDesc::Primitive(PrimitiveType::Float);
 pub const TYPE_INT: TypeDesc = TypeDesc::Primitive(PrimitiveType::Int);

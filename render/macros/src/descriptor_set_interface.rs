@@ -121,11 +121,15 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
         Span::call_site(),
     );
 
+    let ty_params = s.generics.type_params();
+    let ty_params2 = s.generics.type_params();
     //----------------------------------------------------------------------------------------------
     let q = quote! {
         #[doc(hidden)]
         mod #privmod {
-            pub struct Dummy;
+            // TODO IMPORTANT must be generic if interface struct is generic
+            // but the generic parameters must also be 'static...
+            pub struct Dummy<#(#ty_params,)*>;
         }
         impl #impl_generics #gfx::descriptor::DescriptorSetInterface<'a>
             for #struct_name #ty_generics #where_clause {
@@ -134,7 +138,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                     bindings: &[#(#bindings,)*],
                     typeid: Some(std::any::TypeId::of::<#privmod::Dummy>())
                 };
-            type UniqueType = #privmod::Dummy;
+            type UniqueType = #privmod::Dummy<#(#ty_params2,)*>;
             type IntoInterface = Self;
             fn into_descriptor_set(self, arena: &'a #gfx::Arena) -> #gfx::descriptor::DescriptorSet<'a, Self> {
                 arena.create_descriptor_set(std::iter::empty()#(.chain(#desc_iter))*)

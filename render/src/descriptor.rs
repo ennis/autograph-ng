@@ -77,7 +77,6 @@ pub enum Descriptor<'a> {
         offset: usize,
         size: usize,
     },
-    // TODO push constants
     Empty,
 }
 
@@ -124,9 +123,6 @@ pub trait DescriptorSetInterface<'a> {
     fn into_descriptor_set(self, arena: &'a Arena) -> DescriptorSet<'a, Self::IntoInterface>
     where
         Self: Sized;
-
-    // Passes all bindings in the set to the given visitor.
-    //fn do_visit(&self, visitor: &mut impl DescriptorSetInterfaceVisitor<'a>);
 }
 
 /// Trait implemented by types that can be turned into descriptors.

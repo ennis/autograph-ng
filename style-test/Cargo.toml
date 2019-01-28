@@ -1,0 +1,11 @@
+[package]
+name = "style-test"
+version = "0.1.0"
+authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
+edition = '2018'
+
+
+[dependencies]
+autograph-render = { path = "../render", features = ["glm-types"] }
+autograph-render-gl = { path = "../render-gl" }
+

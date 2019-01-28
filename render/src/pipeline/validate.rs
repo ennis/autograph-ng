@@ -1,7 +1,7 @@
-use crate::descriptor::Descriptor;
+//use crate::descriptor::Descriptor;
 use crate::descriptor::DescriptorSetLayoutBinding;
 use crate::descriptor::DescriptorType;
-use crate::pipeline::GraphicsPipelineCreateInfo;
+//use crate::pipeline::GraphicsPipelineCreateInfo;
 use crate::pipeline::GraphicsPipelineCreateInfoTypeless;
 use autograph_spirv as spirv;
 use autograph_spirv::headers::StorageClass;
@@ -40,7 +40,7 @@ pub enum ValidationError {
 impl fmt::Display for ValidationError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ValidationError::InvalidSpirV(err) => write!(f, "invalid SPIR-V bytecode")?,
+            ValidationError::InvalidSpirV(_err) => write!(f, "invalid SPIR-V bytecode")?,
             ValidationError::InterfaceMismatch(errs) => {
                 writeln!(f, "interface mismatch ({} errors):", errs.len())?;
                 for err in errs.iter() {
@@ -100,9 +100,10 @@ fn find_descriptor<'a>(
 ) -> Result<&'a DescriptorSetLayoutBinding<'a>, InterfaceMismatchError> {
     let set = map.get_mut(set as usize);
     if let Some(set) = set {
-        for (b, mut seen) in set.iter() {
+        for (b, ref mut seen) in set.iter_mut() {
             if b.binding == binding {
-                seen = true;
+                //let () = seen;
+                *seen = true;
                 return Ok(b);
             }
         }
@@ -185,6 +186,18 @@ fn validate_descriptor(
     }
 }
 
+/// Basic verification of graphics pipeline interfaces.
+///
+/// # TODO
+/// - better error messages
+///     - fine-grained type comparison
+///     - member offset mismatch
+/// - validate image/texture types
+/// - vertex inputs
+/// - fragment outputs
+/// - validate host-side required outputs
+/// - accept layout-equivalent types (?)
+///
 pub fn validate_graphics(
     create_info: &GraphicsPipelineCreateInfoTypeless,
 ) -> Result<(), ValidationError> {

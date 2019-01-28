@@ -1391,3 +1391,161 @@ impl Playgrounds<'outer, 'frame> for App<'a> {
                 - panic?
                 - error?
                 - replaced with another resource?
+                
+#### Final form of graphics pipelines
+- type = pipeline (also associate shaders)
+- no need to create the pipeline: cached into the type (or via typeid)
+    - can cache as an associated static (there is only one renderer per application)
+- just draw(pipeline)
+- still needs to get static pipeline states somewhere...
+    - custom attributes on struct
+- specialization as generic parameters
+- Cleanup autograph-shader-macros
+    - remove everything except include_shader
+    - remove preprocessor, replace with shaderc mechanism for includes
+- TODO: do not pay for DescriptorSets verbosity when not needed
+    - specify descriptor sets+binding in pipeline interface
+
+#### Shader effect system
+- make shader code as maintainable and modular as rust code
+- ideas:
+    - build system integration
+    - module system integration
+    - autogen shader interfaces
+    - input/output interfaces as parameters instead of global variables
+        - more than one shader entry point in a file
+        - use HLSL?
+            - typed entry points
+    - rust+glsl shader modules
+        - can reference shader modules from other crates
+            - important for modular shaders, plugins, etc.
+            - how?
+                - somehow access data within a crate
+                - but a crate is not only source code
+                    - can be an rlib 
+            - at first glance, this seems impossible in a proc-macro
+            - the issue is that proc-macros operate before module resolution, and we have no access to contents of 
+                other crates
+            - one possible thing is to defer the compilation of shaders
+                - generate code that combines shaders from different crates, then compile that into SPIR-V
+                - but we lose shader validation at compile-time
+        - ideally: reference/import types from rust
+        - `#use autograph_shaders::Uniforms`
+    - crazy idea: turn rust ASTs into a SPIR-V generator (_AST lifting_)
+        - purely a syntactical transformation
+        - validation at runtime (this is only rust code)
+        - only describe descriptor sets once, as shader interface (with dummy types)
+            - then pass descriptor sets + stage input as parameters
+            - however, must 'lift' (again) the types to the host interface 
+                - <Params as ShaderInterface>::HostInterface: DescriptorSetInterface
+                - generate the host interface from the function
+                    - details TBD
+        - many potential issues
+            - must annotate all used functions
+                - but: could provide a set of 'safe' functions (standard library)
+            - members?
+                - e.g. have `e.function(stuff)`
+                - how to resolve `function`?
+                - solution: lift types and functions
+                    - custom attribute `#[spirv(lift)]`
+                    - will generate a type SPV_#typename with all members lifted
+                    - or more precisely, impl Lift<Generator> for Typename with Target = Methods
+            - let bindings:
+                - `let e : type = init;` => `let e = gen.declare::<type>().declare(gen, |gen| <lifted-init-expr>)`
+                - `let e = init;` => `let e = gen.declare::<???>(|gen| <lifted-init-expr>)`
+                    - `gen.declare<T: Lifted>(init: impl FnOnce(gen) -> Value<T>)`
+                - `let e = 3` => 
+                    `let e = gen.declare(|gen| gen.lit_num(3))`
+                - add binding node, of type
+                - `trait Generator`
+                - better than parsing AST, since functions can be generic (provided that the type is liftable)
+        - other approach: RLSL
+    - is it even desirable to use rust for shaders?
+        - shaders are not meant to be 'system' code
+        - see shaders as artistic inputs
+        - does not have the same goals as application code
+        - think about authoring techniques 
+            - node graphs
+            - others?
+    - conclusion: wait until RLSL is testable, lots of good design choices here, probably the way to go
+    - conclusion 2: until then, think about shader authoring, and how to make working with GLSL/SPIR-V less of a hassle
+            
+#### Automatic generation of host side interfaces from shader code
+- challenge: describe the mapping precisely
+    - shader function arguments -> stage inputs, descriptor sets, descriptors, stage outputs, and structured buffer layouts
+    
+#### Shader authoring
+- think about higher-level shader authoring
+    - node graphs
+    - json description
+- descriptor sets, descriptors are implicit
+- we want people to be able to write code
+    - but without the overhead of full-blown vulkan-flavored GLSL
+    - match parameters by name
+    - no descriptor sets
+    - no layouts
+    - inputs/outputs from context
+- we want people to be able to write code *against an interface*
+- what is a shader?
+    - some code that defines the behavior of a stage in the graphics pipeline
+    - code + parameters
+    - can be represented with a function + some attributes
+- how to turn the function parameters into something that the graphics API understands?
+    - i.e. assign (set,binding) to parameters
+    - if type of function param has a descriptor set attribute, then bind to descriptor set
+    - otherwise, assign sequentially
+```
+fn fragment_shader(
+    common_params: CommonParameters,   // (set=0)
+    edge_tex: SampledImage,             // (set=1,binding=0)
+    substrate_color: vec3,              // (set=1,binding=1,structured buffer)
+    edge_intensity: f32,                // (set=1,binding=1,structured buffer)
+    );
+```
+- maybe go higher-level still, and focus on the user-facing application
+    - how to create a style!
+    - don't care about shaders, etc. 
+    - just care about modifying the geometry, generating and placing draw primitives, image processing, rendering some objects in a particular way...
+    - provide high-level "nodes"
+        - or something other than nodes, anyway
+        - user does not code the node, but compose them
+        - inside a node: full low level control over the graphics pipeline
+        - still, nodes can be programmed with "bits of code" (tm) 
+            - node = combine bits of code to make a full graphics pipeline
+    - what's the language for the "bits of code"?
+        - something that can be easily turned into SPIR-V
+        - guess that GLSL is good enough...
+- interface:
+    - list of 'auxiliary' buffers
+    - create an 'auxiliary' buffer for stylization
+    - data between nodes:
+        - geometry (data + metadata)
+            - triangles, lines, points, curves?
+        - images
+    - use nodes only for sequential operations 
+    - some nodes require special auxiliary buffers
+        - e.g. edge map
+        - automatically insert node if not present
+        - "blackboard"-style    
+        - but: what if want a node result only for a subset of the input data
+            - e.g. want edge map, but only for a subset of the objects in the scene
+                - graph constructors 
+                    - function with inputs + parameters -> graph -> output
+                    - output has a name which can be queried or pattern matched
+                        - `edgeMap(scene, meshfilter)`
+    - common structure:
+        - take scene
+        - filter by geometry, object id, material id
+        - do some rendering and post-proc passes
+        - structure: GeomFilter + Render -> output 
+            - output is a piece of data derived from the scene with an unique signature 
+    - parameters:
+        - share parameters across nodes
+    - important: 
+        - nodes must be flexible in the data that they can take
+            - image formats
+            - vertex formats
+        -> flexible shader interfaces / specializable SPIR-V
+
+#### Issue: interface checking valid only for specialized SPIR-V
+- must implement specialization in autograph-spirv

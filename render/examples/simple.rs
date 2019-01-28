@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate log;
 
-mod common;
+//mod common;
 
 use self::common::*;
 use autograph_render;
