@@ -12,5 +12,4 @@ log = "0.4.6"
 spirv_headers = "1.3.4"
 ordered-float = "1.0.1"
 typed-arena = "1.4.1"
-autograph-render = { path = "../render" }
 

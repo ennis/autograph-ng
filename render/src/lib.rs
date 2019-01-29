@@ -30,7 +30,6 @@ extern crate log;
 #[cfg(feature = "glm-types")]
 pub use nalgebra_glm as glm;
 
-pub mod arena;
 pub mod buffer;
 pub mod command;
 pub mod descriptor;

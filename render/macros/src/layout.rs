@@ -110,7 +110,7 @@ pub fn generate_structured_buffer_data(ast: &syn::DeriveInput, fields: &syn::Fie
         let offset = &offset.ident;
 
         field_descs.push(
-            quote!{ (#privmod::#offset, <#field_ty as #gfx::interface::StructuredBufferData>::TYPE) }
+            quote!{ (#privmod::#offset, <#field_ty as #gfx::buffer::StructuredBufferData>::TYPE) }
         );
     }
 
@@ -125,8 +125,11 @@ pub fn generate_structured_buffer_data(ast: &syn::DeriveInput, fields: &syn::Fie
             #(#sizes)*
         }
 
-        unsafe impl #gfx::interface::StructuredBufferData for #struct_name {
-            const TYPE: &'static #gfx::interface::TypeDesc<'static> = &#gfx::interface::TypeDesc::Struct(&[#(#field_descs),*]);
+        unsafe impl #gfx::buffer::StructuredBufferData for #struct_name {
+            const TYPE: &'static #gfx::typedesc::TypeDesc<'static> = &#gfx::typedesc::TypeDesc::Struct(
+                #gfx::typedesc::StructLayout {
+                    fields: &[#(#field_descs),*],
+                });
         }
     }
 }
@@ -162,10 +165,10 @@ pub fn generate_vertex_data(ast: &syn::DeriveInput, fields: &syn::Fields) -> Tok
 
         attribs.push(
             quote!{
-                #gfx::interface::TypedVertexInputAttributeDescription {
-                    ty: &<#field_ty as #gfx::interface::VertexAttributeType>::EQUIVALENT_TYPE,
+                #gfx::vertex::TypedVertexInputAttributeDescription {
+                    ty: &<#field_ty as #gfx::vertex::VertexAttributeType>::EQUIVALENT_TYPE,
                     //location: #i as u32,
-                    format: <#field_ty as #gfx::interface::VertexAttributeType>::FORMAT,
+                    format: <#field_ty as #gfx::vertex::VertexAttributeType>::FORMAT,
                     offset: #privmod::#offset as u32,
                 }
             }
@@ -183,9 +186,9 @@ pub fn generate_vertex_data(ast: &syn::DeriveInput, fields: &syn::Fields) -> Tok
             #(#sizes)*
         }
 
-        unsafe impl #gfx::interface::VertexData for #struct_name {
-            const LAYOUT: &'static #gfx::interface::VertexLayout<'static> =
-                &#gfx::interface::VertexLayout {
+        unsafe impl #gfx::vertex::VertexData for #struct_name {
+            const LAYOUT: #gfx::vertex::VertexLayout<'static> =
+                #gfx::vertex::VertexLayout {
                     elements: &[#(#attribs,)*],
                     stride: ::std::mem::size_of::<#struct_name>()
                 };

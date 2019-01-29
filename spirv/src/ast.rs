@@ -10,7 +10,7 @@ use crate::TypeDesc;
 use spirv_headers::*;
 use std::collections::HashMap;
 use typed_arena::Arena;
-use crate::StructLayout;
+use crate::layout::Std140AlignAndSize;
 
 #[derive(Debug)]
 pub enum ParsedDecoration {

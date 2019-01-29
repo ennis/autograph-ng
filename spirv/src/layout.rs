@@ -1,5 +1,6 @@
-use autograph_render::interface::{PrimitiveType, TypeDesc};
 use std::cmp::max;
+use crate::TypeDesc;
+use crate::PrimitiveType;
 
 //--------------------------------------------------------------------------------------------------
 // yet another copy of the align offset function
