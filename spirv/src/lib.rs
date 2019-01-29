@@ -177,7 +177,6 @@ pub enum TypeDesc<'tcx> {
     Unknown,
 }
 
-
 pub const TYPE_FLOAT: TypeDesc = TypeDesc::Primitive(PrimitiveType::Float);
 pub const TYPE_INT: TypeDesc = TypeDesc::Primitive(PrimitiveType::Int);
 pub const TYPE_VEC2: TypeDesc = TypeDesc::Vector(PrimitiveType::Float, 2);

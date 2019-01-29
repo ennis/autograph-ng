@@ -309,11 +309,14 @@ pub fn translate_spirv_to_gl_flavor(
             // We can't just append it to the end of the instruction stream,
             // as this violates the logical layout of instructions mandated by the SPIR-V spec.
             // (2.4. Logical Layout of a Module)
-            m.edit_write_instruction(iptr_ds, &spirv::inst::IDecorate {
-                decoration: Decoration::Binding,
-                params: &[new_binding.location],
-                target_id: v.id,
-            });
+            m.edit_write_instruction(
+                iptr_ds,
+                &spirv::inst::IDecorate {
+                    decoration: Decoration::Binding,
+                    params: &[new_binding.location],
+                    target_id: v.id,
+                },
+            );
 
             /*eprintln!(
                 "mapping (set={},binding={}) to ({:?},binding={})",

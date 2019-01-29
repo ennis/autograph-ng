@@ -1549,3 +1549,40 @@ fn fragment_shader(
 
 #### Issue: interface checking valid only for specialized SPIR-V
 - must implement specialization in autograph-spirv
+
+
+#### Descriptor set creation & update, and Vulkan's dynamic (uniform|storage) buffers
+- currently, we allocate new descriptor sets every frame
+    - but only one thing inside the descriptor changes: the offset into the upload buffer
+    - vulkan has dynamic uniform buffers for that
+    - other API's?
+- currently: no way for the backend to know that very similar descriptor sets are going to be created from one frame to the other
+- do away with descriptor sets?
+    - they don't exactly map to other APIs anyway
+- possibility: 
+    - no descriptor sets
+    - let the backend decide (from layout and annotations) the descriptor update strategy
+    - instead of explicitly allocating buffers, pass "wrapper" to interfaces
+        - contains a ref to the data on the CPU, and possibly a cached pointer to data on a GPU buffer
+        - backend decides to upload the data to a buffer of its choice, which can be already referenced in descriptor sets
+        - wrapper is arena-bound
+    - given a draw call, know the descriptor set layout
+        - question: can we reuse a descriptor set from before?
+            - needs hashing
+        - somehow, have an object that represents a "partial" set of bindings
+            - and complete at draw call time
+            - if completed with same buffer, but different offset, nothing to do
+        -> partially filled descriptor sets
+    - at pipeline creation time:
+        - know root pipeline, and possibly other "inherited" pipelines 
+            - inherited pipelines may live longer
+            - if have an inherited pipeline interface, and the root interface is only a bit more data, then can make assumptions 
+                - when creating a partial pipeline, don't do anything yet (store it somewhere)
+                - when creating a full pipeline
+                    - if the partial pipeline interface has already a descriptor set attached
+    - Partial pipeline interfaces 
+        - bikeshedding: state group?
+        - StateGroup<T> where T: PipelineInterface
+        - pipelineinterfacevisitor: 
+            - visit_state_group()
+            - visit_shader_data()

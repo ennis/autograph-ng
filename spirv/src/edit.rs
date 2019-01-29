@@ -1,8 +1,8 @@
 use crate::decode::decode_raw_instruction;
 use crate::decode::DecodedInstruction;
+use crate::Edit;
 use crate::IPtr;
 use crate::Module;
-use crate::Edit;
 
 impl Module {
     pub fn edit_remove_instruction(&self, iptr: IPtr) {
@@ -22,12 +22,12 @@ impl Module {
         let mut data = self.data;
         edits.sort_by(|a, b| {
             let a = match a {
-                Edit::Insert(p, _) => p*2,
-                Edit::Remove(p) => p*2+1,    // higher, goes before insert at same iptr
+                Edit::Insert(p, _) => p * 2,
+                Edit::Remove(p) => p * 2 + 1, // higher, goes before insert at same iptr
             };
             let b = match b {
-                Edit::Insert(p, _) => p*2,
-                Edit::Remove(p) => p*2+1,
+                Edit::Insert(p, _) => p * 2,
+                Edit::Remove(p) => p * 2 + 1,
             };
             b.cmp(&a)
         });
@@ -41,7 +41,7 @@ impl Module {
                         inst.word_count as usize
                     };
                     data.drain(i..(i + size));
-                },
+                }
                 Edit::Insert(i, words) => {
                     data.splice(i..i, words);
                 }

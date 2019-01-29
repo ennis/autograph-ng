@@ -2,6 +2,7 @@
 #![feature(proc_macro_hygiene)]
 use autograph_render::buffer::Buffer;
 use autograph_render::buffer::StructuredBufferData;
+use autograph_render::command::DrawIndexedParams;
 use autograph_render::command::DrawParams;
 use autograph_render::descriptor::DescriptorSetInterface;
 use autograph_render::format::Format;
@@ -34,21 +35,21 @@ use autograph_render::AliasScope;
 use autograph_render::Arena;
 use autograph_render_boilerplate::*;
 use log::{debug, info, warn};
-use std::env;
-use lyon::path::default::Path;
-use lyon::path::builder::SvgPathBuilder;
 use lyon::extra::rust_logo::build_logo_path;
+use lyon::path::builder::SvgPathBuilder;
 use lyon::path::builder::*;
-use lyon::tessellation::geometry_builder::VertexBuffers;
-use lyon::tessellation::geometry_builder::BuffersBuilder;
+use lyon::path::default::Path;
 use lyon::tessellation::geometry_builder::vertex_builder;
+use lyon::tessellation::geometry_builder::BuffersBuilder;
+use lyon::tessellation::geometry_builder::VertexBuffers;
 use lyon::tessellation::geometry_builder::VertexConstructor;
-use lyon::tessellation::FillTessellator;
-use lyon::tessellation::StrokeVertex;
 use lyon::tessellation::FillOptions;
-use lyon::tessellation::StrokeTessellator;
+use lyon::tessellation::FillTessellator;
+use lyon::tessellation::FillVertex;
 use lyon::tessellation::StrokeOptions;
-use autograph_render::command::DrawIndexedParams;
+use lyon::tessellation::StrokeTessellator;
+use lyon::tessellation::StrokeVertex;
+use std::env;
 
 static BACKGROUND_VERT: &[u8] = include_shader!("background.vert");
 static BACKGROUND_FRAG: &[u8] = include_shader!("background.frag");
@@ -127,7 +128,7 @@ struct Primitive {
 #[derive(StructuredBufferData, Copy, Clone)]
 #[repr(C)]
 struct PrimitiveArray {
-    primitives: [Primitive; 32]
+    primitives: [Primitive; 32],
 }
 
 #[derive(DescriptorSetInterface, Copy, Clone)]
@@ -137,7 +138,6 @@ struct PathDescriptorSet<'a> {
     #[descriptor(uniform_buffer)]
     primitives: Buffer<'a, Primitive>,
 }
-
 
 #[derive(PipelineInterface)]
 struct PathPipeline<'a> {
@@ -152,6 +152,23 @@ struct PathPipeline<'a> {
     #[pipeline(index_buffer)]
     index_buffer: Buffer<'a, [u16]>,
 }
+
+/*
+#[derive(PipelineInterface)]
+struct PathPipeline2<'a> {
+    #[pipeline(framebuffer)]
+    framebuffer: Framebuffer<'a>,
+    #[pipeline(set=0, uniform_buffer)]
+    params: ShaderData<'a, BackgroundParams>,
+    #[pipeline(set=0, uniform_buffer)]
+    primitives: ShaderData<'a, Primitive>,
+    #[pipeline(viewport)]
+    viewport: Viewport,
+    #[pipeline(vertex_buffer)]
+    vertex_buffer: Buffer<'a, [VertexPath]>,
+    #[pipeline(index_buffer)]
+    index_buffer: Buffer<'a, [u16]>,
+}*/
 
 struct Pipelines<'a> {
     background: GraphicsPipeline<'a, BackgroundPipeline<'a>>,
@@ -224,11 +241,10 @@ struct TessPath<'a> {
     num_vertices: usize,
     num_indices: usize,
     vertex_buffer: Buffer<'a, [VertexPath]>,
-    index_buffer: Buffer<'a, [u16]>
+    index_buffer: Buffer<'a, [u16]>,
 }
 
-fn tesselate_path<'a>(arena: &'a Arena) -> TessPath<'a>
-{
+fn tesselate_path<'a>(arena: &'a Arena) -> (TessPath<'a>, TessPath<'a>) {
     let mut builder = SvgPathBuilder::new(Path::builder());
     build_logo_path(&mut builder);
     let path = builder.build();
@@ -242,29 +258,63 @@ fn tesselate_path<'a>(arena: &'a Arena) -> TessPath<'a>
             VertexPath {
                 pos: [input.position.x, input.position.y],
                 normal: [input.normal.x, input.normal.y],
-                prim_id: 0
+                prim_id: 0,
+            }
+        }
+    }
+    impl VertexConstructor<FillVertex, VertexPath> for VertexCtor {
+        fn new_vertex(&mut self, input: FillVertex) -> VertexPath {
+            VertexPath {
+                pos: [input.position.x, input.position.y],
+                normal: [input.normal.x, input.normal.y],
+                prim_id: 0,
             }
         }
     }
 
-    let mut buffers : VertexBuffers<VertexPath, u16> = VertexBuffers::new();
-    let mut buffers_builder = vertex_builder(&mut buffers, VertexCtor);
+    let stroke = {
+        let mut buffers: VertexBuffers<VertexPath, u16> = VertexBuffers::new();
+        let mut buffers_builder = vertex_builder(&mut buffers, VertexCtor);
 
-    StrokeTessellator::new().tessellate_path(
-        path.path_iter(),
-        &StrokeOptions::tolerance(tolerance).dont_apply_line_width(),
-        &mut BuffersBuilder::new(&mut buffers, VertexCtor)
-    );
+        StrokeTessellator::new().tessellate_path(
+            path.path_iter(),
+            &StrokeOptions::tolerance(tolerance).dont_apply_line_width(),
+            &mut buffers_builder,
+        );
 
-    let vb = arena.upload_slice(&buffers.vertices);
-    let ib = arena.upload_slice(&buffers.indices);
+        let vb = arena.upload_slice(&buffers.vertices);
+        let ib = arena.upload_slice(&buffers.indices);
 
-    TessPath {
-        num_vertices: buffers.vertices.len(),
-        num_indices: buffers.indices.len(),
-        vertex_buffer: vb,
-        index_buffer: ib
-    }
+        TessPath {
+            num_vertices: buffers.vertices.len(),
+            num_indices: buffers.indices.len(),
+            vertex_buffer: vb,
+            index_buffer: ib,
+        }
+    };
+
+    let fill = {
+        let mut buffers: VertexBuffers<VertexPath, u16> = VertexBuffers::new();
+        let mut buffers_builder = vertex_builder(&mut buffers, VertexCtor);
+
+        FillTessellator::new().tessellate_path(
+            path.path_iter(),
+            &FillOptions::tolerance(tolerance),
+            &mut buffers_builder,
+        );
+
+        let vb = arena.upload_slice(&buffers.vertices);
+        let ib = arena.upload_slice(&buffers.indices);
+
+        TessPath {
+            num_vertices: buffers.vertices.len(),
+            num_indices: buffers.indices.len(),
+            vertex_buffer: vb,
+            index_buffer: ib,
+        }
+    };
+
+    (stroke, fill)
 }
 
 #[test]
@@ -278,7 +328,7 @@ fn test_simple() {
     let arena_0 = r.create_arena();
     // pipelines
     let pipelines = create_pipelines(&arena_0);
-    let tess_path = tesselate_path(&arena_0);
+    let (stroke_path, fill_path) = tesselate_path(&arena_0);
 
     'outer: loop {
         let default_swapchain = r.default_swapchain().unwrap();
@@ -290,7 +340,7 @@ fn test_simple() {
             Format::R16G16B16A16_SFLOAT,
             (w, h).into(),
             MipmapsCount::One,
-            1,
+            8, // multisampling
             ImageUsageFlags::COLOR_ATTACHMENT,
         );
 
@@ -345,7 +395,6 @@ fn test_simple() {
                 params: background_params,
             };
 
-
             cmdbuf.draw(
                 0x0,
                 &arena_2,
@@ -366,32 +415,71 @@ fn test_simple() {
 
             //----------------------------------------------------------------------------------
             // Draw path
-            let prim = Primitive {
-                color: glm::vec4(1.0, 0.4, 0.2, 1.0),
+            let prim_fill = Primitive {
+                color: glm::vec4(1.0, 1.0, 1.0, 1.0),
+                z_index: 0,
+                width: 0.0,
+                translate: glm::vec2(-70.0, -70.0),
+            };
+
+            let prim_stroke = Primitive {
+                color: glm::vec4(0.0, 0.0, 0.0, 1.0),
                 z_index: 0,
                 width: 1.0,
-                translate: glm::vec2(-70.0, -70.0)
+                translate: glm::vec2(-70.0, -70.0),
             };
 
-            let prim_descriptor_set = PathDescriptorSet {
+            let prim_fill = PathDescriptorSet {
                 params: background_params,
-                primitives: arena_2.upload(&prim)
+                primitives: arena_2.upload(&prim_fill),
             };
 
-            cmdbuf.draw_indexed(0x0, &arena_2, pipelines.path, &PathPipeline {
-                descriptor_set: prim_descriptor_set,
-                framebuffer,
-                viewport: (w, h).into(),
-                vertex_buffer: tess_path.vertex_buffer,
-                index_buffer: tess_path.index_buffer
-            },
-            DrawIndexedParams {
-                first_index: 0,
-                index_count: tess_path.num_indices as u32,
-                vertex_offset: 0,
-                first_instance: 0,
-                instance_count: 1
-            });
+            let prim_stroke = PathDescriptorSet {
+                params: background_params,
+                primitives: arena_2.upload(&prim_stroke),
+            };
+
+            // fill
+            cmdbuf.draw_indexed(
+                0x0,
+                &arena_2,
+                pipelines.path,
+                &PathPipeline {
+                    descriptor_set: prim_fill,
+                    framebuffer,
+                    viewport: (w, h).into(),
+                    vertex_buffer: fill_path.vertex_buffer,
+                    index_buffer: fill_path.index_buffer,
+                },
+                DrawIndexedParams {
+                    first_index: 0,
+                    index_count: fill_path.num_indices as u32,
+                    vertex_offset: 0,
+                    first_instance: 0,
+                    instance_count: 1,
+                },
+            );
+
+            // stroke
+            cmdbuf.draw_indexed(
+                0x0,
+                &arena_2,
+                pipelines.path,
+                &PathPipeline {
+                    descriptor_set: prim_stroke,
+                    framebuffer,
+                    viewport: (w, h).into(),
+                    vertex_buffer: stroke_path.vertex_buffer,
+                    index_buffer: stroke_path.index_buffer,
+                },
+                DrawIndexedParams {
+                    first_index: 0,
+                    index_count: stroke_path.num_indices as u32,
+                    vertex_offset: 0,
+                    first_instance: 0,
+                    instance_count: 1,
+                },
+            );
 
             //----------------------------------------------------------------------------------
             // Present

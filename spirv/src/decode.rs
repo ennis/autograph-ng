@@ -62,7 +62,10 @@ impl Module {
     }
 
     pub fn next_iptr<'a>(&'a self, ptr: IPtr) -> Result<IPtr<'a>, ParseError> {
-        Ok(IPtr(ptr.0 + self.decode_raw_at(ptr)?.word_count as usize, PhantomData))
+        Ok(IPtr(
+            ptr.0 + self.decode_raw_at(ptr)?.word_count as usize,
+            PhantomData,
+        ))
     }
 }
 
