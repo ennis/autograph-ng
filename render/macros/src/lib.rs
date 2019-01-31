@@ -12,7 +12,7 @@ extern crate proc_macro2;
 extern crate quote;
 extern crate syn;
 
-mod descriptor_set_interface;
+//mod descriptor_set_interface;
 mod layout;
 mod pipeline_interface;
 
@@ -44,6 +44,7 @@ pub fn vertex_data_derive(input: proc_macro::TokenStream) -> proc_macro::TokenSt
     result.into()
 }
 
+/*
 #[proc_macro_derive(DescriptorSetInterface, attributes(descriptor))]
 pub fn descriptor_set_interface_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast: syn::DeriveInput = syn::parse(input).expect("Couldn't parse item");
@@ -54,7 +55,7 @@ pub fn descriptor_set_interface_derive(input: proc_macro::TokenStream) -> proc_m
     };
 
     result.into()
-}
+}*/
 
 #[proc_macro_derive(PipelineInterface, attributes(pipeline))]
 pub fn pipeline_interface_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {

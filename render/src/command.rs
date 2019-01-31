@@ -1,22 +1,14 @@
 use crate::buffer::BufferTypeless;
-use crate::descriptor::DescriptorSetTypeless;
-use crate::framebuffer::Framebuffer;
 use crate::image::Image;
 use crate::pipeline::GraphicsPipeline;
-use crate::pipeline::GraphicsPipelineTypeless;
 use crate::pipeline::PipelineInterface;
-use crate::pipeline::PipelineInterfaceVisitor;
-use crate::pipeline::ScissorRect;
-use crate::pipeline::Viewport;
 use crate::swapchain::Swapchain;
 use crate::sync::MemoryBarrier;
 use crate::sync::PipelineStageFlags;
 use crate::traits;
-use crate::vertex::IndexBufferDescriptor;
-use crate::vertex::IndexFormat;
-use crate::vertex::VertexBufferDescriptor;
 use crate::Arena;
 use std::ops::Range;
+use crate::pipeline::PipelineArguments;
 
 /// Represents a command to be executed by the renderer backend.
 ///
@@ -72,27 +64,8 @@ pub enum CommandInner<'a> {
     },
 
     // STATE CHANGE COMMANDS -----------------------------------------------------------------------
-    SetDescriptorSets {
-        descriptor_sets: Vec<&'a dyn traits::DescriptorSet>,
-    },
-    SetFramebuffer {
-        framebuffer: &'a dyn traits::Framebuffer,
-    },
-    SetVertexBuffers {
-        vertex_buffers: Vec<&'a dyn traits::Buffer>,
-    },
-    SetIndexBuffer {
-        index_buffer: &'a dyn traits::Buffer,
-        offset: usize,
-        ty: IndexFormat,
-    },
-    SetScissors {
-        //first: u32,
-        scissors: Vec<ScissorRect>,
-    },
-    SetViewports {
-        //first: u32,
-        viewports: Vec<Viewport>,
+    SetPipelineArguments {
+        arguments: &'a dyn traits::PipelineArguments,
     },
 
     // DRAW (LEAD-OUT) COMMANDS --------------------------------------------------------------------
@@ -202,154 +175,29 @@ impl<'a> CommandBuffer<'a> {
 
     //----------------------------------------------------------------------------------------------
     // Draw
+    fn set_pipeline<P: PipelineInterface<'a>>(&mut self, sortkey: u64, pipeline: GraphicsPipeline<'a, P>, arguments: PipelineArguments<'a, P>)
+    {
+        self.push_command(sortkey, CommandInner::DrawHeader {
+            pipeline: pipeline.0
+        });
+        self.push_command(
+            sortkey,
+            CommandInner::SetPipelineArguments {
+                arguments: arguments.0
+            },
+        )
+    }
 
-    fn set_descriptor_sets<I: IntoIterator<Item = DescriptorSetTypeless<'a>>>(
+    pub fn draw<P: PipelineInterface<'a>>(
         &mut self,
         sortkey: u64,
-        descriptor_sets: I,
-    ) {
-        self.push_command(
-            sortkey,
-            CommandInner::SetDescriptorSets {
-                descriptor_sets: descriptor_sets.into_iter().map(|d| d.0).collect(),
-            },
-        )
-    }
-
-    fn set_framebuffer(&mut self, sortkey: u64, framebuffer: Framebuffer<'a>) {
-        self.push_command(
-            sortkey,
-            CommandInner::SetFramebuffer {
-                framebuffer: framebuffer.0,
-            },
-        )
-    }
-
-    fn set_vertex_buffers<'tcx, I: IntoIterator<Item = VertexBufferDescriptor<'a, 'tcx>>>(
-        &mut self,
-        sortkey: u64,
-        vertex_buffers: I,
-    ) {
-        self.push_command(
-            sortkey,
-            CommandInner::SetVertexBuffers {
-                vertex_buffers: vertex_buffers.into_iter().map(|d| d.buffer.0).collect(),
-            },
-        )
-    }
-
-    fn set_index_buffer(
-        &mut self,
-        sortkey: u64,
-        index_buffer: BufferTypeless<'a>,
-        offset: usize,
-        ty: IndexFormat,
-    ) {
-        self.push_command(
-            sortkey,
-            CommandInner::SetIndexBuffer {
-                index_buffer: index_buffer.0,
-                offset,
-                ty,
-            },
-        )
-    }
-
-    fn set_viewports<I: IntoIterator<Item = Viewport>>(&mut self, sortkey: u64, viewports: I) {
-        self.push_command(
-            sortkey,
-            CommandInner::SetViewports {
-                viewports: viewports.into_iter().collect(),
-            },
-        )
-    }
-
-    fn set_scissors<I: IntoIterator<Item = ScissorRect>>(&mut self, sortkey: u64, scissors: I) {
-        self.push_command(
-            sortkey,
-            CommandInner::SetScissors {
-                scissors: scissors.into_iter().collect(),
-            },
-        )
-    }
-
-    fn bind_pipeline_interface<PI: PipelineInterface<'a>>(
-        &mut self,
-        sortkey: u64,
-        arena: &'a Arena,
-        pipeline: GraphicsPipelineTypeless<'a>,
-        interface: &PI,
-    ) {
-        self.push_command(
-            sortkey,
-            CommandInner::DrawHeader {
-                pipeline: pipeline.0,
-            },
-        );
-
-        struct Visitor<'a, 'b> {
-            sortkey: u64,
-            cmdbuf: &'b mut CommandBuffer<'a>,
-        }
-
-        impl<'a, 'b> PipelineInterfaceVisitor<'a> for Visitor<'a, 'b> {
-            fn visit_descriptor_sets<I: IntoIterator<Item = DescriptorSetTypeless<'a>>>(
-                &mut self,
-                descriptor_sets: I,
-            ) {
-                self.cmdbuf
-                    .set_descriptor_sets(self.sortkey, descriptor_sets);
-            }
-
-            fn visit_vertex_buffers<
-                'tcx,
-                I: IntoIterator<Item = VertexBufferDescriptor<'a, 'tcx>>,
-            >(
-                &mut self,
-                vertex_buffers: I,
-            ) {
-                self.cmdbuf.set_vertex_buffers(self.sortkey, vertex_buffers);
-            }
-
-            fn visit_index_buffer(&mut self, buffer: IndexBufferDescriptor<'a>) {
-                self.cmdbuf.set_index_buffer(
-                    self.sortkey,
-                    buffer.buffer,
-                    buffer.offset as usize,
-                    buffer.format,
-                );
-            }
-
-            fn visit_framebuffer(&mut self, framebuffer: Framebuffer<'a>) {
-                self.cmdbuf.set_framebuffer(self.sortkey, framebuffer);
-            }
-
-            fn visit_viewports<I: IntoIterator<Item = Viewport>>(&mut self, viewports: I) {
-                self.cmdbuf.set_viewports(self.sortkey, viewports);
-            }
-
-            fn visit_scissors<I: IntoIterator<Item = ScissorRect>>(&mut self, scissors: I) {
-                self.cmdbuf.set_scissors(self.sortkey, scissors);
-            }
-        }
-
-        let mut v = Visitor {
-            sortkey,
-            cmdbuf: self,
-        };
-
-        interface.do_visit(arena, &mut v);
-    }
-
-    pub fn draw<PI: PipelineInterface<'a>>(
-        &mut self,
-        sortkey: u64,
-        arena: &'a Arena,
-        pipeline: GraphicsPipeline<'a, PI>,
-        interface: &PI,
+        _arena: &'a Arena,
+        pipeline: GraphicsPipeline<'a, P>,
+        arguments: PipelineArguments<'a, P>,
         params: DrawParams,
     ) {
-        self.bind_pipeline_interface(sortkey, arena, pipeline.into(), interface);
+
+        self.set_pipeline(sortkey, pipeline, arguments);
         self.push_command(
             sortkey,
             CommandInner::Draw {
@@ -361,15 +209,15 @@ impl<'a> CommandBuffer<'a> {
         );
     }
 
-    pub fn draw_indexed<PI: PipelineInterface<'a>>(
+    pub fn draw_indexed<P: PipelineInterface<'a>>(
         &mut self,
         sortkey: u64,
-        arena: &'a Arena,
-        pipeline: GraphicsPipeline<'a, PI>,
-        interface: &PI,
+        _arena: &'a Arena,
+        pipeline: GraphicsPipeline<'a, P>,
+        arguments: PipelineArguments<'a, P>,
         params: DrawIndexedParams,
     ) {
-        self.bind_pipeline_interface(sortkey, arena, pipeline.into(), interface);
+        self.set_pipeline(sortkey, pipeline, arguments);
         self.push_command(
             sortkey,
             CommandInner::DrawIndexed {
@@ -399,7 +247,7 @@ impl<'a> CommandBuffer<'a> {
 }
 
 /// TODO optimize (radix sort, dense command buffer layout, separate index map)
-pub fn sort_command_buffers(cmdbufs: Vec<CommandBuffer>) -> Vec<Command> {
+pub fn sort_command_buffers<'a>(cmdbufs: Vec<CommandBuffer<'a>>) -> Vec<Command<'a>> {
     let mut fused = Vec::new();
     //let mut sortkeys = Vec::new();
     //let mut i: usize = 0;

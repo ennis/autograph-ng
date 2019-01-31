@@ -34,6 +34,7 @@ pub struct VertexLayout<'tcx> {
 }
 
 /// Descriptor for a vertex buffer.
+/// TODO support host references.
 #[derive(Copy, Clone, Debug)]
 pub struct VertexBufferDescriptor<'a, 'tcx> {
     /// Buffer containing vertex data.

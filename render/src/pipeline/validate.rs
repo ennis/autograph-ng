@@ -1,5 +1,5 @@
 //use crate::descriptor::Descriptor;
-use crate::descriptor::DescriptorSetLayoutBinding;
+use crate::descriptor::DescriptorBinding;
 use crate::descriptor::DescriptorType;
 //use crate::pipeline::GraphicsPipelineCreateInfo;
 use crate::pipeline::GraphicsPipelineCreateInfoTypeless;
@@ -90,14 +90,14 @@ fn validate_data_type(
     }
 }
 
-type DescriptorValidationMap<'a> = Vec<Vec<(&'a DescriptorSetLayoutBinding<'a>, bool)>>;
+type DescriptorValidationMap<'a> = Vec<Vec<(&'a DescriptorBinding<'a>, bool)>>;
 
 fn find_descriptor<'a>(
     map: &'_ mut DescriptorValidationMap<'a>,
     set: u32,
     binding: u32,
     interface: InterfaceItem,
-) -> Result<&'a DescriptorSetLayoutBinding<'a>, InterfaceMismatchError> {
+) -> Result<&'a DescriptorBinding<'a>, InterfaceMismatchError> {
     let set = map.get_mut(set as usize);
     if let Some(set) = set {
         for (b, ref mut seen) in set.iter_mut() {

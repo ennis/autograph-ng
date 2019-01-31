@@ -28,8 +28,6 @@ use crate::AliasInfo;
 use crate::DowncastPanic;
 use crate::ImplementationParameters;
 use autograph_render::command::Command;
-use autograph_render::descriptor::Descriptor;
-use autograph_render::descriptor::DescriptorSetLayout;
 use autograph_render::format::Format;
 use autograph_render::image::Dimensions;
 use autograph_render::image::ImageUsageFlags;
@@ -49,6 +47,10 @@ use std::slice;
 use std::str;
 use std::sync::Mutex;
 use std::time::Duration;
+use autograph_render::pipeline::Signature;
+use autograph_render::descriptor::HostReference;
+use autograph_render::pipeline::Viewport;
+use autograph_render::pipeline::ScissorRect;
 
 //--------------------------------------------------------------------------------------------------
 extern "system" fn debug_callback(
@@ -78,12 +80,16 @@ pub(crate) struct GlArena {
     pub(crate) _swapchains: SyncArena<GlSwapchain>,
     pub(crate) buffers: SyncArena<GlBuffer>,
     pub(crate) images: SyncArena<GlImage>,
-    pub(crate) descriptor_sets: SyncArena<GlDescriptorSet>,
-    //pub(crate) descriptor_set_layouts: SyncArena<GlDescriptorSetLayout>,
     pub(crate) shader_modules: SyncArena<GlShaderModule>,
+    pub(crate) pipeline_arguments: SyncArena<GlPipelineArguments>,
     pub(crate) graphics_pipelines: SyncArena<GlGraphicsPipeline>,
     pub(crate) framebuffers: SyncArena<GlFramebuffer>,
     pub(crate) upload_buffer: UploadBuffer,
+    // pipeline parameters
+    pub(crate) gluint_arena: SyncArena<GLuint>,
+    pub(crate) glintptr_arena: SyncArena<GLintptr>,
+    pub(crate) viewports: SyncArena<Viewport>,
+    pub(crate) scissors: SyncArena<ScissorRect>,
 }
 
 impl GlArena {
@@ -92,12 +98,15 @@ impl GlArena {
             _swapchains: SyncArena::new(),
             buffers: SyncArena::new(),
             images: SyncArena::new(),
-            descriptor_sets: SyncArena::new(),
-            //descriptor_set_layouts: SyncArena::new(),
             shader_modules: SyncArena::new(),
+            pipeline_arguments: SyncArena::new(),
             graphics_pipelines: SyncArena::new(),
             framebuffers: SyncArena::new(),
             upload_buffer,
+            gluint_arena: SyncArena::new(),
+            glintptr_arena: SyncArena::new(),
+            viewports: SyncArena::new(),
+            scissors: SyncArena::new(),
         }
     }
 }
@@ -492,46 +501,14 @@ impl RendererBackend for OpenGlBackend {
         create_graphics_pipeline_internal(&self.gl, arena, create_info)
     }
 
-    /*//----------------------------------------------------------------------------------------------
-    fn create_descriptor_set_layout<'a, 'r: 'a>(
-        &'r self,
-        arena: &'a dyn traits::Arena,
-        typeid: Option<TypeId>,
-        bindings: &[DescriptorSetLayoutBinding],
-    ) -> &'a dyn traits::DescriptorSetLayout {
-        assert_ne!(bindings.len(), 0, "descriptor set layout has no bindings");
-
-        if let Some(typeid) = typeid {
-            self.desc_set_layout_cache
-                .get_or_insert_with(typeid, || GlDescriptorSetLayout {
-                    bindings: bindings.iter().map(|b| b.clone().into()).collect(),
-                })
-        } else {
-            let arena: &GlArena = arena.downcast_ref_unwrap();
-            arena.descriptor_set_layouts.alloc(GlDescriptorSetLayout {
-                bindings: bindings.iter().map(|b| b.clone().into()).collect(),
-            })
-        }
-    }*/
+    //----------------------------------------------------------------------------------------------
+    fn create_pipeline_arguments<'a>(&self, arena: &'a dyn traits::Arena, signature: &Signature) -> &'a dyn traits::PipelineArguments {
+        unimplemented!()
+    }
 
     //----------------------------------------------------------------------------------------------
-    fn create_descriptor_set<'a>(
-        &self,
-        arena: &'a dyn traits::Arena,
-        layout: &DescriptorSetLayout,
-        descriptors: &[Descriptor],
-    ) -> &'a dyn traits::DescriptorSet {
-        let arena: &GlArena = arena.downcast_ref_unwrap();
-        let mut sampler_cache = self.sampler_cache.lock().unwrap();
-
-        let descriptor_set = GlDescriptorSet::from_descriptors_and_layout(
-            &self.gl,
-            descriptors,
-            layout,
-            &mut sampler_cache,
-        );
-
-        arena.descriptor_sets.alloc(descriptor_set)
+    fn create_host_reference<'a>(&self, arena: &'a dyn traits::Arena, data: &'a [u8]) -> &'a dyn traits::HostReference {
+        unimplemented!()
     }
 
     //----------------------------------------------------------------------------------------------
@@ -583,4 +560,5 @@ impl RendererBackend for OpenGlBackend {
     ) {
         unimplemented!()
     }
+
 }

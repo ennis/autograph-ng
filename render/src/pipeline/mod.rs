@@ -1,11 +1,6 @@
-use crate::descriptor::DescriptorSetLayout;
-use crate::descriptor::DescriptorSetTypeless;
 use crate::format::Format;
 use crate::framebuffer::FragmentOutputDescription;
-use crate::framebuffer::Framebuffer;
 use crate::traits;
-use crate::vertex::IndexBufferDescriptor;
-use crate::vertex::VertexBufferDescriptor;
 use crate::vertex::VertexLayout;
 use crate::Arena;
 pub use autograph_render_macros::PipelineInterface;
@@ -13,8 +8,10 @@ use bitflags::bitflags;
 use ordered_float::NotNan;
 use std::marker::PhantomData;
 use std::mem;
+use std::any::TypeId;
+use crate::descriptor::DescriptorBinding;
 
-pub(crate) mod validate;
+//pub(crate) mod validate;
 
 bitflags! {
     #[derive(Default)]
@@ -453,8 +450,7 @@ pub struct GraphicsPipelineCreateInfoTypeless<'a, 'rcx> {
     pub input_assembly_state: &'a InputAssemblyState,
     pub color_blend_state: &'a ColorBlendState<'a>,
     pub dynamic_state: DynamicStateFlags,
-    pub descriptor_set_layouts: &'a [DescriptorSetLayout<'a>],
-    pub attachment_layout: &'a AttachmentLayout<'a>,
+    pub root_signature: &'a Signature<'a>,
 }
 
 /// Variant of [GraphicsPipelineCreateInfoTypeless] where some information is derived from types
@@ -504,21 +500,23 @@ impl<'a, T: PipelineInterface<'a>> From<GraphicsPipeline<'a, T>> for GraphicsPip
     }
 }
 
-//--------------------------------------------------------------------------------------------------
-pub trait PipelineInterfaceVisitor<'a> {
-    fn visit_descriptor_sets<I: IntoIterator<Item = DescriptorSetTypeless<'a>>>(
-        &mut self,
-        descriptor_sets: I,
-    );
-    fn visit_vertex_buffers<'tcx, I: IntoIterator<Item = VertexBufferDescriptor<'a, 'tcx>>>(
-        &mut self,
-        buffers: I,
-    );
-    fn visit_index_buffer(&mut self, buffer: IndexBufferDescriptor<'a>);
-    fn visit_framebuffer(&mut self, framebuffer: Framebuffer<'a>);
-    fn visit_viewports<I: IntoIterator<Item = Viewport>>(&mut self, viewports: I);
-    fn visit_scissors<I: IntoIterator<Item = ScissorRect>>(&mut self, scissors: I);
+/// Represents the layout of pipeline arguments.
+pub struct Signature<'a> {
+    pub sub_signatures: &'a [&'a Signature<'a>],
+    pub descriptors: &'a [DescriptorBinding<'a>],
+    pub vertex_layouts: &'a [VertexLayout<'a>],
+    pub fragment_outputs: &'a [FragmentOutputDescription],
+    pub typeid: Option<TypeId>,
 }
+
+/// A group of pipeline resources.
+#[derive(Copy,Clone,Debug)]
+pub struct PipelineArgumentsTypeless<'a>(pub &'a dyn traits::PipelineArguments);
+
+/// Represents a group of pipeline states.
+#[derive(Copy,Clone,Debug)]
+pub struct PipelineArguments<'a, T: PipelineInterface<'a>>(pub &'a dyn traits::PipelineArguments, pub(crate) PhantomData<T>);
+
 
 ///
 /// Describes pipeline states to set before issuing a draw or compute call.
@@ -585,31 +583,15 @@ pub trait PipelineInterfaceVisitor<'a> {
 /// }
 /// ```
 ///
-pub trait PipelineInterface<'a> {
-    const LAYOUT: &'static PipelineLayout<'static>;
-    fn do_visit<V: PipelineInterfaceVisitor<'a>>(&self, arena: &'a Arena, visitor: &mut V);
-    // Use this interface when rust supports impl Trait in Traits
-    /*fn vertex_inputs<'a,'rcx>(&'a self) -> impl Iterator<Item=&'rcx R::Buffer> + 'a;
-    fn fragment_outputs<'a,'rcx>(&'a self) -> impl Iterator<Item=&'rcx R::Image> + 'a;
-    fn descriptor_sets<'a,'rcx>(&'a self) -> impl Iterator<Item=&'rcx R::DescriptorSet> + 'a;
-    fn index_buffer(&self) -> Option<R::BufferHandle>;*/
-}
+pub trait PipelineInterface<'a>
+{
+    const SIGNATURE: &'static Signature<'static>;
 
-#[derive(Copy, Clone, Debug)]
-pub struct PipelineLayout<'a> {
-    pub descriptor_set_layouts: &'a [DescriptorSetLayout<'a>],
-    pub vertex_layouts: &'a [VertexLayout<'a>],
-    pub fragment_outputs: &'a [FragmentOutputDescription], //pub push_constants: &'a [PushConstant]
-}
+    /// A 'static marker type that uniquely identifies Self: this is for getting a TypeId.
+    type UniqueType: 'static;
+    type IntoInterface: PipelineInterface<'a>;
 
-impl<'a> Default for PipelineLayout<'a> {
-    fn default() -> Self {
-        PipelineLayout {
-            descriptor_set_layouts: &[],
-            vertex_layouts: &[],
-            fragment_outputs: &[],
-        }
-    }
+    fn update_pipeline_arguments(&self, arena: &'a Arena, out_arguments: &'a dyn traits::PipelineArguments);
 }
 
 /// Converts a sequence of VertexLayouts (one for each vertex buffer) into binding descriptions

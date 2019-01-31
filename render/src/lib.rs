@@ -95,23 +95,22 @@ pub use autograph_shader_macros::{
 };
 use std::marker::PhantomData;
 
-use crate::descriptor::DescriptorSetInterface;
 use crate::framebuffer::Framebuffer;
 use crate::pipeline::build_vertex_input_interface;
-use crate::pipeline::validate::validate_graphics;
-use crate::pipeline::AttachmentLayout;
+//use crate::pipeline::validate::validate_graphics;
 use crate::pipeline::DynamicStateFlags;
 use crate::pipeline::GraphicsPipeline;
 use crate::pipeline::GraphicsPipelineCreateInfo;
 use crate::pipeline::GraphicsPipelineCreateInfoTypeless;
 use crate::pipeline::GraphicsPipelineTypeless;
 use crate::pipeline::PipelineInterface;
-use crate::pipeline::PipelineLayout;
 use crate::pipeline::ShaderModule;
 use crate::pipeline::ShaderStageFlags;
 use crate::pipeline::VertexInputState;
 use std::mem;
 use std::slice;
+use crate::pipeline::PipelineArguments;
+use crate::pipeline::Signature;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -257,16 +256,21 @@ pub trait RendererBackend: Sync {
         create_info: &GraphicsPipelineCreateInfoTypeless<'_, 'a>,
     ) -> &'a dyn traits::GraphicsPipeline;
 
-    /// Creates a new descriptor set, which describes a set of resources to be bound to the graphics
-    /// pipeline.
-    fn create_descriptor_set<'a>(
+    /// Creates a new pipeline argument group, which describes a set of resources to be bound to the graphics
+    /// pipeline, and state to be set.
+    fn create_pipeline_arguments<'a>(
         &self,
         arena: &'a dyn traits::Arena,
-        layout: &DescriptorSetLayout,
-        descriptors: &[Descriptor<'a>],
-    ) -> &'a dyn traits::DescriptorSet;
+        signature: &Signature,
+    ) -> &'a dyn traits::PipelineArguments;
+
+    /// Creates a reference to host data that is going to be used in pipeline arguments.
+    fn create_host_reference<'a>(&self,
+                                        arena: &'a dyn traits::Arena,
+                                        data: &'a [u8]) -> &'a dyn traits::HostReference;
 
     /// Sends commands to the GPU for execution, and ends the current frame.
+    /// Uploads all referenced host data to the GPU and releases the borrows.
     ///
     /// Precondition: the command list should be sorted by sortkey.
     fn submit_frame<'a>(&self, commands: &[Command<'a>]);
@@ -366,14 +370,14 @@ impl<'rcx> Arena<'rcx> {
     pub fn create_graphics_pipeline<'a, Pipeline: PipelineInterface<'a>>(
         &'a self,
         create_info: &GraphicsPipelineCreateInfo<'_, 'a>,
-        dyn_layout: &PipelineLayout,
+        extra_signature: &Signature,
     ) -> GraphicsPipeline<'a, Pipeline> {
         // combine static & dynamic
-        let vertex_layouts = <Pipeline as PipelineInterface<'a>>::LAYOUT
+        let vertex_layouts = <Pipeline as PipelineInterface<'a>>::SIGNATURE
             .vertex_layouts
             .iter()
             .cloned()
-            .chain(dyn_layout.vertex_layouts.iter().cloned())
+            .chain(extra_signature.vertex_layouts.iter().cloned())
             .collect::<Vec<_>>();
         let (vtx_input_bindings, vtx_input_attribs) = build_vertex_input_interface(&vertex_layouts);
 
@@ -381,13 +385,6 @@ impl<'rcx> Arena<'rcx> {
             bindings: &vtx_input_bindings,
             attributes: &vtx_input_attribs,
         };
-
-        let descriptor_set_layouts = <Pipeline as PipelineInterface<'a>>::LAYOUT
-            .descriptor_set_layouts
-            .iter()
-            .cloned()
-            .chain(dyn_layout.descriptor_set_layouts.iter().cloned())
-            .collect::<Vec<_>>();
 
         let create_info_full = GraphicsPipelineCreateInfoTypeless {
             shader_stages: create_info.shader_stages,
@@ -399,20 +396,14 @@ impl<'rcx> Arena<'rcx> {
             input_assembly_state: create_info.input_assembly_state,
             color_blend_state: create_info.color_blend_state,
             dynamic_state: DynamicStateFlags::empty(),
-            descriptor_set_layouts: &descriptor_set_layouts,
-            attachment_layout: &AttachmentLayout {
-                // TODO (this is currently ignored by the GL backend anyway)
-                input_attachments: &[],
-                depth_attachment: None,
-                color_attachments: &[],
-            },
+            root_signature: <Pipeline as PipelineInterface<'a>>::SIGNATURE
         };
 
         // validate the pipeline
-        let validation_result = validate_graphics(&create_info_full);
-        if let Err(e) = validation_result {
-            panic!("graphics pipeline validation failed: {}", e);
-        }
+        //let validation_result = validate_graphics(&create_info_full);
+        //if let Err(e) = validation_result {
+        //    panic!("graphics pipeline validation failed: {}", e);
+        //}
 
         GraphicsPipeline(
             self.backend
@@ -520,38 +511,43 @@ impl<'rcx> Arena<'rcx> {
         )
     }
 
-    /// Creates a descriptor set.
-    ///
-    /// You might want to use [DescriptorSetInterface::into_descriptor_set] instead.
-    pub fn create_descriptor_set<'a, T: DescriptorSetInterface<'a>>(
-        &'a self,
-        descriptors: impl IntoIterator<Item = Descriptor<'a>>,
-    ) -> DescriptorSet<'a, T> {
-        DescriptorSet(
-            self.create_descriptor_set_typeless(
-                &<T as DescriptorSetInterface<'a>>::LAYOUT,
-                descriptors,
-            )
-            .0,
-            PhantomData,
-        )
+    /// Creates an immutable, device-local GPU buffer containing an array of objects of type T.
+    #[inline]
+    pub fn host_reference<'a, T: Copy + 'static>(&'a self, data: &'a T) -> HostReference<'a, T>
+    {
+        let size = mem::size_of::<T>();
+        let bytes = unsafe { ::std::slice::from_raw_parts(data as *const T as *const u8, size) };
+
+        HostReference(self.backend.create_host_reference(self.inner_arena(), bytes), PhantomData)
     }
 
-    /// Creates a descriptor set.
-    ///
-    /// You might want to use [DescriptorSetInterface::into_descriptor_set] instead.
-    pub fn create_descriptor_set_typeless<'a>(
-        &'a self,
-        layout: &DescriptorSetLayout,
-        descriptors: impl IntoIterator<Item = Descriptor<'a>>,
-    ) -> DescriptorSetTypeless<'a> {
-        let descriptors: Vec<_> = descriptors.into_iter().collect();
+    /// Creates an immutable, device-local GPU buffer containing an array of objects of type T.
+    #[inline]
+    pub fn host_slice<'a, T: Copy + 'static>(&'a self, data: &'a [T]) -> HostReference<'a, T> {
 
-        DescriptorSetTypeless(self.backend.create_descriptor_set(
+        let size = mem::size_of_val(data);
+        let bytes = unsafe { ::std::slice::from_raw_parts(data.as_ptr() as *const u8, size) };
+
+        HostReference(self.backend.create_host_reference(self.inner_arena(), bytes), PhantomData)
+    }
+
+    /// Creates a pipeline argument group.
+    pub fn create_pipeline_arguments<'a, T: PipelineInterface<'a>>(
+        &'a self,
+        arguments: T,
+    ) -> PipelineArguments<'a, T>
+    {
+        let args = self.backend.create_pipeline_arguments(
             self.inner_arena(),
-            layout,
-            descriptors.as_slice(),
-        ))
+            &<T as PipelineInterface<'a>>::SIGNATURE,
+        );
+
+        arguments.update_pipeline_arguments(self, args);
+
+        PipelineArguments(
+            args,
+            PhantomData,
+        )
     }
 }
 

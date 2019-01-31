@@ -26,6 +26,14 @@ pub(crate) use self::shader::BindingSpace;
 pub(crate) use self::shader::DescriptorMap;
 pub(crate) use self::shader::GlShaderModule;
 use crate::DowncastPanic;
+use autograph_render::descriptor::Descriptor;
+use autograph_render::pipeline::Viewport;
+use autograph_render::pipeline::ScissorRect;
+use autograph_render::vertex::VertexBufferDescriptor;
+use autograph_render::vertex::IndexBufferDescriptor;
+use autograph_render::framebuffer::RenderTargetDescriptor;
+use crate::framebuffer::GlFramebuffer;
+use crate::descriptor::RawDescriptor;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct StaticSamplerEntry {
@@ -152,5 +160,56 @@ impl GlGraphicsPipeline {
                 }
             }
         }
+    }
+}
+
+
+pub(crate) struct GlPipelineArguments<'a> {
+    arena: &'a GlArena,
+    pub(crate) inherits: Vec<&'a GlPipelineArguments<'a>>,
+
+    pub(crate) textures: &'a [GLuint], //smallvec::SmallVec<[GLuint; MAX_INLINE_SHADER_RESOURCE_BINDINGS]>,
+    pub(crate) samplers: &'a [GLuint], //smallvec::SmallVec<[GLuint; MAX_INLINE_SHADER_RESOURCE_BINDINGS]>,
+    pub(crate) images: &'a [GLuint], //smallvec::SmallVec<[GLuint; MAX_INLINE_SHADER_RESOURCE_BINDINGS]>,
+    pub(crate) uniform_buffers: &'a [GLuint], //smallvec::SmallVec<[GLuint; MAX_INLINE_SHADER_RESOURCE_BINDINGS]>,
+    pub(crate) uniform_buffer_sizes: &'a [GLintptr], //smallvec::SmallVec<[GLintptr; MAX_INLINE_SHADER_RESOURCE_BINDINGS]>,
+    pub(crate) uniform_buffer_offsets: &'a [GLintptr], //smallvec::SmallVec<[GLintptr; MAX_INLINE_SHADER_RESOURCE_BINDINGS]>,
+    pub(crate) shader_storage_buffers: &'a [GLuint], //smallvec::SmallVec<[GLuint; MAX_INLINE_SHADER_RESOURCE_BINDINGS]>,
+    pub(crate) shader_storage_buffer_sizes: &'a [GLintptr], //smallvec::SmallVec<[GLintptr; MAX_INLINE_SHADER_RESOURCE_BINDINGS]>,
+    pub(crate) shader_storage_buffer_offsets: &'a [GLintptr], // smallvec::SmallVec<[GLintptr; MAX_INLINE_SHADER_RESOURCE_BINDINGS]>,
+    pub(crate) viewports: &'a [Viewport],
+    pub(crate) scissors: &'a [ScissorRect],
+    pub(crate) render_targets: &'a [GLuint],
+    /// Framebuffer associated to this pipeline state.
+    pub(crate) framebuffer: Option<GlFramebuffer>,
+}
+
+impl<'a> traits::PipelineArguments<'a> for GlPipelineArguments<'a> {
+    unsafe fn set_arguments(&self, index: usize, arguments: &'a dyn traits::PipelineArguments) {
+        unimplemented!()
+    }
+
+    unsafe fn set_descriptor(&self, index: usize, descriptor: Descriptor<'a>) {
+        unimplemented!()
+    }
+
+    unsafe fn set_viewport(&self, index: usize, viewport: &Viewport) {
+        unimplemented!()
+    }
+
+    unsafe fn set_scissor(&self, index: usize, scissor: &ScissorRect) {
+        unimplemented!()
+    }
+
+    unsafe fn set_vertex_buffer(&self, index: usize, vertex_buffer: VertexBufferDescriptor<'a, '_>) {
+        unimplemented!()
+    }
+
+    unsafe fn set_index_buffer(&self, index: usize, vertex_buffer: Option<IndexBufferDescriptor<'a>>) {
+        unimplemented!()
+    }
+
+    unsafe fn set_render_target(&self, index: usize, render_target: RenderTargetDescriptor<'a>) {
+        unimplemented!()
     }
 }

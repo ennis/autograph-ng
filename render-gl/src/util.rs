@@ -23,7 +23,7 @@ impl<T> SyncArena<T> {
         unsafe { mem::transmute::<&mut T, &mut T>(self.0.lock().unwrap().alloc(value)) }
     }
 
-    /*/// See [typed_arena::Arena].
+    /// See [typed_arena::Arena].
     pub fn alloc_extend<I>(&self, iterable: I) -> &mut [T]
     where
         I: IntoIterator<Item = T>,
@@ -31,7 +31,7 @@ impl<T> SyncArena<T> {
         unsafe {
             mem::transmute::<&mut [T], &mut [T]>(self.0.lock().unwrap().alloc_extend(iterable))
         }
-    }*/
+    }
 
     /*/// See [typed_arena::Arena].
     pub unsafe fn alloc_uninitialized(&self, num: usize) -> *mut [T] {

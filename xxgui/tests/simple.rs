@@ -4,7 +4,6 @@ use autograph_render::buffer::Buffer;
 use autograph_render::buffer::StructuredBufferData;
 use autograph_render::command::DrawIndexedParams;
 use autograph_render::command::DrawParams;
-use autograph_render::descriptor::DescriptorSetInterface;
 use autograph_render::format::Format;
 use autograph_render::framebuffer::Framebuffer;
 use autograph_render::glm;
@@ -22,7 +21,6 @@ use autograph_render::pipeline::GraphicsShaderStages;
 use autograph_render::pipeline::InputAssemblyState;
 use autograph_render::pipeline::MultisampleState;
 use autograph_render::pipeline::PipelineInterface;
-use autograph_render::pipeline::PipelineLayout;
 use autograph_render::pipeline::PrimitiveTopology;
 use autograph_render::pipeline::RasterisationState;
 use autograph_render::pipeline::Scissors;
@@ -50,6 +48,7 @@ use lyon::tessellation::StrokeOptions;
 use lyon::tessellation::StrokeTessellator;
 use lyon::tessellation::StrokeVertex;
 use std::env;
+use autograph_render::image::Image;
 
 static BACKGROUND_VERT: &[u8] = include_shader!("background.vert");
 static BACKGROUND_FRAG: &[u8] = include_shader!("background.frag");
@@ -98,18 +97,20 @@ struct BackgroundParams {
     zoom: f32,
 }
 
-#[derive(DescriptorSetInterface, Copy, Clone)]
-struct BackgroundDescriptorSet<'a> {
-    #[descriptor(uniform_buffer)]
-    params: Buffer<'a, BackgroundParams>,
+
+#[derive(PipelineInterface)]
+struct RenderTargets<'a>
+{
+    #[pipeline(render_target)]
+    color_target: Image<'a>,
 }
 
 #[derive(PipelineInterface)]
-struct BackgroundPipeline<'a> {
+struct Background<'a> {
     #[pipeline(framebuffer)]
     framebuffer: Framebuffer<'a>,
-    #[pipeline(descriptor_set)]
-    descriptor_set: BackgroundDescriptorSet<'a>,
+    #[pipeline(uniform_buffer)]
+    params: Buffer<'a, BackgroundParams>,
     #[pipeline(viewport)]
     viewport: Viewport,
     #[pipeline(vertex_buffer)]
@@ -131,20 +132,12 @@ struct PrimitiveArray {
     primitives: [Primitive; 32],
 }
 
-#[derive(DescriptorSetInterface, Copy, Clone)]
-struct PathDescriptorSet<'a> {
-    #[descriptor(uniform_buffer)]
+#[derive(PipelineInterface)]
+struct PathRendering<'a> {
+    #[pipeline(uniform_buffer)]
     params: Buffer<'a, BackgroundParams>,
-    #[descriptor(uniform_buffer)]
+    #[pipeline(uniform_buffer)]
     primitives: Buffer<'a, Primitive>,
-}
-
-#[derive(PipelineInterface)]
-struct PathPipeline<'a> {
-    #[pipeline(framebuffer)]
-    framebuffer: Framebuffer<'a>,
-    #[pipeline(descriptor_set)]
-    descriptor_set: PathDescriptorSet<'a>,
     #[pipeline(viewport)]
     viewport: Viewport,
     #[pipeline(vertex_buffer)]
@@ -152,27 +145,10 @@ struct PathPipeline<'a> {
     #[pipeline(index_buffer)]
     index_buffer: Buffer<'a, [u16]>,
 }
-
-/*
-#[derive(PipelineInterface)]
-struct PathPipeline2<'a> {
-    #[pipeline(framebuffer)]
-    framebuffer: Framebuffer<'a>,
-    #[pipeline(set=0, uniform_buffer)]
-    params: ShaderData<'a, BackgroundParams>,
-    #[pipeline(set=0, uniform_buffer)]
-    primitives: ShaderData<'a, Primitive>,
-    #[pipeline(viewport)]
-    viewport: Viewport,
-    #[pipeline(vertex_buffer)]
-    vertex_buffer: Buffer<'a, [VertexPath]>,
-    #[pipeline(index_buffer)]
-    index_buffer: Buffer<'a, [u16]>,
-}*/
 
 struct Pipelines<'a> {
-    background: GraphicsPipeline<'a, BackgroundPipeline<'a>>,
-    path: GraphicsPipeline<'a, PathPipeline<'a>>,
+    background: GraphicsPipeline<'a, Background<'a>>,
+    path: GraphicsPipeline<'a, PathRendering<'a>>,
 }
 
 fn create_pipelines<'a>(arena: &'a Arena) -> Pipelines<'a> {

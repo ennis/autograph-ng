@@ -1586,3 +1586,6 @@ fn fragment_shader(
         - pipelineinterfacevisitor: 
             - visit_state_group()
             - visit_shader_data()
+            
+- Plan
+    - Descriptor set -> state group
