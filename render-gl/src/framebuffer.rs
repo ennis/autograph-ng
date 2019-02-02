@@ -2,8 +2,6 @@ use crate::api as gl;
 use crate::api::types::*;
 use crate::api::Gl;
 use crate::image::GlImage;
-use crate::DowncastPanic;
-use autograph_render::traits;
 
 /// Wrapper around OpenGL framebuffers.
 #[derive(Debug)]
@@ -21,11 +19,10 @@ impl GlFramebuffer {
     ///
     /// Panics if the number of color attachments is greater than 8.
     ///
-    /// Unsafety: performs an unchecked downcast from `traits::Image` to `GlImage`
     pub(crate) fn new(
         gl: &Gl,
-        color_attachments: &[&dyn traits::Image],
-        depth_stencil_attachment: Option<&dyn traits::Image>,
+        color_attachments: &[&GlImage],
+        depth_stencil_attachment: Option<&GlImage>,
     ) -> Result<GlFramebuffer, GLenum> {
         assert!(color_attachments.len() < 8);
 
@@ -37,7 +34,6 @@ impl GlFramebuffer {
         // color attachments
         for (index, &img) in color_attachments.iter().enumerate() {
             let index = index as u32;
-            let img = img.downcast_ref_unwrap::<GlImage>();
             match img.raw.target {
                 gl::RENDERBUFFER => unsafe {
                     gl.NamedFramebufferRenderbuffer(
@@ -60,7 +56,6 @@ impl GlFramebuffer {
 
         // depth-stencil attachment
         if let Some(img) = depth_stencil_attachment {
-            let img = img.downcast_ref_unwrap::<GlImage>();
             match img.raw.target {
                 gl::RENDERBUFFER => unsafe {
                     gl.NamedFramebufferRenderbuffer(
@@ -117,5 +112,3 @@ impl GlFramebuffer {
         }
     }
 }
-
-impl traits::Framebuffer for GlFramebuffer {}

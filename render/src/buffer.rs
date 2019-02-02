@@ -1,4 +1,4 @@
-use crate::traits;
+use crate::handle;
 use crate::typedesc::PrimitiveType;
 use crate::typedesc::TypeDesc;
 use std::marker::PhantomData;
@@ -33,7 +33,7 @@ impl<U: BufferData> BufferData for [U] {
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct Buffer<'a, T: BufferData + ?Sized>(
-    pub &'a dyn traits::Buffer,
+    pub handle::Buffer<'a>,
     pub(crate) PhantomData<&'a T>,
 );
 
@@ -47,9 +47,9 @@ impl<'a, T: BufferData + ?Sized> Clone for Buffer<'a, T> {
 impl<'a, T: BufferData + ?Sized> Copy for Buffer<'a, T> {}
 
 impl<'a, T: BufferData + ?Sized> Buffer<'a, T> {
-    pub fn byte_size(&self) -> u64 {
+    /*pub fn byte_size(&self) -> u64 {
         traits::Buffer::size(self.0)
-    }
+    }*/
     pub fn into_typeless(self) -> BufferTypeless<'a> {
         BufferTypeless(self.0)
     }
@@ -58,12 +58,12 @@ impl<'a, T: BufferData + ?Sized> Buffer<'a, T> {
 /// Buffer without type information.
 #[derive(Copy, Clone, Debug)]
 #[repr(transparent)]
-pub struct BufferTypeless<'a>(pub &'a dyn traits::Buffer);
+pub struct BufferTypeless<'a>(pub handle::Buffer<'a>);
 
 impl<'a> BufferTypeless<'a> {
-    pub fn byte_size(&self) -> u64 {
+    /*pub fn byte_size(&self) -> u64 {
         traits::Buffer::size(self.0)
-    }
+    }*/
 }
 impl<'a, T: BufferData + ?Sized> From<Buffer<'a, T>> for BufferTypeless<'a> {
     fn from(from: Buffer<'a, T>) -> Self {

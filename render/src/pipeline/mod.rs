@@ -1,6 +1,6 @@
 use crate::format::Format;
 use crate::framebuffer::FragmentOutputDescription;
-use crate::traits;
+use crate::handle;
 use crate::vertex::VertexLayout;
 use crate::Arena;
 pub use autograph_render_macros::PipelineInterface;
@@ -10,8 +10,11 @@ use std::marker::PhantomData;
 use std::mem;
 use std::any::TypeId;
 use crate::descriptor::DescriptorBinding;
-
-//pub(crate) mod validate;
+use crate::vertex::IndexFormat;
+use crate::descriptor::Descriptor;
+use crate::vertex::VertexBufferDescriptor;
+use crate::vertex::IndexBufferDescriptor;
+use crate::framebuffer::RenderTargetDescriptor;
 
 bitflags! {
     #[derive(Default)]
@@ -450,7 +453,7 @@ pub struct GraphicsPipelineCreateInfoTypeless<'a, 'rcx> {
     pub input_assembly_state: &'a InputAssemblyState,
     pub color_blend_state: &'a ColorBlendState<'a>,
     pub dynamic_state: DynamicStateFlags,
-    pub root_signature: &'a Signature<'a>,
+    pub root_signature: PipelineSignatureTypeless<'rcx>,
 }
 
 /// Variant of [GraphicsPipelineCreateInfoTypeless] where some information is derived from types
@@ -472,16 +475,16 @@ pub struct GraphicsPipelineCreateInfo<'a, 'rcx> {
 ///
 /// We keep a reference to the SPIR-V bytecode for interface checking when building pipelines.
 #[derive(Copy, Clone, Debug)]
-pub struct ShaderModule<'a, 'spv>(pub &'a dyn traits::ShaderModule, pub &'spv [u8]);
+pub struct ShaderModule<'a, 'spv>(pub handle::ShaderModule<'a>, pub &'spv [u8]);
 
 /// Graphics pipeline.
 #[derive(Copy, Clone, Debug)]
-pub struct GraphicsPipelineTypeless<'a>(pub &'a dyn traits::GraphicsPipeline);
+pub struct GraphicsPipelineTypeless<'a>(pub handle::GraphicsPipeline<'a>);
 
 /// Graphics pipeline.
 #[derive(Debug)]
 pub struct GraphicsPipeline<'a, T: PipelineInterface<'a>>(
-    pub &'a dyn traits::GraphicsPipeline,
+    pub handle::GraphicsPipeline<'a>,
     pub(crate) PhantomData<T>,
 );
 
@@ -501,22 +504,60 @@ impl<'a, T: PipelineInterface<'a>> From<GraphicsPipeline<'a, T>> for GraphicsPip
 }
 
 /// Represents the layout of pipeline arguments.
-pub struct Signature<'a> {
-    pub sub_signatures: &'a [&'a Signature<'a>],
+///
+/// Issue: this API forces the frontend to get/create all sub signatures beforehand,
+/// even if it can lookup the signature by typeid
+#[derive(Copy,Clone,Debug)]
+pub struct PipelineSignatureDescription<'a> {
+    pub sub_signatures: &'a [&'a PipelineSignatureDescription<'a>],
     pub descriptors: &'a [DescriptorBinding<'a>],
     pub vertex_layouts: &'a [VertexLayout<'a>],
     pub fragment_outputs: &'a [FragmentOutputDescription],
+    pub depth_stencil_fragment_output: Option<&'a FragmentOutputDescription>,
+    pub index_format: Option<IndexFormat>,
     pub typeid: Option<TypeId>,
+    pub is_root_fragment_output_signature: bool,
+    pub is_root_vertex_input_signature: bool,
 }
 
 /// A group of pipeline resources.
 #[derive(Copy,Clone,Debug)]
-pub struct PipelineArgumentsTypeless<'a>(pub &'a dyn traits::PipelineArguments);
+pub struct PipelineSignatureTypeless<'a>(pub handle::PipelineSignature<'a>);
+
+/// A group of pipeline resources.
+#[derive(Copy,Clone,Debug)]
+pub struct PipelineArgumentsTypeless<'a>(pub handle::PipelineArguments<'a>);
 
 /// Represents a group of pipeline states.
 #[derive(Copy,Clone,Debug)]
-pub struct PipelineArguments<'a, T: PipelineInterface<'a>>(pub &'a dyn traits::PipelineArguments, pub(crate) PhantomData<T>);
+pub struct PipelineArguments<'a, T: PipelineInterface<'a>>(pub handle::PipelineArguments<'a>, pub(crate) PhantomData<T>);
 
+
+#[derive(Copy,Clone)]
+pub struct PipelineArgumentsCreateInfoTypeless<'a, 'b>
+{
+    pub signature: handle::PipelineSignature<'a>,
+    pub arguments: &'b [handle::PipelineArguments<'a>],
+    pub descriptors: &'b [Descriptor<'a>],
+    pub vertex_buffers: &'b [VertexBufferDescriptor<'a, 'b>],
+    pub index_buffer: Option<IndexBufferDescriptor<'a>>,
+    pub render_targets: &'b [RenderTargetDescriptor<'a>],
+    pub depth_stencil_render_target: Option<RenderTargetDescriptor<'a>>,
+    pub viewports: &'b [Viewport],
+    pub scissors: &'b [ScissorRect],
+}
+
+///
+pub trait PipelineArgumentsBuilder<'a,'tcx> {
+    fn push_arguments(&mut self, arguments: handle::PipelineArguments<'a>);
+    fn push_descriptor(&mut self, descriptor: Descriptor<'a>);
+    fn push_viewport(&mut self, viewport: &Viewport);
+    fn push_scissor(&mut self, scissor: &ScissorRect);
+    fn push_vertex_buffer(&mut self, vertex_buffer: VertexBufferDescriptor<'a, 'tcx>);
+    fn push_index_buffer(&mut self, vertex_buffer: IndexBufferDescriptor<'a>);
+    fn push_render_target(&mut self, render_target: RenderTargetDescriptor<'a>);
+    fn push_depth_stencil_render_target(&mut self, depth_stencil_render_target: RenderTargetDescriptor<'a>);
+}
 
 ///
 /// Describes pipeline states to set before issuing a draw or compute call.
@@ -585,13 +626,13 @@ pub struct PipelineArguments<'a, T: PipelineInterface<'a>>(pub &'a dyn traits::P
 ///
 pub trait PipelineInterface<'a>
 {
-    const SIGNATURE: &'static Signature<'static>;
+    const SIGNATURE: &'static PipelineSignatureDescription<'static>;
 
     /// A 'static marker type that uniquely identifies Self: this is for getting a TypeId.
     type UniqueType: 'static;
     type IntoInterface: PipelineInterface<'a>;
 
-    fn update_pipeline_arguments(&self, arena: &'a Arena, out_arguments: &'a dyn traits::PipelineArguments);
+    fn visit_arguments<'tcx>(&self, arena: &'a Arena, a: &mut impl PipelineArgumentsBuilder<'a, 'tcx>);
 }
 
 /// Converts a sequence of VertexLayouts (one for each vertex buffer) into binding descriptions

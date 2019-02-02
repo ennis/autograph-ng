@@ -1,9 +1,10 @@
 use bitflags::bitflags;
 use std::fmt;
-use crate::traits;
+use crate::handle;
 
 #[derive(Copy,Clone,Debug)]
-pub struct Image<'a>(pub &'a dyn traits::Image);
+#[repr(transparent)]
+pub struct Image<'a>(pub handle::Image<'a>);
 
 impl<'a> Image<'a> {
     pub fn into_sampled(self, d: SamplerDescription) -> SampledImage<'a> {
@@ -12,7 +13,7 @@ impl<'a> Image<'a> {
 }
 
 #[derive(Copy,Clone,Debug)]
-pub struct SampledImage<'a>(pub &'a dyn traits::Image, pub SamplerDescription);
+pub struct SampledImage<'a>(pub handle::Image<'a>, pub SamplerDescription);
 
 /// Dimensions of an image.
 ///

@@ -1,5 +1,5 @@
 use bitflags::bitflags;
-use crate::traits;
+use crate::handle;
 
 bitflags! {
     /// Used for manual synchronization.
@@ -70,12 +70,12 @@ bitflags! {
 #[derive(Clone, Debug)]
 pub enum MemoryBarrier<'a> {
     Image {
-        handle: &'a dyn traits::Image,
+        handle: handle::Image<'a>,
         src_access_mask: AccessFlags,
         dst_access_mask: AccessFlags,
     },
     Buffer {
-        handle: &'a dyn traits::Buffer,
+        handle: handle::Buffer<'a>,
         src_access_mask: AccessFlags,
         dst_access_mask: AccessFlags,
     },

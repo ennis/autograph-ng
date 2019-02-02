@@ -1,17 +1,17 @@
-use crate::api::types::*;
+/*use crate::api::types::*;
 use crate::api::Gl;
 use crate::buffer::GlBuffer;
 use crate::image::GlImage;
 use crate::pipeline::BindingSpace;
 use crate::pipeline::DescriptorMap;
 use crate::sampler::SamplerCache;
-use crate::DowncastPanic;
+use crate::HandleCast;
 use autograph_render;
 use autograph_render::descriptor::Descriptor;
-use autograph_render::descriptor::DescriptorSetLayout;
 use autograph_render::descriptor::DescriptorType;
-use autograph_render::traits;
+use autograph_render::handle;*/
 
+/*
 const MAX_INLINE_SHADER_RESOURCE_BINDINGS: usize = 10;
 
 pub struct ShaderResourceBindings {
@@ -234,5 +234,4 @@ impl GlDescriptorSet {
         }
     }
 }
-
-impl traits::DescriptorSet for GlDescriptorSet {}
+*/

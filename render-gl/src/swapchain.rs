@@ -1,4 +1,3 @@
-use autograph_render::traits;
 use std::fmt;
 
 /// Trait implemented by objects that can act as a swapchain.
@@ -20,11 +19,5 @@ pub(crate) struct GlSwapchain {
 impl fmt::Debug for GlSwapchain {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "Swapchain {{..}}")
-    }
-}
-
-impl traits::Swapchain for GlSwapchain {
-    fn size(&self) -> (u32, u32) {
-        self.inner.size()
     }
 }

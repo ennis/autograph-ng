@@ -69,7 +69,7 @@ pub unsafe trait VertexData: BufferData {
 }
 
 /// Descriptor for an index buffer.
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct IndexBufferDescriptor<'a> {
     /// Buffer containing index data.
     pub buffer: BufferTypeless<'a>,

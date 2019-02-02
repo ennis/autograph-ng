@@ -1589,3 +1589,58 @@ fn fragment_shader(
             
 - Plan
     - Descriptor set -> state group
+    
+#### Pipeline signatures
+- example:
+```
+struct P0 {
+    color_target: Image,
+}
+struct P1 {
+    common: P0,
+    data: HostRef<T>
+}
+-> in vulkan, when allocating P1, can reuse same buffer every time
+```
+- expose pipeline signatures VS caching in backend
+    - pipeline signatures -> descriptor set layouts in vulkan
+    - ideally: update arguments in-place (after having allocated the descriptor set)
+        - unsafe interface? (pipeline arguments are left uninitialized)
+            - OK for leaving stuff uninitialized (it's what vulkan does)
+            - it's not an interface made to be used directly anyway
+    - issue: derived resources (framebuffers, etc)
+        - when to allocate?
+    - pipeline arguments must be lightweight!
+        - many of them in-flight during the frame
+        - store only needed state blocks
+        - can pre-allocate pipeline argument blocks
+        - pipeline arguments:
+            - pointer to signature
+            - list of blocks (dense command list, stored in arena)
+                - sub-blocks
+                - ubo
+                - ssbo 
+                - vb
+                - ib
+                - tex
+                - img
+                - viewport
+    - signatures
+        - describe everything about arguments
+        - also sub-arguments
+    - issue signatures must be allocated somewhere
+        - preferably a long-lived arena
+        - either passed explicitly (but where to store it?)
+        - or cache it, query by typeid
+            - caching in backend
+    -> pipeline signature not exposed in backend
+        - SignatureDescription -> signature
+    -> issue/bottleneck: querying the cache of pipeline signatures
+        - is it costly?
+    -> issue: signatures without typeids
+        - must hash
+    - pipelines know the layouts -> pass pipeline?
+    - dynamic arguments?
+    
+#### Pipeline argument blocks
+- small bits of pipeline arguments

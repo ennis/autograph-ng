@@ -2,7 +2,6 @@ use crate::api as gl;
 use crate::api::types::*;
 use crate::api::Gl;
 use autograph_render::pipeline::ShaderStageFlags;
-use autograph_render::traits;
 use autograph_spirv::TypeDesc;
 use std::error::Error;
 use std::ffi::CString;
@@ -35,8 +34,6 @@ impl GlShaderModule {
         })
     }
 }
-
-impl traits::ShaderModule for GlShaderModule {}
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Debug)]

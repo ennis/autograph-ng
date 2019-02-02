@@ -1,23 +1,18 @@
 use crate::api as gl;
-use crate::api::types::*;
+//use crate::api::types::*;
 use crate::api::Gl;
 use crate::image::GlImage;
 use crate::pipeline::GlGraphicsPipeline;
 use crate::swapchain::GlSwapchain;
-use crate::DowncastPanic;
+use crate::HandleCast;
 use crate::ImplementationParameters;
 use autograph_render::command::Command;
 use autograph_render::command::CommandInner;
-use autograph_render::pipeline::Viewport;
-use autograph_render::traits;
-use autograph_render::vertex::IndexFormat;
 
 mod state;
 pub use self::state::StateCache;
-use crate::buffer::GlBuffer;
-use crate::descriptor::GlDescriptorSet;
-use crate::descriptor::ShaderResourceBindings;
 use crate::framebuffer::GlFramebuffer;
+use crate::pipeline::GlPipelineArguments;
 
 pub struct SubmissionContext<'a, 'rcx> {
     state_cache: &'a mut StateCache,
@@ -112,9 +107,19 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
 
     //pub fn cmd_set_attachments(&mut self, color_attachments: &[R::])
 
-    fn cmd_set_descriptor_sets(&mut self, descriptor_sets: &[&dyn traits::DescriptorSet]) {
+    unsafe fn cmd_set_pipeline_arguments_rec(&mut self, args: &GlPipelineArguments)
+    {
+    }
+
+    fn cmd_set_pipeline_arguments(&mut self, args: &GlPipelineArguments) {
         let pipeline = self.current_pipeline.unwrap();
         let descriptor_map = pipeline.descriptor_map();
+
+        unimplemented!()
+
+        /*
+        // recursively bind
+
         let mut sr = ShaderResourceBindings::new();
 
         for (i, &ds) in descriptor_sets.iter().enumerate() {
@@ -136,7 +141,7 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
         );
         self.state_cache.set_textures(self.gl, &sr.textures);
         self.state_cache.set_samplers(self.gl, &sr.samplers);
-        self.state_cache.set_images(self.gl, &sr.images);
+        self.state_cache.set_images(self.gl, &sr.images);*/
     }
 
     fn cmd_present(&mut self, image: &GlImage, swapchain: &GlSwapchain) {
@@ -195,7 +200,7 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
         pipeline.bind(self.gl, self.state_cache);
     }
 
-    fn cmd_set_vertex_buffers(&mut self, buffers: &[&'rcx dyn traits::Buffer]) {
+    /*fn cmd_set_vertex_buffers(&mut self, buffers: &[&'rcx dyn traits::Buffer]) {
         let pipeline = self
             .current_pipeline
             .expect("cmd_set_vertex_buffers called with no pipeline bound");
@@ -214,8 +219,9 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
 
         self.state_cache
             .set_vertex_buffers(self.gl, &objs, &offsets, &strides);
-    }
+    }*/
 
+    /*
     fn cmd_set_viewports(&mut self, viewports: &[Viewport]) {
         self.state_cache.set_viewports(self.gl, viewports);
     }
@@ -232,7 +238,7 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
             index_buffer.offset + offset,
             ty,
         );
-    }
+    }*/
 
     fn cmd_draw(
         &mut self,
@@ -276,22 +282,25 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
         );
     }
 
-    pub fn submit_command(&mut self, command: &Command<'rcx>) {
+    pub unsafe fn submit_command(&mut self, command: &Command<'rcx>) {
         match command.cmd {
             CommandInner::PipelineBarrier {} => {
                 // no-op on GL
             }
             CommandInner::ClearImageFloat { image, color } => {
-                self.cmd_clear_image_float(image.downcast_ref_unwrap(), &color);
+                self.cmd_clear_image_float(image.cast(), &color);
             }
             CommandInner::ClearDepthStencilImage {
                 image,
                 depth,
                 stencil,
             } => {
-                self.cmd_clear_depth_stencil_image(image.downcast_ref_unwrap(), depth, stencil);
+                self.cmd_clear_depth_stencil_image(image.cast(), depth, stencil);
             }
-            CommandInner::SetDescriptorSets {
+            CommandInner::SetPipelineArguments { arguments } => {
+                self.cmd_set_pipeline_arguments(arguments.cast());
+            }
+            /*CommandInner::SetDescriptorSets {
                 ref descriptor_sets,
             } => {
                 self.cmd_set_descriptor_sets(descriptor_sets);
@@ -304,20 +313,20 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
                 offset,
                 ty,
             } => {
-                self.cmd_set_index_buffer(index_buffer.downcast_ref_unwrap(), offset, ty);
-            }
+                self.cmd_set_index_buffer(index_buffer.cast(), offset, ty);
+            }*/
             CommandInner::DrawHeader { pipeline } => {
-                self.cmd_set_graphics_pipeline(pipeline.downcast_ref_unwrap());
+                self.cmd_set_graphics_pipeline(pipeline.cast());
             }
-            CommandInner::SetScissors { .. } => {}
+           /*CommandInner::SetScissors { .. } => {}
             //CommandInner::SetAllScissors { scissor } => {}
             CommandInner::SetViewports { ref viewports } => {
                 self.cmd_set_viewports(viewports);
             }
             //CommandInner::SetAllViewports { viewport } => {}
             CommandInner::SetFramebuffer { framebuffer } => {
-                self.cmd_set_framebuffer(framebuffer.downcast_ref_unwrap());
-            }
+                self.cmd_set_framebuffer(framebuffer.cast());
+            }*/
             CommandInner::Draw {
                 vertex_count,
                 instance_count,
@@ -338,7 +347,7 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
                 first_instance,
             ),
             CommandInner::Present { image, swapchain } => {
-                self.cmd_present(image.downcast_ref_unwrap(), swapchain.downcast_ref_unwrap());
+                self.cmd_present(image.cast(), swapchain.cast());
             }
         }
     }

@@ -59,6 +59,7 @@
 		    * multi-device handled in backend
 		    * can unchecked_downcast as needed
 		        * issue: can forge a Backend object by manually implementing the trait...
+		        * unsafe?
     * Q: is there a reasonable scenario that would require instantiating more than one renderer at the same time?
         * multi-window? no -> in backend
         * multi-device? no -> in backend
@@ -226,6 +227,25 @@ println!("{}", a.0.get());
 * consider replacing the backend with gfx-rs
 	* or actually test a gfx-rs backend?
 	* not sure that's worth it
+
+
+#### Consider switching back to non-type-erased backend?
+- reintroduce RendererBackend parametrization
+- issues of dyn backend:
+    - loss of inlining (missed optimizations for argument blocks, mainly)
+    - unsafe casts
+- issues of type-parameterized backend
+    - noise in syntactical declarations
+    - not necessary if using opaque handle types!
+- if switching back, don't reintroduce the associated types just yet
+    - keep opaque handles + unsafe
+        - note that this is *very* unsafe (can cast to a mut ref if we want to...)
+        - at least associated type handles?
+    - at least not until generic associated types
+- the dyn backend was made to avoid syntactical noise, and also to have hot-reload plugins that directly invoke the renderer
+    - the path forward is always the same: put plugins at a higher level (don't let them call the renderer directly)
+- conclusion:
+    - reintroduce compile-time genericity for better inlining of argument block declarations
 
 
 

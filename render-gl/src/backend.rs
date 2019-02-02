@@ -8,7 +8,7 @@ use crate::buffer::RawBuffer;
 use crate::buffer::UploadBuffer;
 use crate::command::StateCache;
 use crate::command::SubmissionContext;
-use crate::descriptor::GlDescriptorSet;
+//use crate::descriptor::GlDescriptorSet;
 use crate::framebuffer::GlFramebuffer;
 use crate::image::upload_image_region;
 use crate::image::GlImage;
@@ -25,7 +25,7 @@ use crate::sync::GpuSyncObject;
 use crate::sync::Timeline;
 use crate::util::SyncArena;
 use crate::AliasInfo;
-use crate::DowncastPanic;
+use crate::HandleCast;
 use crate::ImplementationParameters;
 use autograph_render::command::Command;
 use autograph_render::format::Format;
@@ -34,7 +34,7 @@ use autograph_render::image::ImageUsageFlags;
 use autograph_render::image::MipmapsCount;
 use autograph_render::pipeline::GraphicsPipelineCreateInfoTypeless;
 use autograph_render::pipeline::ShaderStageFlags;
-use autograph_render::traits;
+use autograph_render::handle;
 use autograph_render::AliasScope;
 use autograph_render::RendererBackend;
 use config::Config;
@@ -47,10 +47,14 @@ use std::slice;
 use std::str;
 use std::sync::Mutex;
 use std::time::Duration;
-use autograph_render::pipeline::Signature;
-use autograph_render::descriptor::HostReference;
-use autograph_render::pipeline::Viewport;
-use autograph_render::pipeline::ScissorRect;
+use crate::pipeline::GlPipelineArguments;
+use crate::util::SyncDroplessArena;
+use autograph_render::pipeline::PipelineSignatureDescription;
+use crate::pipeline::GlPipelineSignature;
+use std::any::TypeId;
+use std::marker::PhantomData;
+use crate::util::SyncDroplessArenaHashMap;
+use autograph_render::pipeline::PipelineArgumentsCreateInfoTypeless;
 
 //--------------------------------------------------------------------------------------------------
 extern "system" fn debug_callback(
@@ -81,15 +85,12 @@ pub(crate) struct GlArena {
     pub(crate) buffers: SyncArena<GlBuffer>,
     pub(crate) images: SyncArena<GlImage>,
     pub(crate) shader_modules: SyncArena<GlShaderModule>,
-    pub(crate) pipeline_arguments: SyncArena<GlPipelineArguments>,
+    //pub(crate) pipeline_signatures: SyncArena<GlPipelineSignature<'a>>,
+    //pub(crate) pipeline_arguments: SyncArena<GlPipelineArguments<'a>>,
     pub(crate) graphics_pipelines: SyncArena<GlGraphicsPipeline>,
     pub(crate) framebuffers: SyncArena<GlFramebuffer>,
     pub(crate) upload_buffer: UploadBuffer,
-    // pipeline parameters
-    pub(crate) gluint_arena: SyncArena<GLuint>,
-    pub(crate) glintptr_arena: SyncArena<GLintptr>,
-    pub(crate) viewports: SyncArena<Viewport>,
-    pub(crate) scissors: SyncArena<ScissorRect>,
+    pub(crate) other: SyncDroplessArena,
 }
 
 impl GlArena {
@@ -99,23 +100,54 @@ impl GlArena {
             buffers: SyncArena::new(),
             images: SyncArena::new(),
             shader_modules: SyncArena::new(),
-            pipeline_arguments: SyncArena::new(),
+            //pipeline_signatures: SyncArena::new(),
+            //pipeline_arguments: SyncArena::new(),
             graphics_pipelines: SyncArena::new(),
             framebuffers: SyncArena::new(),
             upload_buffer,
-            gluint_arena: SyncArena::new(),
-            glintptr_arena: SyncArena::new(),
-            viewports: SyncArena::new(),
-            scissors: SyncArena::new(),
+            other: SyncDroplessArena::new()
         }
     }
 }
 
-impl traits::Arena for GlArena {}
-
 //--------------------------------------------------------------------------------------------------
 pub(crate) type ImagePool = AliasPool<ImageDescription, ImageAliasKey, RawImage>;
 //pub(crate) type BufferPool = AliasPool<BufferDescription, BufferAliasKey, RawBuffer>;
+
+pub(crate) struct PipelineSignatureCache
+{
+    /// 'static because it's self-referential: signatures may refer to other signatures in the
+    /// same arena. Since signatures are dropless, it should be OK.
+    ///
+    /// However, this means that accessing the cache directly is unsafe. Must use a wrapper method.
+    cache: SyncDroplessArenaHashMap<TypeId, GlPipelineSignature<'static>>,
+}
+
+impl PipelineSignatureCache
+{
+    pub(crate) fn new() -> PipelineSignatureCache {
+        PipelineSignatureCache {
+            cache: SyncDroplessArenaHashMap::new()
+        }
+    }
+
+    /// Note that the return type is not 'static.
+    pub(crate) fn get<'a>(&'a self, typeid: TypeId) -> Option<&'a GlPipelineSignature<'a>> {
+        self.cache.get(typeid)
+    }
+
+    pub(crate) fn get_or_insert_with<'a>(&'a self, typeid: TypeId, f: impl FnOnce() -> GlPipelineSignature<'a>) -> &'a GlPipelineSignature<'a> {
+        self.cache.get_or_insert_with(typeid, || {
+            let sig = f();
+            // extend lifetime
+            unsafe {
+                mem::transmute::<_,_>(sig)
+                //*(&sig as *const GlPipelineSignature)
+            }
+        })
+    }
+}
+
 
 ///
 struct Resources {
@@ -250,6 +282,7 @@ pub struct OpenGlBackend {
     frame_num: Mutex<u64>, // replace with AtomicU64 once stabilized
     state_cache: Mutex<StateCache>,
     sampler_cache: Mutex<SamplerCache>,
+    pipeline_signature_cache: PipelineSignatureCache,
     //desc_set_layout_cache: SyncArenaHashMap<TypeId, GlDescriptorSetLayout>,
     limits: ImplementationParameters,
     //window: GlWindow,
@@ -302,6 +335,7 @@ impl OpenGlBackend {
         let state_cache = StateCache::new(&limits);
 
         OpenGlBackend {
+            pipeline_signature_cache: PipelineSignatureCache::new(),
             rsrc: Mutex::new(Resources::new(upload_buffer_size as usize)),
             timeline: Mutex::new(timeline),
             frame_num: Mutex::new(1),
@@ -334,100 +368,104 @@ const SPIRV_MAGIC: u32 = 0x0723_0203;
 const UPLOAD_DEDICATED_THRESHOLD: usize = 65536;
 const FRAME_WAIT_TIMEOUT: Duration = Duration::from_millis(500);
 
+
 impl RendererBackend for OpenGlBackend {
-    fn create_arena(&self) -> Box<dyn traits::Arena> {
-        self.rsrc.lock().unwrap().create_arena(&self.gl)
+    unsafe fn create_arena(&self) -> handle::Arena {
+        let arena = self.rsrc.lock().unwrap().create_arena(&self.gl);
+        handle::Arena(Box::into_raw(arena) as usize, PhantomData)
     }
 
-    fn drop_arena(&self, arena: Box<dyn traits::Arena>) {
-        let arena: Box<GlArena> = arena.downcast_unwrap();
+    unsafe fn drop_arena(&self, arena: handle::Arena) {
+        let arena = arena.0 as *mut GlArena;
+        let arena = Box::from_raw(arena);
         self.rsrc.lock().unwrap().drop_arena(&self.gl, arena)
     }
 
     //----------------------------------------------------------------------------------------------
-    fn create_swapchain<'a>(&self, _arena: &'a dyn traits::Arena) -> &'a dyn traits::Swapchain {
+    unsafe fn create_swapchain<'a>(&self, _arena: handle::Arena<'a>) -> handle::Swapchain<'a> {
         unimplemented!()
     }
 
-    fn default_swapchain<'rcx>(&'rcx self) -> Option<&'rcx dyn traits::Swapchain> {
-        Some(&self.def_swapchain)
+    unsafe fn default_swapchain<'rcx>(&'rcx self) -> Option<handle::Swapchain<'rcx>> {
+        Some((&self.def_swapchain).into())
     }
 
     //----------------------------------------------------------------------------------------------
-    fn create_immutable_image<'a>(
+    unsafe fn create_immutable_image<'a>(
         &self,
-        arena: &'a dyn traits::Arena,
+        arena: handle::Arena<'a>,
         fmt: Format,
         dims: Dimensions,
         mips: MipmapsCount,
         samples: u32,
         _usage: ImageUsageFlags,
         data: &[u8],
-    ) -> &'a dyn traits::Image {
-        let arena: &GlArena = arena.downcast_ref_unwrap();
+    ) -> handle::Image<'a>
+    {
+        let arena: &GlArena = arena.cast();
         // initial data specified, allocate a texture
         let raw = RawImage::new_texture(&self.gl, fmt, &dims, mips, samples);
-        unsafe {
-            upload_image_region(
-                &self.gl,
-                raw.target,
-                raw.obj,
-                fmt,
-                0,
-                (0, 0, 0),
-                dims.width_height_depth(),
-                data,
-            );
-        }
+
+        upload_image_region(
+            &self.gl,
+            raw.target,
+            raw.obj,
+            fmt,
+            0,
+            (0, 0, 0),
+            dims.width_height_depth(),
+            data,
+        );
 
         arena.images.alloc(GlImage {
             should_destroy: true,
             raw,
             alias_info: None,
-        })
+        }).into()
     }
 
     //----------------------------------------------------------------------------------------------
-    fn create_image<'a>(
+    unsafe fn create_image<'a>(
         &self,
-        arena: &'a dyn traits::Arena,
+        arena: handle::Arena<'a>,
         scope: AliasScope,
         fmt: Format,
         dims: Dimensions,
         mipcount: MipmapsCount,
         samples: u32,
         usage: ImageUsageFlags,
-    ) -> &'a dyn traits::Image {
-        let arena: &GlArena = arena.downcast_ref_unwrap();
+    ) -> handle::Image<'a> {
+        let arena: &GlArena = arena.cast();
         self.rsrc
             .lock()
             .unwrap()
-            .alloc_aliased_image(&self.gl, arena, scope, fmt, dims, mipcount, samples, usage)
+            .alloc_aliased_image(&self.gl, arena, scope, fmt, dims, mipcount, samples, usage).into()
     }
 
     //----------------------------------------------------------------------------------------------
 
+    /*
     /// Creates a framebuffer. See trait documentation for explanation of unsafety.
     fn create_framebuffer<'a>(
         &self,
-        arena: &'a dyn traits::Arena,
-        color_att: &[&'a dyn traits::Image],
-        depth_stencil_att: Option<&'a dyn traits::Image>,
-    ) -> &'a dyn traits::Framebuffer {
+        arena: handle::Arena<'a>,
+        color_att: &[handle::Image<'a>],
+        depth_stencil_att: Option<handle::Image<'a>>,
+    ) -> handle::Framebuffer<'a> {
         let arena: &GlArena = arena.downcast_ref_unwrap();
         arena
             .framebuffers
             .alloc(GlFramebuffer::new(&self.gl, color_att, depth_stencil_att).unwrap())
-    }
+    }*/
 
     //----------------------------------------------------------------------------------------------
-    fn create_immutable_buffer<'a>(
+    unsafe fn create_immutable_buffer<'a>(
         &self,
-        arena: &'a dyn traits::Arena,
+        arena: handle::Arena<'a>,
         size: u64,
         data: &[u8],
-    ) -> &'a dyn traits::Buffer {
-        let arena: &GlArena = arena.downcast_ref_unwrap();
+    ) -> handle::Buffer<'a> {
+        let arena: &GlArena = arena.cast();
         if size < UPLOAD_DEDICATED_THRESHOLD as u64 {
             // if the buffer is small enough, allocate through the upload buffer
             let (obj, offset) = arena
@@ -442,7 +480,7 @@ impl RendererBackend for OpenGlBackend {
                 offset,
                 alias_info: None,
                 should_destroy: false,
-            })
+            }).into()
         } else {
             // TODO
             unimplemented!()
@@ -450,33 +488,32 @@ impl RendererBackend for OpenGlBackend {
     }
 
     //----------------------------------------------------------------------------------------------
-    fn create_buffer<'a>(
+    unsafe fn create_buffer<'a>(
         &self,
-        _arena: &'a dyn traits::Arena,
+        _arena: handle::Arena<'a>,
         _size: u64,
-    ) -> &'a dyn traits::Buffer {
+    ) -> handle::Buffer<'a> {
         unimplemented!()
     }
 
     //----------------------------------------------------------------------------------------------
-    fn create_shader_module<'a>(
+    unsafe fn create_shader_module<'a>(
         &self,
-        arena: &'a dyn traits::Arena,
+        arena: handle::Arena<'a>,
         data: &[u8],
         stage: ShaderStageFlags,
-    ) -> &'a dyn traits::ShaderModule {
-        let arena: &GlArena = arena.downcast_ref_unwrap();
+    ) -> handle::ShaderModule<'a>
+    {
+        let arena: &GlArena = arena.cast();
         // detect SPIR-V or GLSL
         // TODO big-endian is also possible!
         // FIXME clippy warning: data may be misaligned
-        let module = if data.len() >= 4 && unsafe { *(data.as_ptr() as *const u32) } == SPIRV_MAGIC
+        let module = if data.len() >= 4 && *(data.as_ptr() as *const u32) == SPIRV_MAGIC
         {
             assert!(data.len() % 4 == 0);
             // reinterpret as u32
             // FIXME clippy warning: data may be misaligned
-            let data_u32 = unsafe {
-                ::std::slice::from_raw_parts(data.as_ptr() as *const u32, data.len() / 4)
-            };
+            let data_u32 = ::std::slice::from_raw_parts(data.as_ptr() as *const u32, data.len() / 4);
 
             GlShaderModule {
                 obj: 0,
@@ -488,31 +525,43 @@ impl RendererBackend for OpenGlBackend {
                 .expect("failed to compile shader from GLSL source")
         };
 
-        arena.shader_modules.alloc(module)
+        arena.shader_modules.alloc(module).into()
     }
 
     //----------------------------------------------------------------------------------------------
-    fn create_graphics_pipeline<'a>(
+    unsafe fn create_graphics_pipeline<'a>(
         &self,
-        arena: &'a dyn traits::Arena,
+        arena: handle::Arena<'a>,
         create_info: &GraphicsPipelineCreateInfoTypeless<'_, 'a>,
-    ) -> &'a dyn traits::GraphicsPipeline {
-        let arena: &GlArena = arena.downcast_ref_unwrap();
-        create_graphics_pipeline_internal(&self.gl, arena, create_info)
+    ) -> handle::GraphicsPipeline<'a> {
+        let arena: &GlArena = arena.cast();
+        create_graphics_pipeline_internal(&self.gl, arena, create_info).into()
     }
 
     //----------------------------------------------------------------------------------------------
-    fn create_pipeline_arguments<'a>(&self, arena: &'a dyn traits::Arena, signature: &Signature) -> &'a dyn traits::PipelineArguments {
+    unsafe fn create_pipeline_arguments<'a>(
+        &self,
+        arena: handle::Arena<'a>,
+        create_info: &PipelineArgumentsCreateInfoTypeless<'a, '_>) -> handle::PipelineArguments<'a>
+    {
+        let arena: &GlArena = arena.cast();
+        //let signature: &GlPipelineSignature = signature.downcast_ref_unwrap();
+        let mut _sampler_cache = self.sampler_cache.lock().unwrap();
+        arena.other.alloc(GlPipelineArguments::new(arena, create_info)).into()
+    }
+
+    unsafe fn create_pipeline_signature<'a, 'r: 'a>(&'r self, arena: handle::Arena<'a>, create_info: &PipelineSignatureDescription) -> handle::PipelineSignature<'a> {
+        let arena: &GlArena = arena.cast();
+        arena.other.alloc(GlPipelineSignature::new(arena, &self.pipeline_signature_cache, create_info)).into()
+    }
+
+    //----------------------------------------------------------------------------------------------
+    unsafe fn create_host_reference<'a>(&self, _arena: handle::Arena<'a>, _data: &'a [u8]) -> handle::HostReference<'a> {
         unimplemented!()
     }
 
     //----------------------------------------------------------------------------------------------
-    fn create_host_reference<'a>(&self, arena: &'a dyn traits::Arena, data: &'a [u8]) -> &'a dyn traits::HostReference {
-        unimplemented!()
-    }
-
-    //----------------------------------------------------------------------------------------------
-    fn submit_frame<'a>(&self, frame: &[Command<'a>]) {
+    unsafe fn submit_frame<'a>(&self, frame: &[Command<'a>]) {
         //let mut rsrc = self.rsrc.lock().unwrap();
         let mut scache = self.state_cache.lock().unwrap();
 
@@ -551,9 +600,9 @@ impl RendererBackend for OpenGlBackend {
         *fnum += 1;
     }
 
-    fn update_image(
+    unsafe fn update_image(
         &self,
-        _image: &dyn traits::Image,
+        _image: handle::Image,
         _min_extent: (u32, u32, u32),
         _max_extent: (u32, u32, u32),
         _data: &[u8],

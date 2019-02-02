@@ -1,3 +1,4 @@
+#![feature(align_offset)]
 #[macro_use]
 extern crate log;
 
@@ -21,10 +22,9 @@ pub use self::swapchain::SwapchainInner;
 pub use self::window::create_backend_and_window;
 
 use crate::api as gl;
-use autograph_render::traits::Downcast;
 use autograph_render::AliasScope;
-use std::any::Any;
 use std::mem;
+use autograph_render::handle;
 
 #[derive(Copy, Clone, Debug)]
 struct AliasInfo<K: slotmap::Key> {
@@ -57,24 +57,41 @@ impl ImplementationParameters {
     }
 }
 
-/// Helper for downcasting.
-trait DowncastPanic: Downcast {
-    fn downcast_ref_unwrap<T: Any>(&self) -> &T {
-        self.as_any().downcast_ref().expect("invalid backend type")
-    }
-
-    fn downcast_mut_unwrap<T: Any>(&mut self) -> &mut T {
-        self.as_any_mut()
-            .downcast_mut()
-            .expect("invalid backend type")
-    }
-
-    fn downcast_unwrap<T: Any>(self: Box<Self>) -> Box<T> {
-        self.into_any().downcast().expect("invalid backend type")
-    }
+unsafe trait HandleCast<'a, T> {
+    unsafe fn cast(self) -> &'a T;
 }
 
-impl<T: Downcast + ?Sized> DowncastPanic for T {}
+macro_rules! impl_handle {
+    ($handle:ident, $impl_ty:ty) => {
+        unsafe impl<'a> HandleCast<'a, $impl_ty> for handle::$handle<'a> {
+            unsafe fn cast(self) -> &'a $impl_ty {
+                &*(self.0 as *const $impl_ty)
+            }
+        }
+
+        impl<'a> From<&'a $impl_ty> for handle::$handle<'a> {
+            fn from(v: &'a $impl_ty) -> handle::$handle<'a> {
+                handle::$handle(v as *const _ as usize, std::marker::PhantomData)
+            }
+        }
+
+        impl<'a> From<&'a mut $impl_ty> for handle::$handle<'a> {
+            fn from(v: &'a mut $impl_ty) -> handle::$handle<'a> {
+                handle::$handle(v as *const _ as usize, std::marker::PhantomData)
+            }
+        }
+    };
+}
+
+impl_handle!(Image, image::GlImage);
+impl_handle!(Buffer, buffer::GlBuffer);
+impl_handle!(ShaderModule, pipeline::GlShaderModule);
+impl_handle!(GraphicsPipeline, pipeline::GlGraphicsPipeline);
+impl_handle!(Swapchain, swapchain::GlSwapchain);
+impl_handle!(PipelineSignature, pipeline::GlPipelineSignature<'a>);
+impl_handle!(PipelineArguments, pipeline::GlPipelineArguments<'a>);
+impl_handle!(Arena, backend::GlArena);
+
 
 //--------------------------------------------------------------------------------------------------
 pub type Backend = backend::OpenGlBackend;

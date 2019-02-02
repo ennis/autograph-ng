@@ -5,7 +5,7 @@ use crate::pipeline::PipelineInterface;
 use crate::swapchain::Swapchain;
 use crate::sync::MemoryBarrier;
 use crate::sync::PipelineStageFlags;
-use crate::traits;
+use crate::handle;
 use crate::Arena;
 use std::ops::Range;
 use crate::pipeline::PipelineArguments;
@@ -47,25 +47,25 @@ pub enum CommandInner<'a> {
     // MAIN (LEAD-IN) COMMANDS ---------------------------------------------------------------------
     PipelineBarrier {},
     ClearImageFloat {
-        image: &'a dyn traits::Image,
+        image: handle::Image<'a>,
         color: [f32; 4],
     },
     ClearDepthStencilImage {
-        image: &'a dyn traits::Image,
+        image: handle::Image<'a>,
         depth: f32,
         stencil: Option<u8>,
     },
     Present {
-        image: &'a dyn traits::Image,
-        swapchain: &'a dyn traits::Swapchain,
+        image: handle::Image<'a>,
+        swapchain: handle::Swapchain<'a>,
     },
     DrawHeader {
-        pipeline: &'a dyn traits::GraphicsPipeline,
+        pipeline: handle::GraphicsPipeline<'a>,
     },
 
     // STATE CHANGE COMMANDS -----------------------------------------------------------------------
     SetPipelineArguments {
-        arguments: &'a dyn traits::PipelineArguments,
+        arguments: handle::PipelineArguments<'a>,
     },
 
     // DRAW (LEAD-OUT) COMMANDS --------------------------------------------------------------------

@@ -6,12 +6,13 @@ use crate::buffer::StructuredBufferData;
 use crate::image::SampledImage;
 use crate::image::SamplerDescription;
 use crate::pipeline::ShaderStageFlags;
-use crate::traits;
+use crate::handle;
 use crate::typedesc::TypeDesc;
 use std::marker::PhantomData;
 
 #[derive(Copy, Clone, Debug)]
-pub struct HostReference<'a, T: BufferData>(pub &'a dyn traits::HostReference, pub(crate) PhantomData<&'a T>);
+#[repr(transparent)]
+pub struct HostReference<'a, T: BufferData>(pub handle::HostReference<'a>, pub(crate) PhantomData<&'a T>);
 
 /// Represents an entry (binding) in a descriptor set layout.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -45,18 +46,18 @@ pub enum DescriptorType {
 #[derive(Copy, Clone)]
 pub enum Descriptor<'a> {
     SampledImage {
-        img: &'a dyn traits::Image,
+        img: handle::Image<'a>,
         sampler: SamplerDescription,
     },
     Image {
-        img: &'a dyn traits::Image,
+        img: handle::Image<'a>,
     },
     Buffer {
-        buffer: &'a dyn traits::Buffer,
+        buffer: handle::Buffer<'a>,
         offset: usize,
-        size: usize,
+        size: Option<usize>,
     },
-    HostReference(&'a dyn traits::HostReference),
+    HostReference(handle::HostReference<'a>),
     Empty,
 }
 
@@ -94,11 +95,10 @@ impl<'a> DescriptorInterface<'a> for SampledImage<'a> {
 
 impl<'a> From<BufferTypeless<'a>> for Descriptor<'a> {
     fn from(buffer: BufferTypeless<'a>) -> Self {
-        let size = buffer.byte_size() as usize;
         Descriptor::Buffer {
             buffer: buffer.0,
             offset: 0,
-            size,
+            size: None,
         }
     }
 }

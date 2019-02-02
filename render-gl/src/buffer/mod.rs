@@ -1,7 +1,6 @@
 use crate::api::types::*;
 use crate::api::Gl;
 use crate::AliasInfo;
-use autograph_render::traits;
 use slotmap::new_key_type;
 use std::ptr;
 
@@ -69,8 +68,3 @@ pub(crate) struct GlBuffer {
     pub(crate) offset: usize,
 }
 
-impl traits::Buffer for GlBuffer {
-    fn size(&self) -> u64 {
-        self.raw.size as u64
-    }
-}

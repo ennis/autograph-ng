@@ -353,5 +353,3 @@ pub(crate) struct GlImage {
     pub(crate) should_destroy: bool,
     pub(crate) alias_info: Option<AliasInfo<ImageAliasKey>>,
 }
-
-impl autograph_render::traits::Image for GlImage {}

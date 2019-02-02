@@ -1,10 +1,4 @@
-use crate::traits;
 use crate::image::Image;
-
-/// Framebuffer.
-#[derive(Copy, Clone, Debug)]
-#[repr(transparent)]
-pub struct Framebuffer<'a>(pub &'a dyn traits::Framebuffer);
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Copy, Clone, Debug)]
