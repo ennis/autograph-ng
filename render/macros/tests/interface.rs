@@ -3,12 +3,12 @@ extern crate autograph_render;
 extern crate autograph_render_macros;
 
 use autograph_render::{
-    Buffer, BufferTypeless, DescriptorSetTypeless, Framebuffer, IndexFormat, RendererBackend,
-    ScissorRect, Viewport,
+    Backend, Buffer, BufferTypeless, DescriptorSetTypeless, Framebuffer, IndexFormat, ScissorRect,
+    Viewport,
 };
 
 #[derive(DescriptorSetInterface)]
-struct TestDescriptorSetInterface<'a, R: RendererBackend> {
+struct TestDescriptorSetInterface<'a, R: Backend> {
     #[descriptor(uniform_buffer, index = "0")]
     buffer: BufferTypeless<'a, R>,
 }
@@ -21,7 +21,7 @@ pub struct Vertex {
 }
 
 #[derive(PipelineInterface)]
-pub struct TestPipelineInterface<'a, R: RendererBackend> {
+pub struct TestPipelineInterface<'a, R: Backend> {
     #[framebuffer]
     pub framebuffer: Framebuffer<'a, R>,
     #[descriptor_set]
@@ -43,7 +43,7 @@ fn test_descriptor_set_interface() {}
 
 #[test]
 fn test_pipeline_interface() {
-    struct Visitor<'a, R: RendererBackend> {
+    struct Visitor<'a, R: Backend> {
         descriptor_sets: Vec<DescriptorSetTypeless<'a, R>>,
         vertex_buffers: Vec<DescriptorSetTypeless<'a, R>>,
         viewports: Vec<DescriptorSetTypeless<'a, R>>,
@@ -51,7 +51,7 @@ fn test_pipeline_interface() {
         index_buffer: Option<DescriptorSetTypeless<'a, R>>,
     };
 
-    impl<'a, R: RendererBackend> autograph_render::interface::PipelineInterfaceVisitor<'a, R>
+    impl<'a, R: Backend> autograph_render::interface::PipelineInterfaceVisitor<'a, R>
         for Visitor<'a, R>
     {
         fn visit_descriptor_sets<I: IntoIterator<Item = DescriptorSetTypeless<'a, R>>>(

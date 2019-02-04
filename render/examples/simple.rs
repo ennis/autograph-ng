@@ -99,13 +99,13 @@ struct SamplePipelineVertex
 */
 
 //--------------------------------------------------------------------------------------------------
-struct PerFrameUniforms<'a, R: RendererBackend> {
+struct PerFrameUniforms<'a, R: Backend> {
     camera_params: autograph_render::Buffer<'a, R, CameraParameters>,
     test: autograph_render::BufferTypeless<'a, R>,
 }
 
 // SHOULD BE AUTOMATICALLY DERIVED
-impl<'a, R: RendererBackend> DescriptorSetInterface<'a, R> for PerFrameUniforms<'a, R> {
+impl<'a, R: Backend> DescriptorSetInterface<'a, R> for PerFrameUniforms<'a, R> {
     const INTERFACE: &'static [DescriptorSetLayoutBinding<'static>] =
         &[DescriptorSetLayoutBinding {
             binding: 0,
@@ -127,12 +127,12 @@ impl<'a, R: RendererBackend> DescriptorSetInterface<'a, R> for PerFrameUniforms<
 }
 
 //--------------------------------------------------------------------------------------------------
-struct PerObjectUniforms<'a, R: RendererBackend> {
+struct PerObjectUniforms<'a, R: Backend> {
     obj_params: autograph_render::Buffer<'a, R, ObjectParameters>,
 }
 
 // SHOULD BE AUTOMATICALLY DERIVED
-impl<'a, R: RendererBackend> DescriptorSetInterface<'a, R> for PerObjectUniforms<'a, R> {
+impl<'a, R: Backend> DescriptorSetInterface<'a, R> for PerObjectUniforms<'a, R> {
     const INTERFACE: &'static [DescriptorSetLayoutBinding<'static>] =
         &[DescriptorSetLayoutBinding {
             binding: 0,

@@ -2,7 +2,8 @@
 extern crate image as img;
 use self::img::GenericImageView;
 use autograph_render::*;
-use autograph_render_gl::create_backend_and_window;
+use autograph_render_gl::create_instance_and_window;
+use autograph_render_gl::OpenGlBackend;
 use config;
 use pretty_env_logger;
 use std::cell::RefCell;
@@ -46,10 +47,10 @@ impl fmt::Display for ImageLoadError {
 impl error::Error for ImageLoadError {}
 
 //
-pub fn load_image_2d<'a, P: AsRef<Path>>(
-    arena: &'a Arena,
+pub fn load_image_2d<'a, B: Backend, P: AsRef<Path>>(
+    arena: &'a Arena<B>,
     path: P,
-) -> Result<Image<'a>, ImageLoadError> {
+) -> Result<Image<'a, B>, ImageLoadError> {
     let img = img::open(path)?;
     let (width, height) = img.dimensions();
     let format = match img.color() {
@@ -76,7 +77,7 @@ pub fn load_image_2d<'a, P: AsRef<Path>>(
 pub struct App {
     pub cfg: config::Config,
     pub events_loop: RefCell<winit::EventsLoop>,
-    pub renderer: Renderer,
+    pub renderer: Renderer<OpenGlBackend>,
 }
 
 impl Default for App {
@@ -105,7 +106,7 @@ impl App {
             .with_title(window_title.clone())
             .with_dimensions((window_width, window_height).into());
 
-        let backend = create_backend_and_window(&cfg, &events_loop, window_builder);
+        let backend = create_instance_and_window(&cfg, &events_loop, window_builder);
         let renderer = Renderer::new(backend);
 
         App {
@@ -135,7 +136,7 @@ impl App {
         should_close
     }
 
-    pub fn renderer(&self) -> &Renderer {
+    pub fn renderer(&self) -> &Renderer<OpenGlBackend> {
         &self.renderer
     }
 }

@@ -1,5 +1,6 @@
 //use super::parse::SpirvModule;
 use crate::inst::*;
+use crate::layout::Std140AlignAndSize;
 use crate::layout::Std140LayoutBuilder;
 use crate::IPtr;
 use crate::ImageDataType;
@@ -10,7 +11,6 @@ use crate::TypeDesc;
 use spirv_headers::*;
 use std::collections::HashMap;
 use typed_arena::Arena;
-use crate::layout::Std140AlignAndSize;
 
 #[derive(Debug)]
 pub enum ParsedDecoration {
@@ -252,13 +252,12 @@ fn parse_types<'tcx, 'm>(
                 let mut layout_builder = Std140LayoutBuilder::new();
                 tymap.insert(
                     *result_id,
-                    a.tydesc.alloc(TypeDesc::Struct(StructLayout{
-                        fields: a.members.alloc_extend(
-                        member_types.iter().map(|tyid| {
+                    a.tydesc.alloc(TypeDesc::Struct(StructLayout {
+                        fields: a.members.alloc_extend(member_types.iter().map(|tyid| {
                             let ty = tymap[tyid];
                             (layout_builder.add_member(ty), ty)
-                        }),
-                    )})),
+                        })),
+                    })),
                 );
             }
             Instruction::TypeOpaque(ITypeOpaque {

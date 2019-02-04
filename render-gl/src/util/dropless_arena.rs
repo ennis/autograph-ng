@@ -1,12 +1,10 @@
-use typed_arena::Arena;
-use std::mem;
 use std::cell::RefCell;
 use std::cmp;
-use std::ptr;
 use std::cmp::max;
-use std::ops::Range;
-use std::slice;
 use std::iter;
+use std::mem;
+use std::ptr;
+use std::slice;
 
 // Initial size in bytes.
 const INITIAL_SIZE: usize = 1024;
@@ -22,8 +20,14 @@ impl<T> ChunkList<T> {
     #[inline(never)]
     #[cold]
     fn reserve(&mut self, additional: usize) {
-        let double_cap = self.current.capacity().checked_mul(2).expect("capacity overflow");
-        let required_cap = additional.checked_next_power_of_two().expect("capacity overflow");
+        let double_cap = self
+            .current
+            .capacity()
+            .checked_mul(2)
+            .expect("capacity overflow");
+        let required_cap = additional
+            .checked_next_power_of_two()
+            .expect("capacity overflow");
         let new_capacity = cmp::max(double_cap, required_cap);
         let chunk = mem::replace(&mut self.current, Vec::with_capacity(new_capacity));
         self.rest.push(chunk);
@@ -34,8 +38,7 @@ pub struct DroplessArena {
     chunks: RefCell<ChunkList<u8>>,
 }
 
-impl DroplessArena
-{
+impl DroplessArena {
     pub fn new() -> DroplessArena {
         DroplessArena::with_capacity(INITIAL_SIZE)
     }
@@ -59,7 +62,8 @@ impl DroplessArena
     }
 
     pub fn alloc_extend<I, T: Copy>(&self, iterable: I) -> &mut [T]
-        where I: IntoIterator<Item = T>
+    where
+        I: IntoIterator<Item = T>,
     {
         let itemsize = mem::size_of::<T>();
         let itemalign = mem::align_of::<T>();
@@ -72,7 +76,8 @@ impl DroplessArena
         let mut i = 0;
         let mut cur_len = {
             let len = chunks.current.len();
-            let align_offset = unsafe { chunks.current.as_mut_ptr().add(len) }.align_offset(itemalign);
+            let align_offset =
+                unsafe { chunks.current.as_mut_ptr().add(len) }.align_offset(itemalign);
             len + align_offset
         };
         let mut start = cur_len;
@@ -80,13 +85,12 @@ impl DroplessArena
         while let Some(elem) = iter.next() {
             let cap = chunks.current.capacity();
 
-            if cur_len + max(itemsize, iter_min_len) > cap
-            {
+            if cur_len + max(itemsize, iter_min_len) > cap {
                 // The iterator was larger than we could fit into the current chunk.
                 let chunks = &mut *chunks;
                 // Create a new chunk into which we can freely push the entire iterator into
                 // i + 1 for the next one, and * 2 to be sure (and have enough alignment space)
-                let newchunksize = max((i+1) * 2 * itemsize, iter_min_len + itemsize);
+                let newchunksize = max((i + 1) * 2 * itemsize, iter_min_len + itemsize);
                 chunks.reserve(newchunksize);
                 let previous_chunk = chunks.rest.last_mut().unwrap();
 
@@ -117,13 +121,12 @@ impl DroplessArena
             i += 1;
         }
 
-        let new_slice =
-            unsafe {
-                let new_slice = slice::from_raw_parts_mut(chunks.current.as_mut_ptr().add(start) as *mut T, i);
-                mem::transmute::<&mut [T], &mut [T]>(new_slice)
-            };
+        let new_slice = unsafe {
+            let new_slice =
+                slice::from_raw_parts_mut(chunks.current.as_mut_ptr().add(start) as *mut T, i);
+            mem::transmute::<&mut [T], &mut [T]>(new_slice)
+        };
 
         new_slice
     }
-
 }

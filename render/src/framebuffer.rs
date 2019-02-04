@@ -1,4 +1,5 @@
 use crate::image::Image;
+use crate::Backend;
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Copy, Clone, Debug)]
@@ -8,15 +9,12 @@ pub struct FragmentOutputDescription {
 
 /// Descriptor for a render target (framebuffer attachment).
 #[derive(Copy, Clone, Debug)]
-pub struct RenderTargetDescriptor<'a> {
-    ///
-    pub image: Image<'a>
+pub struct RenderTargetDescriptor<'a, B: Backend> {
+    pub image: &'a B::Image,
 }
 
-impl<'a> From<Image<'a>> for RenderTargetDescriptor<'a> {
-    fn from(image: Image<'a>) -> Self {
-        RenderTargetDescriptor{
-            image
-        }
+impl<'a, B: Backend> From<Image<'a, B>> for RenderTargetDescriptor<'a, B> {
+    fn from(image: Image<'a, B>) -> Self {
+        RenderTargetDescriptor { image: image.0 }
     }
 }

@@ -1,9 +1,9 @@
-use crate::handle;
 use crate::typedesc::PrimitiveType;
 use crate::typedesc::TypeDesc;
+use crate::Backend;
+pub use autograph_render_macros::StructuredBufferData;
 use std::marker::PhantomData;
 use std::mem;
-pub use autograph_render_macros::StructuredBufferData;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -30,50 +30,38 @@ impl<U: BufferData> BufferData for [U] {
 //--------------------------------------------------------------------------------------------------
 
 /// Buffer.
-#[derive(Debug)]
+#[derive(derivative::Derivative)]
+#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
 #[repr(transparent)]
-pub struct Buffer<'a, T: BufferData + ?Sized>(
-    pub handle::Buffer<'a>,
+pub struct Buffer<'a, B: Backend, T: BufferData + ?Sized>(
+    pub &'a B::Buffer,
     pub(crate) PhantomData<&'a T>,
 );
 
-// explicit clone impl because of the old auto-derive limitation #26925
-impl<'a, T: BufferData + ?Sized> Clone for Buffer<'a, T> {
-    fn clone(&self) -> Self {
-        Buffer(self.0, PhantomData)
-    }
-}
-
-impl<'a, T: BufferData + ?Sized> Copy for Buffer<'a, T> {}
-
-impl<'a, T: BufferData + ?Sized> Buffer<'a, T> {
+impl<'a, B: Backend, T: BufferData + ?Sized> Buffer<'a, B, T> {
     /*pub fn byte_size(&self) -> u64 {
         traits::Buffer::size(self.0)
     }*/
-    pub fn into_typeless(self) -> BufferTypeless<'a> {
+    pub fn into_typeless(self) -> BufferTypeless<'a, B> {
         BufferTypeless(self.0)
     }
 }
 
 /// Buffer without type information.
-#[derive(Copy, Clone, Debug)]
+#[derive(derivative::Derivative)]
+#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
 #[repr(transparent)]
-pub struct BufferTypeless<'a>(pub handle::Buffer<'a>);
+pub struct BufferTypeless<'a, B: Backend>(pub &'a B::Buffer);
 
-impl<'a> BufferTypeless<'a> {
-    /*pub fn byte_size(&self) -> u64 {
-        traits::Buffer::size(self.0)
-    }*/
-}
-impl<'a, T: BufferData + ?Sized> From<Buffer<'a, T>> for BufferTypeless<'a> {
-    fn from(from: Buffer<'a, T>) -> Self {
+impl<'a, B: Backend, T: BufferData + ?Sized> From<Buffer<'a, B, T>> for BufferTypeless<'a, B> {
+    fn from(from: Buffer<'a, B, T>) -> Self {
         from.into_typeless()
     }
 }
 
 /// Buffer slice.
-pub struct BufferSlice<'a> {
-    pub buffer: BufferTypeless<'a>,
+pub struct BufferSlice<'a, B: Backend> {
+    pub buffer: BufferTypeless<'a, B>,
     pub offset: usize,
     pub size: usize,
 }

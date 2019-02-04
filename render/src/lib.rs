@@ -39,7 +39,7 @@ pub mod image;
 pub mod pipeline;
 pub mod swapchain;
 mod sync;
-pub mod handle;
+pub mod traits;
 pub mod typedesc;
 mod util;
 pub mod vertex;
@@ -97,26 +97,27 @@ use std::marker::PhantomData;
 
 use crate::pipeline::build_vertex_input_interface;
 //use crate::pipeline::validate::validate_graphics;
+use crate::framebuffer::RenderTargetDescriptor;
 use crate::pipeline::DynamicStateFlags;
 use crate::pipeline::GraphicsPipeline;
 use crate::pipeline::GraphicsPipelineCreateInfo;
 use crate::pipeline::GraphicsPipelineCreateInfoTypeless;
 use crate::pipeline::GraphicsPipelineTypeless;
+use crate::pipeline::PipelineArguments;
+use crate::pipeline::PipelineArgumentsTypeless;
 use crate::pipeline::PipelineInterface;
+use crate::pipeline::PipelineSignatureDescription;
+use crate::pipeline::PipelineSignatureTypeless;
+use crate::pipeline::ScissorRect;
 use crate::pipeline::ShaderModule;
 use crate::pipeline::ShaderStageFlags;
 use crate::pipeline::VertexInputState;
-use std::mem;
-use crate::pipeline::PipelineArguments;
-use crate::pipeline::PipelineSignatureDescription;
-use crate::pipeline::PipelineSignatureTypeless;
-use crate::pipeline::PipelineArgumentsCreateInfoTypeless;
-use crate::pipeline::PipelineArgumentsBuilder;
 use crate::pipeline::Viewport;
-use crate::vertex::VertexBufferDescriptor;
 use crate::vertex::IndexBufferDescriptor;
-use crate::framebuffer::RenderTargetDescriptor;
-use crate::pipeline::ScissorRect;
+use crate::vertex::VertexBufferDescriptor;
+use std::fmt::Debug;
+use std::hash::Hash;
+use std::mem;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -163,67 +164,45 @@ impl AliasScope {
 
 //--------------------------------------------------------------------------------------------------
 
-/// Trait implemented by renderer backends.
-///
-/// The `RendererBackend` trait provides an interface to create graphics resources and send commands
-/// to one (TODO or more) GPU.
-/// It has a number of associated types for various kinds of graphics objects.
-/// It serves as an abstraction layer over a graphics API.
-///
-/// See the [autograph_render_gl] crate for an example implementation.
-pub trait RendererBackend: Sync {
-    // Some associated backend types (such as Framebuffers, or DescriptorSets) conceptually "borrow"
-    // the referenced resources, and as such should have an associated lifetime parameter.
-    // However, this cannot be expressed right now because of the lack of generic associated types
-    // (a.k.a. associated type constructors, or ATCs).
-    /*type Arena: Copy;
-    type Swapchain: Copy;
-    type Image: Copy;
-    type Buffer: Copy;
-    type ShaderModule: Copy;
-    type GraphicsPipeline: Copy;
-    type PipelineSignature: Copy;
-    type PipelineArguments: Copy;
-    type HostReference: Copy;*/
-
+pub trait Instance<B: Backend> {
     /// Creates a new empty Arena.
-    unsafe fn create_arena(&self) -> handle::Arena;
+    unsafe fn create_arena(&self) -> Box<B::Arena>;
 
     /// Drops an arena and all the objects it owns.
-    unsafe fn drop_arena(&self, arena: handle::Arena);
+    unsafe fn drop_arena(&self, arena: Box<B::Arena>);
 
     /// See [Renderer::create_swapchain](crate::Renderer::create_swapchain).
-    unsafe fn create_swapchain<'a>(&self, arena: handle::Arena<'a>) -> handle::Swapchain<'a>;
+    unsafe fn create_swapchain<'a>(&self, arena: &'a B::Arena) -> &'a B::Swapchain;
 
     /// See [Renderer::default_swapchain](crate::Renderer::default_swapchain).
-    unsafe fn default_swapchain<'a>(&'a self) -> Option<handle::Swapchain<'a>>;
+    unsafe fn default_swapchain<'a>(&'a self) -> Option<&'a B::Swapchain>;
 
     /// Creates an immutable image that cannot be modified by any operation (render, transfer, swaps or otherwise).
     /// Useful for long-lived texture data.
     unsafe fn create_immutable_image<'a>(
         &self,
-        arena: handle::Arena<'a>,
+        arena: &'a B::Arena,
         format: Format,
         dimensions: Dimensions,
         mipcount: MipmapsCount,
         samples: u32,
         usage: ImageUsageFlags,
         initial_data: &[u8],
-    ) -> handle::Image<'a>;
+    ) -> &'a B::Image;
 
     /// Creates an image containing uninitialized data.
     ///
     /// See [Arena::create_image](crate::arena::Arena::create_image).
     unsafe fn create_image<'a>(
         &self,
-        arena: handle::Arena<'a>,
+        arena: &'a B::Arena,
         scope: AliasScope,
         format: Format,
         dimensions: Dimensions,
         mipcount: MipmapsCount,
         samples: u32,
         usage: ImageUsageFlags,
-    ) -> handle::Image<'a>;
+    ) -> &'a B::Image;
 
     /// Updates a region of an image.
     ///
@@ -231,7 +210,7 @@ pub trait RendererBackend: Sync {
     /// No conversion is performed.
     unsafe fn update_image(
         &self,
-        image: handle::Image,
+        image: &B::Image,
         min_extent: (u32, u32, u32),
         max_extent: (u32, u32, u32),
         data: &[u8],
@@ -240,7 +219,7 @@ pub trait RendererBackend: Sync {
     /*/// See [Arena::create_framebuffer](crate::arena::Arena::create_framebuffer).
     fn create_framebuffer<'a>(
         &self,
-        arena: handle::Arena<'a>,
+        arena: &'a Arena<B>,
         color_attachments: &[handle::Image<'a>],
         depth_stencil_attachment: Option<handle::Image<'a>>,
     ) -> handle::Framebuffer<'a>;*/
@@ -248,58 +227,93 @@ pub trait RendererBackend: Sync {
     /// TODO
     unsafe fn create_immutable_buffer<'a>(
         &self,
-        arena: handle::Arena<'a>,
+        arena: &'a B::Arena,
         size: u64,
         data: &[u8],
-    ) -> handle::Buffer<'a>;
+    ) -> &'a B::Buffer;
 
     /// TODO
-    unsafe fn create_buffer<'a>(&self, arena: handle::Arena<'a>, size: u64) -> handle::Buffer<'a>;
+    unsafe fn create_buffer<'a>(&self, arena: &'a B::Arena, size: u64) -> &'a B::Buffer;
 
     /// See [Arena::create_shader_module](crate::arena::Arena::create_shader_module).
     unsafe fn create_shader_module<'a>(
         &self,
-        arena: handle::Arena<'a>,
-        data: &[u8],
+        arena: &'a B::Arena,
+        spirv: &'_ [u8],
         stage: ShaderStageFlags,
-    ) -> handle::ShaderModule<'a>;
+    ) -> &'a B::ShaderModule;
 
     /// See [Arena::create_graphics_pipeline](crate::arena::Arena::create_graphics_pipeline).
     unsafe fn create_graphics_pipeline<'a>(
         &self,
-        arena: handle::Arena<'a>,
-        create_info: &GraphicsPipelineCreateInfoTypeless<'_, 'a>,
-    ) -> handle::GraphicsPipeline<'a>;
+        arena: &'a B::Arena,
+        create_info: &GraphicsPipelineCreateInfoTypeless<'a, '_, B>,
+    ) -> &'a B::GraphicsPipeline;
 
     ///
     unsafe fn create_pipeline_signature<'a, 'r: 'a>(
         &'r self,
-        arena: handle::Arena<'a>,
-        create_info: &PipelineSignatureDescription
-    ) -> handle::PipelineSignature<'a>;
+        arena: &'a B::Arena,
+        create_info: &PipelineSignatureDescription,
+    ) -> &'a B::PipelineSignature;
 
     /// Creates a new pipeline argument group,
     /// which describes a set of resources to be bound to the graphics
     /// pipeline, and state to be set.
     ///
-    /// Q: behavior w.r.t signature
-    /// if the arguments specified in args_visit do not match, then panic
-    unsafe fn create_pipeline_arguments<'a>(
+    unsafe fn create_pipeline_arguments<'a, 'b>(
         &self,
-        arena: handle::Arena<'a>,
-        create_info: &PipelineArgumentsCreateInfoTypeless<'a, '_>
-    ) -> handle::PipelineArguments<'a>;
+        arena: &'a B::Arena,
+        signature: &'a B::PipelineSignature,
+        arguments: impl IntoIterator<Item = PipelineArgumentsTypeless<'a, B>>,
+        descriptors: impl IntoIterator<Item = Descriptor<'a, B>>,
+        vertex_buffers: impl IntoIterator<Item = VertexBufferDescriptor<'a, 'b, B>>,
+        index_buffer: Option<IndexBufferDescriptor<'a, B>>,
+        render_targets: impl IntoIterator<Item = RenderTargetDescriptor<'a, B>>,
+        depth_stencil_render_target: Option<RenderTargetDescriptor<'a, B>>,
+        viewports: impl IntoIterator<Item = Viewport>,
+        scissors: impl IntoIterator<Item = ScissorRect>,
+    ) -> &'a B::PipelineArguments;
 
     /// Creates a reference to host data that is going to be used in pipeline arguments.
-    unsafe fn create_host_reference<'a>(&self,
-                                        arena: handle::Arena<'a>,
-                                        data: &'a [u8]) -> handle::HostReference<'a>;
+    unsafe fn create_host_reference<'a>(
+        &self,
+        arena: &'a B::Arena,
+        data: &'a [u8],
+    ) -> &'a B::HostReference;
 
     /// Sends commands to the GPU for execution, and ends the current frame.
     /// Uploads all referenced host data to the GPU and releases the borrows.
     ///
     /// Precondition: the command list should be sorted by sortkey.
-    unsafe fn submit_frame<'a>(&self, commands: &[Command<'a>]);
+    unsafe fn submit_frame<'a>(&self, commands: &[Command<'a, B>]);
+}
+
+/// Trait implemented by renderer backends.
+///
+/// The `RendererBackend` trait provides an interface to create graphics resources and send commands
+/// to one (TODO or more) GPU.
+/// It has a number of associated types for various kinds of graphics objects.
+/// It serves as an abstraction layer over a graphics API.
+///
+/// See the [autograph_render_gl] crate for an example implementation.
+pub trait Backend:
+    Copy + Clone + Debug + Eq + PartialEq + Ord + PartialOrd + Hash + 'static
+{
+    // Some associated backend types (such as Framebuffers, or DescriptorSets) conceptually "borrow"
+    // the referenced resources, and as such should have an associated lifetime parameter.
+    // However, this cannot be expressed right now because of the lack of generic associated types
+    // (a.k.a. associated type constructors, or ATCs).
+    type Instance: Instance<Self>;
+    type Arena;
+    type Swapchain: Sync + Debug + traits::Swapchain;
+    type Image: Sync + Debug;
+    type Buffer: Sync + Debug;
+    type ShaderModule: Sync + Debug;
+    type GraphicsPipeline: Sync + Debug;
+    type PipelineSignature: Sync + Debug;
+    type PipelineArguments: Sync + Debug;
+    type HostReference: Sync + Debug;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -321,47 +335,27 @@ pub trait RendererBackend: Sync {
 ///
 /// This type is a wrapper around [RendererBackend::Arena] that drops the arena
 /// when it goes out of scope.
-pub struct Arena<'rcx> {
-    backend: &'rcx dyn RendererBackend,
-    inner: handle::Arena<'rcx>,
+pub struct Arena<'r, B: Backend> {
+    instance: &'r B::Instance,
+    inner: Option<Box<B::Arena>>,
 }
 
-impl<'rcx> Drop for Arena<'rcx> {
+impl<'r, B: Backend> Drop for Arena<'r, B> {
     fn drop(&mut self) {
-        unsafe {
-            self.backend.drop_arena(self.inner)
-        }
+        unsafe { self.instance.drop_arena(self.inner.take().unwrap()) }
     }
 }
 
-impl<'rcx> Arena<'rcx> {
+impl<'r, B: Backend> Arena<'r, B> {
+    pub fn inner(&self) -> &B::Arena {
+        self.inner.as_ref().unwrap()
+    }
+
     /// Creates a swapchain.
     #[inline]
-    pub fn create_swapchain(&self) -> Swapchain {
-        Swapchain(unsafe {
-            self.backend.create_swapchain(self.inner)
-        })
+    pub fn create_swapchain(&self) -> Swapchain<B> {
+        Swapchain(unsafe { self.instance.create_swapchain(&self.inner()) })
     }
-
-    /*/// Creates a framebuffer.
-    #[inline]
-    pub fn create_framebuffer<'a>(
-        &'a self,
-        color_attachments: &[Image<'a>],
-        depth_stencil_attachment: Option<Image<'a>>,
-    ) -> Framebuffer<'a> {
-        let raw_color_attachments = unsafe {
-            slice::from_raw_parts(
-                color_attachments.as_ptr() as *const handle::Image<'a>,
-                color_attachments.len(),
-            )
-        };
-        Framebuffer(self.backend.create_framebuffer(
-            self.inner_arena(),
-            raw_color_attachments,
-            depth_stencil_attachment.map(|a| a.0),
-        ))
-    }*/
 
     /// Creates a shader module from SPIR-V bytecode.
     #[inline]
@@ -369,11 +363,11 @@ impl<'rcx> Arena<'rcx> {
         &'a self,
         data: &'spv [u8],
         stage: ShaderStageFlags,
-    ) -> ShaderModule<'a, 'spv> {
+    ) -> ShaderModule<'a, 'spv, B> {
         ShaderModule(
             unsafe {
-                self.backend
-                    .create_shader_module(self.inner, data, stage)
+                self.instance
+                    .create_shader_module(&self.inner(), data, stage)
             },
             data,
         )
@@ -383,26 +377,24 @@ impl<'rcx> Arena<'rcx> {
     #[inline]
     pub fn create_graphics_pipeline_typeless<'a>(
         &'a self,
-        create_info: &GraphicsPipelineCreateInfoTypeless<'_, 'a>,
-    ) -> GraphicsPipelineTypeless<'a> {
-        GraphicsPipelineTypeless(
-            unsafe{
-                self.backend
-                    .create_graphics_pipeline(self.inner, create_info)
-            },
-        )
+        create_info: &GraphicsPipelineCreateInfoTypeless<'a, '_, B>,
+    ) -> GraphicsPipelineTypeless<'a, B> {
+        GraphicsPipelineTypeless(unsafe {
+            self.instance
+                .create_graphics_pipeline(&self.inner(), create_info)
+        })
     }
 
     /// Creates a graphics pipeline given the pipeline description passed in create_info
     /// and information derived from the pipeline interface type.
     #[inline]
-    pub fn create_graphics_pipeline<'a, Pipeline: PipelineInterface<'a>>(
+    pub fn create_graphics_pipeline<'a, Pipeline: PipelineInterface<'a, B>>(
         &'a self,
-        create_info: &GraphicsPipelineCreateInfo<'_, 'a>,
-        _extra_signature: &PipelineSignatureTypeless,
-    ) -> GraphicsPipeline<'a, Pipeline> {
+        create_info: &GraphicsPipelineCreateInfo<'a, '_, B>,
+        _extra_signature: Option<PipelineSignatureTypeless<'a, B>>,
+    ) -> GraphicsPipeline<'a, B, Pipeline> {
         // combine static & dynamic
-        let vertex_layouts = <Pipeline as PipelineInterface<'a>>::SIGNATURE
+        let vertex_layouts = <Pipeline as PipelineInterface<'a, B>>::SIGNATURE
             .vertex_layouts
             .iter()
             .cloned()
@@ -415,9 +407,8 @@ impl<'rcx> Arena<'rcx> {
             attributes: &vtx_input_attribs,
         };
 
-        let root_signature = PipelineSignatureTypeless(unsafe {
-            self.backend.create_pipeline_signature(self.inner, <Pipeline as PipelineInterface<'a>>::SIGNATURE)
-        });
+        let root_signature = self
+            .create_pipeline_signature_typeless(<Pipeline as PipelineInterface<'a, B>>::SIGNATURE);
 
         let create_info_full = GraphicsPipelineCreateInfoTypeless {
             shader_stages: create_info.shader_stages,
@@ -429,7 +420,7 @@ impl<'rcx> Arena<'rcx> {
             input_assembly_state: create_info.input_assembly_state,
             color_blend_state: create_info.color_blend_state,
             dynamic_state: DynamicStateFlags::empty(),
-            root_signature
+            root_signature,
         };
 
         // validate the pipeline
@@ -439,9 +430,9 @@ impl<'rcx> Arena<'rcx> {
         //}
 
         GraphicsPipeline(
-            unsafe{
-                self.backend
-                    .create_graphics_pipeline(self.inner, &create_info_full)
+            unsafe {
+                self.instance
+                    .create_graphics_pipeline(&self.inner(), &create_info_full)
             },
             PhantomData,
         )
@@ -463,10 +454,10 @@ impl<'rcx> Arena<'rcx> {
         samples: u32,
         usage: ImageUsageFlags,
         initial_data: &[u8],
-    ) -> Image {
-        Image(unsafe{
-            self.backend.create_immutable_image(
-                self.inner,
+    ) -> Image<B> {
+        Image(unsafe {
+            self.instance.create_immutable_image(
+                &self.inner(),
                 format,
                 dimensions,
                 mipcount,
@@ -495,10 +486,10 @@ impl<'rcx> Arena<'rcx> {
         mipcount: MipmapsCount,
         samples: u32,
         usage: ImageUsageFlags,
-    ) -> Image {
-        Image(unsafe{
-            self.backend.create_image(
-                self.inner,
+    ) -> Image<B> {
+        Image(unsafe {
+            self.instance.create_image(
+                &self.inner(),
                 scope,
                 format,
                 dimensions,
@@ -511,33 +502,29 @@ impl<'rcx> Arena<'rcx> {
 
     /// Creates a GPU (device local) buffer.
     #[inline]
-    pub fn create_buffer_typeless(&self, size: u64) -> BufferTypeless {
-        BufferTypeless(unsafe{
-            self.backend.create_buffer(self.inner, size)
-        })
+    pub fn create_buffer_typeless(&self, size: u64) -> BufferTypeless<B> {
+        BufferTypeless(unsafe { self.instance.create_buffer(&self.inner(), size) })
     }
 
     /// Creates a GPU (device local) buffer.
     #[inline]
-    pub fn create_immutable_buffer_typeless(&self, size: u64, data: &[u8]) -> BufferTypeless {
-        BufferTypeless(
-            unsafe{
-                self.backend
-                    .create_immutable_buffer(self.inner, size, data)
-            },
-        )
+    pub fn create_immutable_buffer_typeless(&self, size: u64, data: &[u8]) -> BufferTypeless<B> {
+        BufferTypeless(unsafe {
+            self.instance
+                .create_immutable_buffer(&self.inner(), size, data)
+        })
     }
 
     /// Creates an immutable, device-local GPU buffer containing an object of type T.
     #[inline]
-    pub fn upload<T: Copy + 'static>(&self, data: &T) -> Buffer<T> {
+    pub fn upload<T: Copy + 'static>(&self, data: &T) -> Buffer<B, T> {
         let size = mem::size_of::<T>();
         let bytes = unsafe { ::std::slice::from_raw_parts(data as *const T as *const u8, size) };
 
         Buffer(
-            unsafe{
-                self.backend
-                    .create_immutable_buffer(self.inner, size as u64, bytes)
+            unsafe {
+                self.instance
+                    .create_immutable_buffer(&self.inner(), size as u64, bytes)
             },
             PhantomData,
         )
@@ -545,14 +532,14 @@ impl<'rcx> Arena<'rcx> {
 
     /// Creates an immutable, device-local GPU buffer containing an array of objects of type T.
     #[inline]
-    pub fn upload_slice<T: Copy + 'static>(&self, data: &[T]) -> Buffer<[T]> {
+    pub fn upload_slice<T: Copy + 'static>(&self, data: &[T]) -> Buffer<B, [T]> {
         let size = mem::size_of_val(data);
         let bytes = unsafe { ::std::slice::from_raw_parts(data.as_ptr() as *const u8, size) };
 
         Buffer(
-            unsafe{
-                self.backend
-                    .create_immutable_buffer(self.inner, size as u64, bytes)
+            unsafe {
+                self.instance
+                    .create_immutable_buffer(&self.inner(), size as u64, bytes)
             },
             PhantomData,
         )
@@ -560,150 +547,107 @@ impl<'rcx> Arena<'rcx> {
 
     /// Creates an immutable, device-local GPU buffer containing an array of objects of type T.
     #[inline]
-    pub fn host_reference<'a, T: Copy + 'static>(&'a self, data: &'a T) -> HostReference<'a, T>
-    {
+    pub fn host_reference<'a, T: Copy + 'static>(&'a self, data: &'a T) -> HostReference<'a, B, T> {
         let size = mem::size_of::<T>();
         let bytes = unsafe { ::std::slice::from_raw_parts(data as *const T as *const u8, size) };
 
-        HostReference(unsafe{
-            self.backend.create_host_reference(self.inner, bytes)
-        }, PhantomData)
+        HostReference(
+            unsafe { self.instance.create_host_reference(&self.inner(), bytes) },
+            PhantomData,
+        )
     }
 
     /// Creates an immutable, device-local GPU buffer containing an array of objects of type T.
     #[inline]
-    pub fn host_slice<'a, T: Copy + 'static>(&'a self, data: &'a [T]) -> HostReference<'a, T> {
-
+    pub fn host_slice<'a, T: Copy + 'static>(&'a self, data: &'a [T]) -> HostReference<'a, B, T> {
         let size = mem::size_of_val(data);
         let bytes = unsafe { ::std::slice::from_raw_parts(data.as_ptr() as *const u8, size) };
 
-        HostReference(unsafe{
-            self.backend.create_host_reference(self.inner, bytes)
-        }, PhantomData)
+        HostReference(
+            unsafe { self.instance.create_host_reference(&self.inner(), bytes) },
+            PhantomData,
+        )
+    }
+
+    pub fn create_pipeline_signature_typeless<'a, 'rr: 'a>(
+        &'rr self,
+        create_info: &PipelineSignatureDescription,
+    ) -> PipelineSignatureTypeless<'a, B> {
+        PipelineSignatureTypeless(unsafe {
+            self.instance
+                .create_pipeline_signature(&self.inner(), create_info)
+        })
+    }
+
+    pub fn create_pipeline_arguments_typeless<'a, 'b>(
+        &'a self,
+        signature: PipelineSignatureTypeless<'a, B>,
+        arguments: impl IntoIterator<Item = PipelineArgumentsTypeless<'a, B>>,
+        descriptors: impl IntoIterator<Item = Descriptor<'a, B>>,
+        vertex_buffers: impl IntoIterator<Item = VertexBufferDescriptor<'a, 'b, B>>,
+        index_buffer: Option<IndexBufferDescriptor<'a, B>>,
+        render_targets: impl IntoIterator<Item = RenderTargetDescriptor<'a, B>>,
+        depth_stencil_render_target: Option<RenderTargetDescriptor<'a, B>>,
+        viewports: impl IntoIterator<Item = Viewport>,
+        scissors: impl IntoIterator<Item = ScissorRect>,
+    ) -> PipelineArgumentsTypeless<'a, B> {
+        PipelineArgumentsTypeless(unsafe {
+            self.instance.create_pipeline_arguments(
+                &self.inner(),
+                signature.0,
+                arguments,
+                descriptors,
+                vertex_buffers,
+                index_buffer,
+                render_targets,
+                depth_stencil_render_target,
+                viewports,
+                scissors,
+            )
+        })
     }
 
     /// Creates a pipeline argument group.
     ///
     /// Note: this must be fast, and allocate as little as possible.
     /// Avoid intermediate buffers. Ideally, have the backend directly visit the arguments.
-    pub fn create_pipeline_arguments<'a, T: PipelineInterface<'a>>(
+    pub fn create_pipeline_arguments<'a, T: PipelineInterface<'a, B>>(
         &'a self,
         arguments: T,
-    ) -> PipelineArguments<'a, T>
-    {
+    ) -> PipelineArguments<'a, B, T::IntoInterface> {
         // get the signature
-        let signature = unsafe {
-            self.backend.create_pipeline_signature(self.inner, <T as PipelineInterface<'a>>::SIGNATURE)
-        };
-        //let arena = self.inner_arena();
 
-        struct ArgumentsBuilder<'b,'tcx> {
-            arguments: smallvec::SmallVec<[handle::PipelineArguments<'b>; 8]>,
-            descriptors: smallvec::SmallVec<[Descriptor<'b>; 8]>,
-            viewports: smallvec::SmallVec<[Viewport; 8]>,
-            scissors: smallvec::SmallVec<[ScissorRect; 8]>,
-            vertex_buffers: smallvec::SmallVec<[VertexBufferDescriptor<'b,'tcx>; 8]>,
-            index_buffer: Option<IndexBufferDescriptor<'b>>,
-            render_targets: smallvec::SmallVec<[RenderTargetDescriptor<'b>; 8]>,
-            depth_stencil_render_target: Option<RenderTargetDescriptor<'b>>,
-        }
-
-        impl<'b,'tcx> PipelineArgumentsBuilder<'b,'tcx> for ArgumentsBuilder<'b,'tcx> {
-            fn push_arguments(&mut self, arguments: handle::PipelineArguments<'b>) {
-                self.arguments.push(arguments);
-            }
-            fn push_descriptor(&mut self, descriptor: Descriptor<'b>) {
-                self.descriptors.push(descriptor);
-            }
-            fn push_viewport(&mut self, viewport: &Viewport) {
-                self.viewports.push(viewport.clone());
-            }
-            fn push_scissor(&mut self, scissor: &ScissorRect) {
-                self.scissors.push(scissor.clone());
-            }
-            fn push_vertex_buffer(&mut self, vertex_buffer: VertexBufferDescriptor<'b, 'tcx>) {
-                self.vertex_buffers.push(vertex_buffer);
-            }
-            fn push_index_buffer(&mut self, index_buffer: IndexBufferDescriptor<'b>) {
-                self.index_buffer = Some(index_buffer);
-            }
-            fn push_render_target(&mut self, render_target: RenderTargetDescriptor<'b>) {
-                self.render_targets.push(render_target);
-            }
-            fn push_depth_stencil_render_target(&mut self, depth_stencil_render_target: RenderTargetDescriptor<'b>) {
-                self.depth_stencil_render_target = Some(depth_stencil_render_target);
-            }
-        }
-
-        let mut builder = ArgumentsBuilder {
-            arguments: smallvec::SmallVec::new(),
-            descriptors: smallvec::SmallVec::new(),
-            viewports: smallvec::SmallVec::new(),
-            scissors: smallvec::SmallVec::new(),
-            vertex_buffers: smallvec::SmallVec::new(),
-            index_buffer: None,
-            render_targets: smallvec::SmallVec::new(),
-            depth_stencil_render_target: None
-        };
-
-        arguments.visit_arguments(self, &mut builder);
-
-        let create_info = PipelineArgumentsCreateInfoTypeless {
-            signature,
-            arguments: &builder.arguments[..],
-            descriptors: &builder.descriptors[..],
-            vertex_buffers: &builder.vertex_buffers[..],
-            index_buffer: builder.index_buffer,
-            render_targets: &builder.render_targets[..],
-            depth_stencil_render_target: builder.depth_stencil_render_target,
-            viewports: &builder.viewports[..],
-            scissors: &builder.scissors[..]
-        };
-
-        let args = unsafe {
-            self.backend.create_pipeline_arguments(self.inner, &create_info)
-        };
-
-        PipelineArguments(
-            args,
-            PhantomData,
-        )
+        PipelineArguments(arguments.into_arguments(self).0, PhantomData)
     }
 }
 
 //--------------------------------------------------------------------------------------------------
 
 /// Renderer
-pub struct Renderer {
-    backend: Box<dyn RendererBackend + 'static>,
+pub struct Renderer<B: Backend> {
+    instance: B::Instance,
 }
 
-impl Renderer {
+impl<B: Backend> Renderer<B> {
     /// Creates a new renderer with the specified backend.
-    pub fn new<R: RendererBackend + 'static>(backend: R) -> Renderer {
-        Renderer {
-            backend: Box::new(backend),
-        }
+    pub fn new(instance: B::Instance) -> Renderer<B> {
+        Renderer { instance }
     }
 
-    pub fn create_arena(&self) -> Arena {
+    pub fn create_arena(&self) -> Arena<B> {
         Arena {
-            backend: self.backend.as_ref(),
-            inner: unsafe{
-                self.backend.create_arena()
-            },
+            instance: &self.instance,
+            inner: Some(unsafe { self.instance.create_arena() }),
         }
     }
 
     /// Returns the default swapchain if there is one.
-    pub fn default_swapchain(&self) -> Option<Swapchain> {
-        unsafe{
-            self.backend.default_swapchain().map(|s| Swapchain(s))
-        }
+    pub fn default_swapchain(&self) -> Option<Swapchain<B>> {
+        unsafe { self.instance.default_swapchain().map(|s| Swapchain(s)) }
     }
 
     /// Creates a command buffer.
-    pub fn create_command_buffer<'cmd>(&self) -> CommandBuffer<'cmd> {
+    pub fn create_command_buffer<'cmd>(&self) -> CommandBuffer<'cmd, B> {
         CommandBuffer::new()
     }
 
@@ -711,8 +655,8 @@ impl Renderer {
     ///
     /// Frame-granularity synchronization points happen in this call.
     /// A new frame is implicitly started after this call.
-    pub fn submit_frame(&self, command_buffers: Vec<CommandBuffer>) {
+    pub fn submit_frame(&self, command_buffers: Vec<CommandBuffer<'_, B>>) {
         let commands = sort_command_buffers(command_buffers);
-        unsafe{self.backend.submit_frame(&commands)}
+        unsafe { self.instance.submit_frame(&commands) }
     }
 }

@@ -1,4 +1,4 @@
-use crate::backend::OpenGlBackend;
+use crate::backend::OpenGlInstance;
 use crate::swapchain::SwapchainInner;
 use config::Config;
 use glutin;
@@ -15,11 +15,11 @@ impl SwapchainInner for glutin::GlWindow {
     }
 }
 
-pub fn create_backend_and_window(
+pub fn create_instance_and_window(
     cfg: &Config,
     events_loop: &EventsLoop,
     window_builder: WindowBuilder,
-) -> OpenGlBackend {
+) -> OpenGlInstance {
     // TODO get config from config file
     let context_builder = glutin::ContextBuilder::new()
         .with_gl_profile(glutin::GlProfile::Core)
@@ -41,5 +41,5 @@ pub fn create_backend_and_window(
         ptr
     });
 
-    OpenGlBackend::with_gl(cfg, glfns, Box::new(window))
+    OpenGlInstance::with_gl(cfg, glfns, Box::new(window))
 }

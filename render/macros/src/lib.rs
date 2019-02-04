@@ -4,7 +4,7 @@
 //! - `AttachmentGroup` for groups of attachments
 //! - `VertexLayout` for verifying the layout of vertex buffers
 //!
-#![recursion_limit = "128"]
+#![recursion_limit = "256"]
 
 extern crate darling; // this is a _good crate_
 extern crate proc_macro;

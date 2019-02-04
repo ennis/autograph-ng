@@ -1,9 +1,9 @@
+use fxhash::FxBuildHasher;
+use fxhash::FxHashMap;
+use std::hash::Hash;
 use std::mem;
 use std::sync::Mutex;
 use typed_arena::Arena;
-use fxhash::FxHashMap;
-use std::hash::Hash;
-use fxhash::FxBuildHasher;
 
 mod dropless_arena;
 pub use self::dropless_arena::DroplessArena;
@@ -52,7 +52,6 @@ impl<T> SyncArena<T> {
 
 //--------------------------------------------------------------------------------------------------
 
-
 /// Sync wrapper over a dropless arena.
 /// See [typed_arena::Arena].
 pub struct SyncDroplessArena(Mutex<DroplessArena>);
@@ -73,18 +72,21 @@ impl SyncDroplessArena {
     ///
     #[inline]
     pub fn alloc_extend<T: Copy, I>(&self, iterable: I) -> &mut [T]
-        where
-            I: IntoIterator<Item = T>
+    where
+        I: IntoIterator<Item = T>,
     {
-        unsafe { mem::transmute::<&mut [T], &mut [T]>(self.0.lock().unwrap().alloc_extend(iterable)) }
+        unsafe {
+            mem::transmute::<&mut [T], &mut [T]>(self.0.lock().unwrap().alloc_extend(iterable))
+        }
     }
 
     ///
     #[inline]
     pub unsafe fn alloc_uninitialized<T: Copy>(&self, len: usize) -> &mut [T] {
-        unsafe { mem::transmute::<&mut [T], &mut [T]>(self.0.lock().unwrap().alloc_uninitialized(len)) }
+        unsafe {
+            mem::transmute::<&mut [T], &mut [T]>(self.0.lock().unwrap().alloc_uninitialized(len))
+        }
     }
-
 }
 
 //--------------------------------------------------------------------------------------------------

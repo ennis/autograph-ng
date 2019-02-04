@@ -1,14 +1,14 @@
 use crate::buffer::BufferTypeless;
 use crate::image::Image;
 use crate::pipeline::GraphicsPipeline;
+use crate::pipeline::PipelineArguments;
 use crate::pipeline::PipelineInterface;
 use crate::swapchain::Swapchain;
 use crate::sync::MemoryBarrier;
 use crate::sync::PipelineStageFlags;
-use crate::handle;
 use crate::Arena;
+use crate::Backend;
 use std::ops::Range;
-use crate::pipeline::PipelineArguments;
 
 /// Represents a command to be executed by the renderer backend.
 ///
@@ -18,9 +18,9 @@ use crate::pipeline::PipelineArguments;
 /// However, commands with the same sorting key from different command buffers
 /// can end up interleaved.
 #[derive(Clone)]
-pub struct Command<'a> {
+pub struct Command<'a, B: Backend> {
     pub sortkey: u64,
-    pub cmd: CommandInner<'a>,
+    pub cmd: CommandInner<'a, B>,
 }
 
 /// Parameters for non-indexed draw commands.
@@ -42,30 +42,31 @@ pub struct DrawIndexedParams {
     pub first_instance: u32,
 }
 
-#[derive(Clone)]
-pub enum CommandInner<'a> {
+#[derive(derivative::Derivative)]
+#[derivative(Clone(bound = ""))]
+pub enum CommandInner<'a, B: Backend> {
     // MAIN (LEAD-IN) COMMANDS ---------------------------------------------------------------------
     PipelineBarrier {},
     ClearImageFloat {
-        image: handle::Image<'a>,
+        image: &'a B::Image,
         color: [f32; 4],
     },
     ClearDepthStencilImage {
-        image: handle::Image<'a>,
+        image: &'a B::Image,
         depth: f32,
         stencil: Option<u8>,
     },
     Present {
-        image: handle::Image<'a>,
-        swapchain: handle::Swapchain<'a>,
+        image: &'a B::Image,
+        swapchain: &'a B::Swapchain,
     },
     DrawHeader {
-        pipeline: handle::GraphicsPipeline<'a>,
+        pipeline: &'a B::GraphicsPipeline,
     },
 
     // STATE CHANGE COMMANDS -----------------------------------------------------------------------
     SetPipelineArguments {
-        arguments: handle::PipelineArguments<'a>,
+        arguments: &'a B::PipelineArguments,
     },
 
     // DRAW (LEAD-OUT) COMMANDS --------------------------------------------------------------------
@@ -85,27 +86,27 @@ pub enum CommandInner<'a> {
 }
 
 /// Command buffers contain a list of commands.
-pub struct CommandBuffer<'a> {
-    commands: Vec<Command<'a>>,
+pub struct CommandBuffer<'a, B: Backend> {
+    commands: Vec<Command<'a, B>>,
 }
 
 /// API exposed by command buffers.
 /// Can build multiple command buffers concurrently in different threads.
-impl<'a> CommandBuffer<'a> {
-    pub(super) fn new() -> CommandBuffer<'a> {
+impl<'a, B: Backend> CommandBuffer<'a, B> {
+    pub(super) fn new() -> CommandBuffer<'a, B> {
         CommandBuffer {
             commands: Vec::new(),
         }
     }
 
-    fn push_command(&mut self, sortkey: u64, cmd: CommandInner<'a>) {
+    fn push_command(&mut self, sortkey: u64, cmd: CommandInner<'a, B>) {
         self.commands.push(Command { cmd, sortkey })
     }
 
     // fn self.push_header_command(sortkey)
     // fn self.push_trailing_command()
 
-    pub fn iter(&self) -> impl Iterator<Item = &Command<'a>> {
+    pub fn iter(&self) -> impl Iterator<Item = &Command<'a, B>> {
         self.commands.iter()
     }
 
@@ -118,7 +119,7 @@ impl<'a> CommandBuffer<'a> {
         _sort_key: u64,
         _src: PipelineStageFlags,
         _dst: PipelineStageFlags,
-        _memory_barriers: &[MemoryBarrier],
+        _memory_barriers: &[MemoryBarrier<'a, B>],
     ) {
         unimplemented!()
     }
@@ -133,8 +134,8 @@ impl<'a> CommandBuffer<'a> {
     pub fn copy_buffer(
         &mut self,
         _sort_key: u64,
-        _src: BufferTypeless<'a>,
-        _dst: BufferTypeless<'a>,
+        _src: BufferTypeless<'a, B>,
+        _dst: BufferTypeless<'a, B>,
         _src_range: Range<u64>,
         _dst_range: Range<u64>,
     ) {
@@ -145,7 +146,7 @@ impl<'a> CommandBuffer<'a> {
     // Clear
 
     /// Clears an image.
-    pub fn clear_image(&mut self, sortkey: u64, image: Image<'a>, color: &[f32; 4]) {
+    pub fn clear_image(&mut self, sortkey: u64, image: Image<'a, B>, color: &[f32; 4]) {
         self.push_command(
             sortkey,
             CommandInner::ClearImageFloat {
@@ -159,7 +160,7 @@ impl<'a> CommandBuffer<'a> {
     pub fn clear_depth_stencil_image(
         &mut self,
         sortkey: u64,
-        image: Image<'a>,
+        image: Image<'a, B>,
         depth: f32,
         stencil: Option<u8>,
     ) {
@@ -175,28 +176,35 @@ impl<'a> CommandBuffer<'a> {
 
     //----------------------------------------------------------------------------------------------
     // Draw
-    fn set_pipeline<P: PipelineInterface<'a>>(&mut self, sortkey: u64, pipeline: GraphicsPipeline<'a, P>, arguments: PipelineArguments<'a, P>)
-    {
-        self.push_command(sortkey, CommandInner::DrawHeader {
-            pipeline: pipeline.0
-        });
+    fn set_pipeline<P: PipelineInterface<'a, B>>(
+        &mut self,
+        sortkey: u64,
+        pipeline: GraphicsPipeline<'a, B, P>,
+        arguments: PipelineArguments<'a, B, P>,
+    ) {
+        self.push_command(
+            sortkey,
+            CommandInner::DrawHeader {
+                pipeline: pipeline.0,
+            },
+        );
         self.push_command(
             sortkey,
             CommandInner::SetPipelineArguments {
-                arguments: arguments.0
+                arguments: arguments.0,
             },
         )
     }
 
-    pub fn draw<P: PipelineInterface<'a>>(
+    pub fn draw<P: PipelineInterface<'a, B>>(
         &mut self,
         sortkey: u64,
-        _arena: &'a Arena,
-        pipeline: GraphicsPipeline<'a, P>,
-        arguments: PipelineArguments<'a, P>,
+        arena: &'a Arena<B>,
+        pipeline: GraphicsPipeline<'a, B, P::IntoInterface>,
+        arguments: P,
         params: DrawParams,
     ) {
-
+        let arguments = arena.create_pipeline_arguments(arguments);
         self.set_pipeline(sortkey, pipeline, arguments);
         self.push_command(
             sortkey,
@@ -209,14 +217,15 @@ impl<'a> CommandBuffer<'a> {
         );
     }
 
-    pub fn draw_indexed<P: PipelineInterface<'a>>(
+    pub fn draw_indexed<P: PipelineInterface<'a, B>>(
         &mut self,
         sortkey: u64,
-        _arena: &'a Arena,
-        pipeline: GraphicsPipeline<'a, P>,
-        arguments: PipelineArguments<'a, P>,
+        arena: &'a Arena<B>,
+        pipeline: GraphicsPipeline<'a, B, P::IntoInterface>,
+        arguments: P,
         params: DrawIndexedParams,
     ) {
+        let arguments = arena.create_pipeline_arguments(arguments);
         self.set_pipeline(sortkey, pipeline, arguments);
         self.push_command(
             sortkey,
@@ -235,7 +244,7 @@ impl<'a> CommandBuffer<'a> {
 
     /// Presents the specified image to the swapchain.
     /// Might incur a copy / blit or format conversion if necessary.
-    pub fn present(&mut self, sortkey: u64, image: Image<'a>, swapchain: Swapchain<'a>) {
+    pub fn present(&mut self, sortkey: u64, image: Image<'a, B>, swapchain: Swapchain<'a, B>) {
         self.push_command(
             sortkey,
             CommandInner::Present {
@@ -247,7 +256,9 @@ impl<'a> CommandBuffer<'a> {
 }
 
 /// TODO optimize (radix sort, dense command buffer layout, separate index map)
-pub fn sort_command_buffers<'a>(cmdbufs: Vec<CommandBuffer<'a>>) -> Vec<Command<'a>> {
+pub fn sort_command_buffers<'a, B: Backend>(
+    cmdbufs: Vec<CommandBuffer<'a, B>>,
+) -> Vec<Command<'a, B>> {
     let mut fused = Vec::new();
     //let mut sortkeys = Vec::new();
     //let mut i: usize = 0;

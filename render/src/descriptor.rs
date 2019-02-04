@@ -6,19 +6,22 @@ use crate::buffer::StructuredBufferData;
 use crate::image::SampledImage;
 use crate::image::SamplerDescription;
 use crate::pipeline::ShaderStageFlags;
-use crate::handle;
 use crate::typedesc::TypeDesc;
+use crate::Backend;
 use std::marker::PhantomData;
 
 #[derive(Copy, Clone, Debug)]
 #[repr(transparent)]
-pub struct HostReference<'a, T: BufferData>(pub handle::HostReference<'a>, pub(crate) PhantomData<&'a T>);
+pub struct HostReference<'a, B: Backend, T: BufferData>(
+    pub &'a B::HostReference,
+    pub(crate) PhantomData<&'a T>,
+);
 
 /// Represents an entry (binding) in a descriptor set layout.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct DescriptorBinding<'tcx> {
     /// Binding index
-    pub binding: u32,
+    pub binding: usize,
     /// Descriptor type
     pub descriptor_type: DescriptorType,
     /// Which shader stages will see this descriptor
@@ -44,57 +47,61 @@ pub enum DescriptorType {
 
 /// A reference to a resource used by one or more shader stages in the pipeline.
 #[derive(Copy, Clone)]
-pub enum Descriptor<'a> {
+pub enum Descriptor<'a, B: Backend> {
     SampledImage {
-        img: handle::Image<'a>,
+        img: &'a B::Image,
         sampler: SamplerDescription,
     },
     Image {
-        img: handle::Image<'a>,
+        img: &'a B::Image,
     },
     Buffer {
-        buffer: handle::Buffer<'a>,
+        buffer: &'a B::Buffer,
         offset: usize,
         size: Option<usize>,
     },
-    HostReference(handle::HostReference<'a>),
+    //HostReference(HostReference<'a, B>),
     Empty,
 }
 
 /// Trait implemented by types that can be turned into descriptors.
 ///
 /// This trait is implemented by default for buffer objects, buffer slices, and images.
-pub trait DescriptorInterface<'a>: Into<Descriptor<'a>> {
+pub trait DescriptorInterface<'a, B: Backend>: Into<Descriptor<'a, B>> {
     /// Type information about the content of the data referenced by the descriptor.
     const TYPE: Option<&'static TypeDesc<'static>>;
 }
 
-impl<'a> DescriptorInterface<'a> for BufferTypeless<'a> {
+impl<'a, B: Backend> DescriptorInterface<'a, B> for BufferTypeless<'a, B> {
     const TYPE: Option<&'static TypeDesc<'static>> = None;
 }
 
-impl<'a, T: StructuredBufferData> DescriptorInterface<'a> for HostReference<'a, T> {
+/*
+impl<'a, B: Backend, T: StructuredBufferData> DescriptorInterface<'a, B> for HostReference<'a, B, T> {
     const TYPE: Option<&'static TypeDesc<'static>> = Some(<T as StructuredBufferData>::TYPE);
-}
+}*/
 
-impl<'a, T: StructuredBufferData> From<HostReference<'a, T>> for Descriptor<'a> {
-    fn from(host: HostReference<'a, T>) -> Self {
+/*
+impl<'a, B: Backend, T: StructuredBufferData> From<HostReference<'a, B, T>> for Descriptor<'a, B> {
+    fn from(host: HostReference<'a, B, T>) -> Self {
         Descriptor::HostReference(host.0)
     }
-}
+}*/
 
 // TODO: no impl for T: !BufferLayout, must use specialization
-impl<'a, T: BufferData + ?Sized + StructuredBufferData> DescriptorInterface<'a> for Buffer<'a, T> {
+impl<'a, B: Backend, T: ?Sized + StructuredBufferData> DescriptorInterface<'a, B>
+    for Buffer<'a, B, T>
+{
     // T: BufferLayout so we have type info about the contents
     const TYPE: Option<&'static TypeDesc<'static>> = Some(<T as StructuredBufferData>::TYPE);
 }
 
-impl<'a> DescriptorInterface<'a> for SampledImage<'a> {
+impl<'a, B: Backend> DescriptorInterface<'a, B> for SampledImage<'a, B> {
     const TYPE: Option<&'static TypeDesc<'static>> = None;
 }
 
-impl<'a> From<BufferTypeless<'a>> for Descriptor<'a> {
-    fn from(buffer: BufferTypeless<'a>) -> Self {
+impl<'a, B: Backend> From<BufferTypeless<'a, B>> for Descriptor<'a, B> {
+    fn from(buffer: BufferTypeless<'a, B>) -> Self {
         Descriptor::Buffer {
             buffer: buffer.0,
             offset: 0,
@@ -103,15 +110,15 @@ impl<'a> From<BufferTypeless<'a>> for Descriptor<'a> {
     }
 }
 
-impl<'a, T: BufferData + ?Sized> From<Buffer<'a, T>> for Descriptor<'a> {
-    fn from(buffer: Buffer<'a, T>) -> Self {
+impl<'a, B: Backend, T: BufferData + ?Sized> From<Buffer<'a, B, T>> for Descriptor<'a, B> {
+    fn from(buffer: Buffer<'a, B, T>) -> Self {
         // TODO pass/check type info?
         buffer.into_typeless().into()
     }
 }
 
-impl<'a, 'b> From<SampledImage<'a>> for Descriptor<'a> {
-    fn from(img: SampledImage<'a>) -> Self {
+impl<'a, 'b, B: Backend> From<SampledImage<'a, B>> for Descriptor<'a, B> {
+    fn from(img: SampledImage<'a, B>) -> Self {
         Descriptor::SampledImage {
             img: img.0,
             sampler: img.1,

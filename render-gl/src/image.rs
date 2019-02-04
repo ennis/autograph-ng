@@ -348,7 +348,7 @@ new_key_type! {
 ///
 /// It can be either a texture object or a renderbuffer object if sampling is not required.
 #[derive(Debug)]
-pub(crate) struct GlImage {
+pub struct GlImage {
     pub(crate) raw: RawImage,
     pub(crate) should_destroy: bool,
     pub(crate) alias_info: Option<AliasInfo<ImageAliasKey>>,

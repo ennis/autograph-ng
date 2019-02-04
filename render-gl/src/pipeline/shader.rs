@@ -12,7 +12,7 @@ use std::ptr;
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Debug)]
-pub(crate) struct GlShaderModule {
+pub struct GlShaderModule {
     pub(crate) obj: GLuint,
     pub(crate) stage: ShaderStageFlags,
     /// SPIR-V bytecode of this shader. If this is not None, then obj is ignored
@@ -262,6 +262,17 @@ pub fn translate_spirv_to_gl_flavor(
 
     let m = spirv::Module::from_words(spv).expect("failed to load SPIR-V module");
 
+    struct RemapEntry<'m> {
+        space: BindingSpace,
+        set: u32,
+        binding: u32,
+        iptr_set: spirv::IPtr<'m>,
+        iptr_binding: spirv::IPtr<'m>,
+        var_id: u32,
+    }
+
+    let mut to_remap = Vec::new();
+
     {
         // parse spirv
         let a = spirv::ast::Arenas::new();
@@ -292,35 +303,54 @@ pub fn translate_spirv_to_gl_flavor(
                 continue;
             };
 
-            let (iptr_ds, ds) = v
+            let (iptr_set, set) = v
                 .descriptor_set_decoration()
                 .expect("expected descriptor set decoration");
-            let (iptr_b, binding) = v.binding_decoration().expect("expected binding decoration");
-            let new_binding = desc_map.get_or_insert(ds, binding, space);
-
-            // remove descriptor set and binding, replace with GL binding
-            m.edit_remove_instruction(iptr_ds);
-            m.edit_remove_instruction(iptr_b);
-
-            // Place the new decoration where the old was before.
-            // We can't just append it to the end of the instruction stream,
-            // as this violates the logical layout of instructions mandated by the SPIR-V spec.
-            // (2.4. Logical Layout of a Module)
-            m.edit_write_instruction(
-                iptr_ds,
-                &spirv::inst::IDecorate {
-                    decoration: Decoration::Binding,
-                    params: &[new_binding.location],
-                    target_id: v.id,
-                },
-            );
-
-            /*eprintln!(
-                "mapping (set={},binding={}) to ({:?},binding={})",
-                ds, binding, space, new_binding.location
-            );*/
+            let (iptr_binding, binding) =
+                v.binding_decoration().expect("expected binding decoration");
+            to_remap.push(RemapEntry {
+                space,
+                set,
+                binding,
+                iptr_set,
+                iptr_binding,
+                var_id: v.id,
+            });
         }
         // drop AST
+    }
+
+    // sort descriptors by (set,binding)
+    to_remap.sort_by(|a, b| (a.set, a.binding).cmp(&(b.set, b.binding)));
+
+    // edit SPIR-V
+    for RemapEntry {
+        space,
+        set,
+        binding,
+        iptr_set,
+        iptr_binding,
+        var_id,
+    } in to_remap
+    {
+        let new_binding = desc_map.get_or_insert(set, binding, space);
+
+        // remove descriptor set and binding, replace with GL binding
+        m.edit_remove_instruction(iptr_set);
+        m.edit_remove_instruction(iptr_binding);
+
+        // Place the new decoration where the old was before.
+        // We can't just append it to the end of the instruction stream,
+        // as this violates the logical layout of instructions mandated by the SPIR-V spec.
+        // (2.4. Logical Layout of a Module)
+        m.edit_write_instruction(
+            iptr_set,
+            &spirv::inst::IDecorate {
+                decoration: Decoration::Binding,
+                params: &[new_binding.location],
+                target_id: var_id,
+            },
+        );
     }
 
     // apply modifications

@@ -1,5 +1,7 @@
+use crate::buffer::BufferTypeless;
+use crate::image::Image;
+use crate::Backend;
 use bitflags::bitflags;
-use crate::handle;
 
 bitflags! {
     /// Used for manual synchronization.
@@ -68,14 +70,14 @@ bitflags! {
 }
 
 #[derive(Clone, Debug)]
-pub enum MemoryBarrier<'a> {
+pub enum MemoryBarrier<'a, B: Backend> {
     Image {
-        handle: handle::Image<'a>,
+        handle: Image<'a, B>,
         src_access_mask: AccessFlags,
         dst_access_mask: AccessFlags,
     },
     Buffer {
-        handle: handle::Buffer<'a>,
+        handle: BufferTypeless<'a, B>,
         src_access_mask: AccessFlags,
         dst_access_mask: AccessFlags,
     },

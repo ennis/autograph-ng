@@ -61,10 +61,9 @@ new_key_type! {
 }
 
 #[derive(Debug)]
-pub(crate) struct GlBuffer {
+pub struct GlBuffer {
     pub(crate) raw: RawBuffer,
     pub(crate) should_destroy: bool,
     pub(crate) alias_info: Option<AliasInfo<BufferAliasKey>>,
     pub(crate) offset: usize,
 }
-

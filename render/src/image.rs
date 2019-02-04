@@ -1,19 +1,21 @@
+use crate::Backend;
 use bitflags::bitflags;
 use std::fmt;
-use crate::handle;
 
-#[derive(Copy,Clone,Debug)]
+#[derive(derivative::Derivative)]
+#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
 #[repr(transparent)]
-pub struct Image<'a>(pub handle::Image<'a>);
+pub struct Image<'a, B: Backend>(pub &'a B::Image);
 
-impl<'a> Image<'a> {
-    pub fn into_sampled(self, d: SamplerDescription) -> SampledImage<'a> {
+impl<'a, B: Backend> Image<'a, B> {
+    pub fn into_sampled(self, d: SamplerDescription) -> SampledImage<'a, B> {
         SampledImage(self.0, d)
     }
 }
 
-#[derive(Copy,Clone,Debug)]
-pub struct SampledImage<'a>(pub handle::Image<'a>, pub SamplerDescription);
+#[derive(derivative::Derivative)]
+#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+pub struct SampledImage<'a, B: Backend>(pub &'a B::Image, pub SamplerDescription);
 
 /// Dimensions of an image.
 ///
@@ -21,19 +23,11 @@ pub struct SampledImage<'a>(pub handle::Image<'a>, pub SamplerDescription);
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Dimensions {
     /// 1D image
-    Dim1d {
-        width: u32,
-    },
+    Dim1d { width: u32 },
     /// Array of 1D images
-    Dim1dArray {
-        width: u32,
-        array_layers: u32,
-    },
+    Dim1dArray { width: u32, array_layers: u32 },
     /// 2D image
-    Dim2d {
-        width: u32,
-        height: u32,
-    },
+    Dim2d { width: u32, height: u32 },
     /// Array of 2D images
     Dim2dArray {
         width: u32,
@@ -41,20 +35,11 @@ pub enum Dimensions {
         array_layers: u32,
     },
     /// 3D image
-    Dim3d {
-        width: u32,
-        height: u32,
-        depth: u32,
-    },
+    Dim3d { width: u32, height: u32, depth: u32 },
     /// Cubemap image (6 2D images)
-    Cubemap {
-        size: u32,
-    },
+    Cubemap { size: u32 },
     /// Array of cubemaps
-    CubemapArray {
-        size: u32,
-        array_layers: u32,
-    },
+    CubemapArray { size: u32, array_layers: u32 },
 }
 
 impl Dimensions {

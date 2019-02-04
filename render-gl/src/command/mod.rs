@@ -4,15 +4,16 @@ use crate::api::Gl;
 use crate::image::GlImage;
 use crate::pipeline::GlGraphicsPipeline;
 use crate::swapchain::GlSwapchain;
-use crate::HandleCast;
 use crate::ImplementationParameters;
 use autograph_render::command::Command;
 use autograph_render::command::CommandInner;
 
 mod state;
 pub use self::state::StateCache;
+use crate::backend::OpenGlBackend;
 use crate::framebuffer::GlFramebuffer;
 use crate::pipeline::GlPipelineArguments;
+use crate::pipeline::StateBlock;
 
 pub struct SubmissionContext<'a, 'rcx> {
     state_cache: &'a mut StateCache,
@@ -107,15 +108,82 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
 
     //pub fn cmd_set_attachments(&mut self, color_attachments: &[R::])
 
-    unsafe fn cmd_set_pipeline_arguments_rec(&mut self, args: &GlPipelineArguments)
-    {
-    }
+    //unsafe fn cmd_set_pipeline_arguments_rec(&mut self, args: &GlPipelineArguments) {}
 
-    fn cmd_set_pipeline_arguments(&mut self, args: &GlPipelineArguments) {
+    fn cmd_set_pipeline_arguments(&mut self, args: &GlPipelineArguments, is_root: bool) {
         let pipeline = self.current_pipeline.unwrap();
         let descriptor_map = pipeline.descriptor_map();
 
-        unimplemented!()
+        for sb in args.blocks {
+            match sb {
+                &StateBlock::Inherited(args) => {
+                    for &a in args {
+                        self.cmd_set_pipeline_arguments(a, false);
+                    }
+                }
+                &StateBlock::UniformBuffers {
+                    buffers,
+                    offsets,
+                    sizes,
+                } => {
+                    self.state_cache
+                        .set_uniform_buffers(self.gl, buffers, offsets, sizes);
+                }
+                &StateBlock::ShaderStorageBuffers {
+                    buffers,
+                    offsets,
+                    sizes,
+                } => {
+                    self.state_cache
+                        .set_shader_storage_buffers(self.gl, buffers, offsets, sizes);
+                }
+                &StateBlock::VertexBuffers {
+                    buffers,
+                    offsets,
+                    strides,
+                } => {
+                    self.state_cache
+                        .set_vertex_buffers(self.gl, buffers, offsets, strides);
+                }
+                &StateBlock::IndexBuffer {
+                    buffer,
+                    format,
+                    offset,
+                } => {
+                    self.state_cache
+                        .set_index_buffer(self.gl, buffer, offset, format);
+                }
+                &StateBlock::Textures(textures) => {
+                    self.state_cache.set_textures(self.gl, textures);
+                }
+                &StateBlock::Images(images) => {
+                    self.state_cache.set_images(self.gl, images);
+                }
+                &StateBlock::Samplers(samplers) => {
+                    self.state_cache.set_samplers(self.gl, samplers);
+                }
+                &StateBlock::RenderTarget(_) => {
+                    if is_root {
+                        panic!("RenderTarget block in root signature")
+                    }
+                }
+                &StateBlock::DepthStencilRenderTarget(_) => {
+                    if is_root {
+                        panic!("RenderTarget block in root signature")
+                    }
+                }
+                &StateBlock::Framebuffer(obj) => {
+                    self.state_cache.set_draw_framebuffer(self.gl, obj);
+                }
+                &StateBlock::Viewports(viewports) => {
+                    self.state_cache.set_viewports(self.gl, viewports);
+                }
+                &StateBlock::Scissors(_) => {
+                    //self.state_cache.set_scissors(self.gl, viewports);
+                }
+                &StateBlock::Empty => {}
+            }
+        }
 
         /*
         // recursively bind
@@ -188,10 +256,6 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
 
         // swap buffers
         swapchain.inner.present()
-    }
-
-    fn cmd_set_framebuffer(&mut self, fb: &'rcx GlFramebuffer) {
-        self.state_cache.set_draw_framebuffer(self.gl, fb.obj);
     }
 
     fn cmd_set_graphics_pipeline(&mut self, pipeline: &'rcx GlGraphicsPipeline) {
@@ -282,23 +346,23 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
         );
     }
 
-    pub unsafe fn submit_command(&mut self, command: &Command<'rcx>) {
+    pub unsafe fn submit_command(&mut self, command: &Command<'rcx, OpenGlBackend>) {
         match command.cmd {
             CommandInner::PipelineBarrier {} => {
                 // no-op on GL
             }
             CommandInner::ClearImageFloat { image, color } => {
-                self.cmd_clear_image_float(image.cast(), &color);
+                self.cmd_clear_image_float(image, &color);
             }
             CommandInner::ClearDepthStencilImage {
                 image,
                 depth,
                 stencil,
             } => {
-                self.cmd_clear_depth_stencil_image(image.cast(), depth, stencil);
+                self.cmd_clear_depth_stencil_image(image, depth, stencil);
             }
             CommandInner::SetPipelineArguments { arguments } => {
-                self.cmd_set_pipeline_arguments(arguments.cast());
+                self.cmd_set_pipeline_arguments(arguments, true);
             }
             /*CommandInner::SetDescriptorSets {
                 ref descriptor_sets,
@@ -316,9 +380,9 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
                 self.cmd_set_index_buffer(index_buffer.cast(), offset, ty);
             }*/
             CommandInner::DrawHeader { pipeline } => {
-                self.cmd_set_graphics_pipeline(pipeline.cast());
+                self.cmd_set_graphics_pipeline(pipeline);
             }
-           /*CommandInner::SetScissors { .. } => {}
+            /*CommandInner::SetScissors { .. } => {}
             //CommandInner::SetAllScissors { scissor } => {}
             CommandInner::SetViewports { ref viewports } => {
                 self.cmd_set_viewports(viewports);
@@ -347,7 +411,7 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
                 first_instance,
             ),
             CommandInner::Present { image, swapchain } => {
-                self.cmd_present(image.cast(), swapchain.cast());
+                self.cmd_present(image, swapchain);
             }
         }
     }

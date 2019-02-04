@@ -1,11 +1,9 @@
 #![feature(const_type_id)]
 #![feature(proc_macro_hygiene)]
-use autograph_render::buffer::Buffer;
 use autograph_render::buffer::StructuredBufferData;
 use autograph_render::command::DrawIndexedParams;
 use autograph_render::command::DrawParams;
 use autograph_render::format::Format;
-use autograph_render::framebuffer::Framebuffer;
 use autograph_render::glm;
 use autograph_render::image::ImageUsageFlags;
 use autograph_render::image::MipmapsCount;
@@ -15,7 +13,6 @@ use autograph_render::pipeline::ColorBlendAttachmentState;
 use autograph_render::pipeline::ColorBlendAttachments;
 use autograph_render::pipeline::ColorBlendState;
 use autograph_render::pipeline::DepthStencilState;
-use autograph_render::pipeline::GraphicsPipeline;
 use autograph_render::pipeline::GraphicsPipelineCreateInfo;
 use autograph_render::pipeline::GraphicsShaderStages;
 use autograph_render::pipeline::InputAssemblyState;
@@ -30,7 +27,6 @@ use autograph_render::pipeline::ViewportState;
 use autograph_render::pipeline::Viewports;
 use autograph_render::vertex::VertexData;
 use autograph_render::AliasScope;
-use autograph_render::Arena;
 use autograph_render_boilerplate::*;
 use log::{debug, info, warn};
 use lyon::extra::rust_logo::build_logo_path;
@@ -48,12 +44,19 @@ use lyon::tessellation::StrokeOptions;
 use lyon::tessellation::StrokeTessellator;
 use lyon::tessellation::StrokeVertex;
 use std::env;
-use autograph_render::image::Image;
 
 static BACKGROUND_VERT: &[u8] = include_shader!("background.vert");
 static BACKGROUND_FRAG: &[u8] = include_shader!("background.frag");
 static PATH_VERT: &[u8] = include_shader!("path.vert");
 static PATH_FRAG: &[u8] = include_shader!("path.frag");
+
+type Backend = autograph_render_gl::OpenGlBackend;
+type Arena<'a> = autograph_render::Arena<'a, Backend>;
+type Buffer<'a, T> = autograph_render::buffer::Buffer<'a, Backend, T>;
+type BufferTypeless<'a> = autograph_render::buffer::BufferTypeless<'a, Backend>;
+type Image<'a> = autograph_render::image::Image<'a, Backend>;
+type GraphicsPipeline<'a, T> = autograph_render::pipeline::GraphicsPipeline<'a, Backend, T>;
+type PipelineArguments<'a, T> = autograph_render::pipeline::PipelineArguments<'a, Backend, T>;
 
 //--------------------------------------------------------------------------------------------------
 // Shader stuff
@@ -97,22 +100,22 @@ struct BackgroundParams {
     zoom: f32,
 }
 
-
 #[derive(PipelineInterface)]
-struct RenderTargets<'a>
-{
+#[pipeline(backend = "Backend")]
+struct RenderTargets<'a> {
     #[pipeline(render_target)]
     color_target: Image<'a>,
+    #[pipeline(viewport)]
+    viewport: Viewport,
 }
 
 #[derive(PipelineInterface)]
+#[pipeline(backend = "Backend")]
 struct Background<'a> {
-    #[pipeline(framebuffer)]
-    framebuffer: Framebuffer<'a>,
+    #[pipeline(inherit)]
+    render_targets: PipelineArguments<'a, RenderTargets<'a>>,
     #[pipeline(uniform_buffer)]
     params: Buffer<'a, BackgroundParams>,
-    #[pipeline(viewport)]
-    viewport: Viewport,
     #[pipeline(vertex_buffer)]
     vertex_buffer: Buffer<'a, [Vertex2D]>,
 }
@@ -133,13 +136,16 @@ struct PrimitiveArray {
 }
 
 #[derive(PipelineInterface)]
+#[pipeline(backend = "Backend")]
 struct PathRendering<'a> {
+    #[pipeline(inherit)]
+    render_targets: PipelineArguments<'a, RenderTargets<'a>>,
+    // set=0 binding=0
     #[pipeline(uniform_buffer)]
     params: Buffer<'a, BackgroundParams>,
+    // set=0 binding=1
     #[pipeline(uniform_buffer)]
     primitives: Buffer<'a, Primitive>,
-    #[pipeline(viewport)]
-    viewport: Viewport,
     #[pipeline(vertex_buffer)]
     vertex_buffer: Buffer<'a, [VertexPath]>,
     #[pipeline(index_buffer)]
@@ -178,7 +184,7 @@ fn create_pipelines<'a>(arena: &'a Arena) -> Pipelines<'a> {
         },
     };
 
-    let background = arena.create_graphics_pipeline(&background, &PipelineLayout::default());
+    let background = arena.create_graphics_pipeline(&background, None);
 
     let path = GraphicsPipelineCreateInfo {
         shader_stages: &GraphicsShaderStages {
@@ -206,7 +212,7 @@ fn create_pipelines<'a>(arena: &'a Arena) -> Pipelines<'a> {
         },
     };
 
-    let path = arena.create_graphics_pipeline(&path, &PipelineLayout::default());
+    let path = arena.create_graphics_pipeline(&path, None);
 
     Pipelines { background, path }
 }
@@ -320,7 +326,10 @@ fn test_simple() {
             ImageUsageFlags::COLOR_ATTACHMENT,
         );
 
-        let framebuffer = arena_1.create_framebuffer(&[color_buffer], None);
+        let render_targets = arena_1.create_pipeline_arguments(RenderTargets {
+            color_target: color_buffer,
+            viewport: (w, h).into(),
+        });
 
         let (left, top, right, bottom) = (-1.0, 1.0, 1.0, -1.0);
 
@@ -367,18 +376,13 @@ fn test_simple() {
                 zoom: 5.0,
             });
 
-            let background_descriptor_set = BackgroundDescriptorSet {
-                params: background_params,
-            };
-
             cmdbuf.draw(
                 0x0,
                 &arena_2,
                 pipelines.background,
-                &BackgroundPipeline {
-                    framebuffer,
-                    descriptor_set: background_descriptor_set,
-                    viewport: (w, h).into(),
+                Background {
+                    render_targets,
+                    params: background_params,
                     vertex_buffer,
                 },
                 DrawParams {
@@ -391,39 +395,21 @@ fn test_simple() {
 
             //----------------------------------------------------------------------------------
             // Draw path
-            let prim_fill = Primitive {
-                color: glm::vec4(1.0, 1.0, 1.0, 1.0),
-                z_index: 0,
-                width: 0.0,
-                translate: glm::vec2(-70.0, -70.0),
-            };
-
-            let prim_stroke = Primitive {
-                color: glm::vec4(0.0, 0.0, 0.0, 1.0),
-                z_index: 0,
-                width: 1.0,
-                translate: glm::vec2(-70.0, -70.0),
-            };
-
-            let prim_fill = PathDescriptorSet {
-                params: background_params,
-                primitives: arena_2.upload(&prim_fill),
-            };
-
-            let prim_stroke = PathDescriptorSet {
-                params: background_params,
-                primitives: arena_2.upload(&prim_stroke),
-            };
 
             // fill
             cmdbuf.draw_indexed(
                 0x0,
                 &arena_2,
                 pipelines.path,
-                &PathPipeline {
-                    descriptor_set: prim_fill,
-                    framebuffer,
-                    viewport: (w, h).into(),
+                PathRendering {
+                    render_targets,
+                    params: background_params,
+                    primitives: arena_2.upload(&Primitive {
+                        color: glm::vec4(1.0, 1.0, 1.0, 1.0),
+                        z_index: 0,
+                        width: 0.0,
+                        translate: glm::vec2(-70.0, -70.0),
+                    }),
                     vertex_buffer: fill_path.vertex_buffer,
                     index_buffer: fill_path.index_buffer,
                 },
@@ -441,10 +427,15 @@ fn test_simple() {
                 0x0,
                 &arena_2,
                 pipelines.path,
-                &PathPipeline {
-                    descriptor_set: prim_stroke,
-                    framebuffer,
-                    viewport: (w, h).into(),
+                PathRendering {
+                    render_targets,
+                    params: background_params,
+                    primitives: arena_2.upload(&Primitive {
+                        color: glm::vec4(0.0, 0.0, 0.0, 1.0),
+                        z_index: 0,
+                        width: 1.0,
+                        translate: glm::vec2(-70.0, -70.0),
+                    }),
                     vertex_buffer: stroke_path.vertex_buffer,
                     index_buffer: stroke_path.index_buffer,
                 },

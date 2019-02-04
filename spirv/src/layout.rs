@@ -1,6 +1,6 @@
-use std::cmp::max;
-use crate::TypeDesc;
 use crate::PrimitiveType;
+use crate::TypeDesc;
+use std::cmp::max;
 
 //--------------------------------------------------------------------------------------------------
 // yet another copy of the align offset function
@@ -25,17 +25,18 @@ fn round_up(value: usize, multiple: usize) -> usize {
 }
 
 /// TODO more unit testing!
-pub struct Std140AlignAndSize
-{
+pub struct Std140AlignAndSize {
     pub align: usize,
     /// More precisely, "offset to next member"
     pub size: usize,
 }
 
-impl Std140AlignAndSize
-{
+impl Std140AlignAndSize {
     pub fn of_array(elemty: &TypeDesc, arraylen: usize) -> Std140AlignAndSize {
-        let Std140AlignAndSize { align: elem_align, size: elem_size } = Std140AlignAndSize::of(elemty);
+        let Std140AlignAndSize {
+            align: elem_align,
+            size: elem_size,
+        } = Std140AlignAndSize::of(elemty);
         // alignment = column type align rounded up to vec4 align (16 bytes)
         let base_align = round_up(elem_align, 16);
         let stride = elem_size + align_offset(elem_size, elem_align);
@@ -43,7 +44,10 @@ impl Std140AlignAndSize
         // actually the spec says nothing about the 'size' of an element, only about the alignment
         // of the next element in the structure.
         let array_size = round_up(arraylen * stride, base_align);
-        Std140AlignAndSize { align: base_align, size: array_size }
+        Std140AlignAndSize {
+            align: base_align,
+            size: array_size,
+        }
     }
 
     /// returns true if round-up needed after (for items following structures)
@@ -56,11 +60,21 @@ impl Std140AlignAndSize
                 Std140AlignAndSize { align: 4, size: 4 }
             }
             TypeDesc::Vector(primty, num_components) => {
-                let Std140AlignAndSize { size: n, .. } = Std140AlignAndSize::of(&TypeDesc::Primitive(primty));
+                let Std140AlignAndSize { size: n, .. } =
+                    Std140AlignAndSize::of(&TypeDesc::Primitive(primty));
                 match num_components {
-                    2 => Std140AlignAndSize { align: 2 * n, size: 2 * n },
-                    3 => Std140AlignAndSize { align: 4 * n, size: 3 * n },
-                    4 => Std140AlignAndSize { align: 4 * n, size: 4 * n },
+                    2 => Std140AlignAndSize {
+                        align: 2 * n,
+                        size: 2 * n,
+                    },
+                    3 => Std140AlignAndSize {
+                        align: 4 * n,
+                        size: 3 * n,
+                    },
+                    4 => Std140AlignAndSize {
+                        align: 4 * n,
+                        size: 4 * n,
+                    },
                     _ => panic!("unsupported vector size"),
                 }
             }
@@ -75,21 +89,23 @@ impl Std140AlignAndSize
             },
             TypeDesc::Struct(layout) => {
                 /* If the member is a structure, the base alignment of the structure is N,
-                    where N is the largest base alignment value of any of its members,
-                    and rounded up to the base alignment of a vec4.
-                    The individual members of this sub-structure are then assigned offsets by applying this set of rules recursively,
-                    where the base offset of the first member of the sub-structure is equal to the aligned offset of the structure.
-                    The structure may have padding at the end;
-                    the base offset of the member following the sub-structure is rounded up to the next multiple of the base alignment of the structure.
-                    */
+                where N is the largest base alignment value of any of its members,
+                and rounded up to the base alignment of a vec4.
+                The individual members of this sub-structure are then assigned offsets by applying this set of rules recursively,
+                where the base offset of the first member of the sub-structure is equal to the aligned offset of the structure.
+                The structure may have padding at the end;
+                the base offset of the member following the sub-structure is rounded up to the next multiple of the base alignment of the structure.
+                */
                 // TODO: zero-sized structures?
-                let n = layout.fields.iter().map(|(_,mty)| Std140AlignAndSize::of(mty).align).max().unwrap_or(0);
+                let n = layout
+                    .fields
+                    .iter()
+                    .map(|(_, mty)| Std140AlignAndSize::of(mty).align)
+                    .max()
+                    .unwrap_or(0);
                 if n == 0 {
                     // skip, no members
-                    return Std140AlignAndSize {
-                        align: 0,
-                        size: 0,
-                    };
+                    return Std140AlignAndSize { align: 0, size: 0 };
                 }
 
                 // round up to base alignment of vec4
@@ -104,10 +120,7 @@ impl Std140AlignAndSize
                 // round up total size to base align
                 let size = round_up(size, n);
 
-                Std140AlignAndSize {
-                    align: n,
-                    size,
-                }
+                Std140AlignAndSize { align: n, size }
             }
             ty => panic!("unsupported type: {:?}", ty),
         }

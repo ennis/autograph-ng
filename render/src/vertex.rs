@@ -5,6 +5,7 @@ use crate::format::Format;
 use crate::typedesc::PrimitiveType;
 use crate::typedesc::TypeDesc;
 
+use crate::Backend;
 pub use autograph_render_macros::VertexData;
 
 /// Describes the type of indices contained in an index buffer.
@@ -36,9 +37,9 @@ pub struct VertexLayout<'tcx> {
 /// Descriptor for a vertex buffer.
 /// TODO support host references.
 #[derive(Copy, Clone, Debug)]
-pub struct VertexBufferDescriptor<'a, 'tcx> {
+pub struct VertexBufferDescriptor<'a, 'tcx, B: Backend> {
     /// Buffer containing vertex data.
-    pub buffer: BufferTypeless<'a>,
+    pub buffer: BufferTypeless<'a, B>,
     /// Layout of vertex data.
     pub layout: &'tcx VertexLayout<'tcx>,
     /// Offset to the start of vertex data in the buffer.
@@ -70,9 +71,9 @@ pub unsafe trait VertexData: BufferData {
 
 /// Descriptor for an index buffer.
 #[derive(Copy, Clone, Debug)]
-pub struct IndexBufferDescriptor<'a> {
+pub struct IndexBufferDescriptor<'a, B: Backend> {
     /// Buffer containing index data.
-    pub buffer: BufferTypeless<'a>,
+    pub buffer: BufferTypeless<'a, B>,
     /// Format of indices.
     pub format: IndexFormat,
     /// Offset to the start of index data in the buffer.
@@ -85,20 +86,22 @@ pub unsafe trait IndexData: BufferData {
     const FORMAT: IndexFormat;
 }
 
-pub trait VertexBufferInterface<'a, 'tcx>: Into<VertexBufferDescriptor<'a, 'tcx>> {
+pub trait VertexBufferInterface<'a, 'tcx, B: Backend>:
+    Into<VertexBufferDescriptor<'a, 'tcx, B>>
+{
     type Vertex: VertexData;
 }
 
-pub trait IndexBufferInterface<'a>: Into<IndexBufferDescriptor<'a>> {
+pub trait IndexBufferInterface<'a, B: Backend>: Into<IndexBufferDescriptor<'a, B>> {
     type Index: IndexData;
 }
 
 // typed buffer -> vertex buffer descriptor
-impl<'a, 'tcx, T> From<Buffer<'a, [T]>> for VertexBufferDescriptor<'a, 'tcx>
+impl<'a, 'tcx, B: Backend, T> From<Buffer<'a, B, [T]>> for VertexBufferDescriptor<'a, 'tcx, B>
 where
     T: VertexData,
 {
-    fn from(buf: Buffer<'a, [T]>) -> Self {
+    fn from(buf: Buffer<'a, B, [T]>) -> Self {
         VertexBufferDescriptor {
             offset: 0,
             buffer: buf.into(),
@@ -108,11 +111,8 @@ where
 }
 
 // typed buffer -> index buffer descriptor
-impl<'a, T> From<Buffer<'a, [T]>> for IndexBufferDescriptor<'a>
-where
-    T: IndexData,
-{
-    fn from(buf: Buffer<'a, [T]>) -> Self {
+impl<'a, B: Backend, T: IndexData> From<Buffer<'a, B, [T]>> for IndexBufferDescriptor<'a, B> {
+    fn from(buf: Buffer<'a, B, [T]>) -> Self {
         IndexBufferDescriptor {
             offset: 0,
             buffer: buf.into(),
@@ -121,17 +121,13 @@ where
     }
 }
 
-impl<'a, 'tcx, T> VertexBufferInterface<'a, 'tcx> for Buffer<'a, [T]>
-where
-    T: VertexData,
+impl<'a, 'tcx, B: Backend, T: VertexData> VertexBufferInterface<'a, 'tcx, B>
+    for Buffer<'a, B, [T]>
 {
     type Vertex = T;
 }
 
-impl<'a, T> IndexBufferInterface<'a> for Buffer<'a, [T]>
-where
-    T: IndexData,
-{
+impl<'a, B: Backend, T: IndexData> IndexBufferInterface<'a, B> for Buffer<'a, B, [T]> {
     type Index = T;
 }
 
