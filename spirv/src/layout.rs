@@ -1,6 +1,5 @@
 use crate::PrimitiveType;
 use crate::TypeDesc;
-use std::cmp::max;
 
 //--------------------------------------------------------------------------------------------------
 // yet another copy of the align offset function

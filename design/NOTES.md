@@ -1644,3 +1644,216 @@ struct P1 {
     
 #### Pipeline argument blocks
 - small bits of pipeline arguments
+
+#### Pipeline signatures and root pipeline signatures
+- Signatures are opaque objects for the backend
+- Must do validation on SignatureDescriptions
+- dynamic pipelines?
+    - SignatureDescription as parameter
+
+- assume that creating a PipelineSignature is a costly operation
+
+- PipelineSignatures can be shared between multiple graphics pipelines, so don't let the backend create it from a description
+    - in vk => descriptor set layouts, can be shared between pipelines
+    - actually, let the backend create it from a description (it can handle de-duplication via typeids)
+        - but: dynamically generated layouts?
+- Yet, at pipeline creation time, must have the description of the signature so that it can be validated
+    - keep a backref to the description used to create it
+    - same as SPIR-V shaders
+- alternative
+    - create on-the-fly?
+    - no
+    
+- PipelineArguments are always passed into blocks
+    - to create a block, must have a ref to the signature
+        - and to verify the interface, must have a ref to the description
+            - not really necessary (the backend can check)
+    - query by typeid from cache OR get from pipeline
+        - get from pipeline => must have a backref to signature, which requires a lifetime, which breaks assoc types
+            - store root signature alongside pipeline? (same lifetime anyway)
+            - cannot get away with transmute to static because it's not dropless (ref to signature might not be valid anymore when we drop)
+            - just use a *const
+            
+- Problem 1: Signature description must be available at pipeline creation time, but pipelines are not created at the same time as signatures
+    - because can reuse signatures for multiple pipelines
+- Solution A:
+    - ref to signature description, like SPIR-V shaders
+    - noisy
+- Solution B: create signatures at the same time
+    - issue: what about non-static signature descriptions (generated dynamically)
+        - can't reuse
+    - also: unnecessary cache lookups?
+- Solution C: trait for backend signatures to get the original description
+    - requires owned copy of description
+    - puts burden of maintenance on the backend
+    
+- Discrepancy between create info of pipeline signatures (provide sub-signature descriptions) VS graphics pipelines (provide baked signatures)
+    - can't reuse sub-signatures either 
+    - Solution B avoids this discrepancy 
+    
+- In most cases, description available statically via type
+    - only in dynamic cases the description is unavailable via type
+
+- modify PipelineInterface
+    - static: not directly create_info
+    - create via backend, specify type
+        - if cached in backend, return cached, otherwise call create_signature on pipelineinterface
+        - visitor calls 
+        
+- inheriting from a dynamically generated signature should be possible
+
+```
+let d = SignatureBuilder::new();
+d.sub_signature(&PipelineSignature);
+d.uniform_buffer(...);
+```
+
+- PipelineSignature is a trait
+    - inner()
+    - get_desc() -> &'b PipelineSignatureDesc
+- handle both static and owned case
+ 
+- creating a pipeline, statically-known case:
+    - enter create_graphics_pipeline<T>
+    - get signature tree from T
+    
+- Pipeline signatures bundled with description (like ShaderModules)
+
+
+- Problem 2:
+    - must have signature to create a block
+    - pipeline knows signature
+    - bundle root signature with pipelines
+        - pipeline = 3 pointers 
+            - pipeline object (1)
+            - root signature bundle
+                - root signature (2)
+                - root description (3)
+            - if dynamic, need root description alive
+                - alloc root description somewhere?
+                - signature builder must be in arena
+                - root signature bundle holds backrefs to all signatures
+
+- PipelineInterface
+    - create_signature() -> PipelineSignatureTypeless
+    - into_arguments()
+    
+- cache pipeline signatures in frontend
+    - why in backend?
+        - lifetime issues?
+        - need a location for storing a &'a PipelineSignature
+        - certainly not in the Arena itself
+        
+- underlying issues: 
+    1. creation data for signatures and shaders is needed for validation, but is not available *to the frontend* at validation time
+        - actually it is available in many cases (static info)
+    2. creation of signatures and shaders cannot happen simultaneously with validation because they are costly operations, the result of which (signatures and shaders)
+        may be shared across multiple pipelines.
+    3. it is possible to cache shaders and signatures to create during validation with sharing, but it's impractical 
+    4. Validation is done in the frontend and shared across all backends
+    5. Creation data for signatures is a tree (include info from sub-signatures)
+    
+- possible solution: move validation in backend
+    - backend knows about the signatures
+    - also, backend may have additional restrictions on what it considers to be a "valid pipeline"
+    
+- Solutions
+    1. Move validation in backend
+        - no need to keep refs to create_info, but backend must copy them
+    2. Keep refs to create_infos
+        - borrows data for a long time: avoid?
+        - a long time = since the pipeline arguments need the signature, until all pipeline arguments are created
+            - and since the graphics pipeline has a signature => for the whole lifetime of the graphics pipeline
+    3. Have backend objects copy create_infos, but use them in frontend
+    4. Have the *frontend* copy the create_infos in a privately owned arena
+        - basically 2 but without borrows
+      
+- between solutions 1,3,4:
+    - 4: the frontend may copy the create_infos, but the backend may also do the same
+        - if we're always going to copy the create_infos, at least do it in one place only
+    - 1: too much code duplication?
+        - can put fine-grained validation code in render, but will need the create_info anyways
+
+#### Targeting DX12
+- pipeline signatures -> DX12 root signatures + other stuff
+- validation?
+
+
+#### Pipeline signatures & friends: going higher-level?
+- validation in backend
+- what if source is not always SPIR-V?
+    - translate to GLSL? HLSL?
+    - if no translation is possible, then validation must be done through API-specific reflection mechanisms
+-> for better extensibility, and compatibility with existing systems, and performance (avoiding round-trips), 
+    provide a way to use native shader code
+-> put validation in backend?
+    - no refs to create_infos
+    - must deep copy descriptors, and also typedescs
+        - if it's going to be done in every backend anyway, do it in the frontend
+-> extract arena code into autograph-common lib
+
+-> Copying typedescs for no reason (when descs are static) is inefficient
+   
+-> Final plan: 
+    - Pass pointer to description to backend with arena lifetime
+    - caller is responsible for allocating stuff in the correct place
+    - expose API for dropless arena allocation
+    
+-> Q: Does creating a signature borrows sub-signatures?
+    - Vulkan: signature => descriptor set layouts (and pools)
+        - keep alive
+
+-> Unfortunately, keeping ref in backend is impossible (too unsafe)
+
+-> Final decision is to either:
+    - copy in backend
+    - copy in frontend
+    - reference in frontend
+    
+-> Reference in frontend, with wrapper types or traits
+    - PipelineSignature
+    - trait DescribedPipelineSignature
+        - full desc tree available 
+    - trait DescribedGraphicsPipeline
+        - signature description available
+        - signature available (or queryable by typeid)
+        
+FINAL DESIGN: 
+        
+Signature trait
+    - raw object 
+    - signature description tree
+    impl for TypedSignature<T>
+    impl for DynamicSignature<T>
+    
+Argument trait (optional)
+    - raw obj
+    - signature
+        
+GraphicsPipeline trait
+    - raw object
+    - root signature description
+    - root signature
+    impl for TypedGraphicsPipeline<T>
+    impl for DynamicGraphicsPipeline
+
+#### Rename PipelineSignature -> Signature, PipelineArguments -> Arguments
+- no need for too much verbosity
+
+        
+#### Issue: GraphicsPipeline must hold a ref to their signature, so that there is no need to look it up every time
+- but no ATCs, so leads to very unsafe code in backend
+- cheating lack of ATCs with 'static refs is dangerous
+    - can misuse in backend
+    
+#### Note: in GlArena, storing a *const Signature in GlGraphicsPipeline is unsafe
+- GlGraphicsPipeline is not dropless, so no guarantee that Signature still alive on drop
+
+
+#### Reducing redundancy in the backend
+- must pass the root signature description twice: when creating the signature, and when creating the graphics pipeline
+- do not assume that the backend has to store the signature description
+    -> self-contained
+- create root signature and graphics pipeline at the same time
+    - don't share root signatures
+    - but can share inherited signatures

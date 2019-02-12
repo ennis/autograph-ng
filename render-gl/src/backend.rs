@@ -27,7 +27,7 @@ use crate::sync::GpuSyncObject;
 use crate::sync::Timeline;
 use crate::util::SyncArena;
 use crate::util::SyncDroplessArena;
-use crate::util::SyncDroplessArenaHashMap;
+//use crate::util::SyncDroplessArenaHashMap;
 use crate::AliasInfo;
 use crate::ImplementationParameters;
 use autograph_render::command::Command;
@@ -37,9 +37,6 @@ use autograph_render::framebuffer::RenderTargetDescriptor;
 use autograph_render::image::Dimensions;
 use autograph_render::image::ImageUsageFlags;
 use autograph_render::image::MipmapsCount;
-use autograph_render::pipeline::GraphicsPipelineCreateInfoTypeless;
-use autograph_render::pipeline::PipelineArgumentsTypeless;
-use autograph_render::pipeline::PipelineSignatureDescription;
 use autograph_render::pipeline::ScissorRect;
 use autograph_render::pipeline::ShaderStageFlags;
 use autograph_render::pipeline::Viewport;
@@ -49,7 +46,6 @@ use autograph_render::AliasScope;
 use autograph_render::Backend;
 use autograph_render::Instance;
 use config::Config;
-use std::any::TypeId;
 use std::collections::VecDeque;
 use std::ffi::CStr;
 use std::mem;
@@ -59,6 +55,9 @@ use std::slice;
 use std::str;
 use std::sync::Mutex;
 use std::time::Duration;
+use autograph_render::pipeline::GraphicsPipelineCreateInfo;
+use autograph_render::pipeline::SignatureDescription;
+use autograph_render::pipeline::BareArguments;
 
 //--------------------------------------------------------------------------------------------------
 extern "system" fn debug_callback(
@@ -94,8 +93,8 @@ impl Backend for OpenGlBackend {
     type Buffer = GlBuffer;
     type ShaderModule = GlShaderModule;
     type GraphicsPipeline = GlGraphicsPipeline;
-    type PipelineSignature = GlPipelineSignature<'static>; // cheat
-    type PipelineArguments = GlPipelineArguments<'static>; // cheat
+    type Signature = GlPipelineSignature;
+    type Arguments = GlPipelineArguments;
     type HostReference = ();
 }
 
@@ -105,7 +104,7 @@ pub struct GlArena {
     pub(crate) buffers: SyncArena<GlBuffer>,
     pub(crate) images: SyncArena<GlImage>,
     pub(crate) shader_modules: SyncArena<GlShaderModule>,
-    //pub(crate) pipeline_signatures: SyncArena<GlPipelineSignature<'a>>,
+    pub(crate) signatures: SyncArena<GlPipelineSignature>,
     //pub(crate) pipeline_arguments: SyncArena<GlPipelineArguments<'a>>,
     pub(crate) graphics_pipelines: SyncArena<GlGraphicsPipeline>,
     pub(crate) framebuffers: SyncArena<GlFramebuffer>,
@@ -120,7 +119,7 @@ impl GlArena {
             buffers: SyncArena::new(),
             images: SyncArena::new(),
             shader_modules: SyncArena::new(),
-            //pipeline_signatures: SyncArena::new(),
+            signatures: SyncArena::new(),
             //pipeline_arguments: SyncArena::new(),
             graphics_pipelines: SyncArena::new(),
             framebuffers: SyncArena::new(),
@@ -134,14 +133,16 @@ impl GlArena {
 pub(crate) type ImagePool = AliasPool<ImageDescription, ImageAliasKey, RawImage>;
 //pub(crate) type BufferPool = AliasPool<BufferDescription, BufferAliasKey, RawBuffer>;
 
+/*
 pub(crate) struct PipelineSignatureCache {
     /// 'static because it's self-referential: signatures may refer to other signatures in the
     /// same arena. Since signatures are dropless, it should be OK.
     ///
     /// However, this means that accessing the cache directly is unsafe. Must use a wrapper method.
     cache: SyncDroplessArenaHashMap<TypeId, GlPipelineSignature<'static>>,
-}
+}*/
 
+/*
 impl PipelineSignatureCache {
     pub(crate) fn new() -> PipelineSignatureCache {
         PipelineSignatureCache {
@@ -164,11 +165,13 @@ impl PipelineSignatureCache {
             // extend lifetime
             unsafe {
                 mem::transmute::<_, _>(sig)
-                //*(&sig as *const GlPipelineSignature)
+                (&sig as *const GlPipelineSignature)
             }
         })
     }
 }
+
+*/
 
 ///
 struct Resources {
@@ -303,7 +306,7 @@ pub struct OpenGlInstance {
     frame_num: Mutex<u64>, // replace with AtomicU64 once stabilized
     state_cache: Mutex<StateCache>,
     sampler_cache: Mutex<SamplerCache>,
-    pipeline_signature_cache: PipelineSignatureCache,
+    //pipeline_signature_cache: PipelineSignatureCache,
     //desc_set_layout_cache: SyncArenaHashMap<TypeId, GlDescriptorSetLayout>,
     limits: ImplementationParameters,
     //window: GlWindow,
@@ -356,7 +359,6 @@ impl OpenGlInstance {
         let state_cache = StateCache::new(&limits);
 
         OpenGlInstance {
-            pipeline_signature_cache: PipelineSignatureCache::new(),
             rsrc: Mutex::new(Resources::new(upload_buffer_size as usize)),
             timeline: Mutex::new(timeline),
             frame_num: Mutex::new(1),
@@ -538,17 +540,19 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
     unsafe fn create_graphics_pipeline<'a, 'b>(
         &self,
         arena: &'a GlArena,
-        create_info: &GraphicsPipelineCreateInfoTypeless<'a, 'b, OpenGlBackend>,
+        root_signature: &'a GlPipelineSignature,
+        root_signature_description: &SignatureDescription,
+        create_info: &GraphicsPipelineCreateInfo<'a, 'b, OpenGlBackend>,
     ) -> &'a GlGraphicsPipeline {
-        create_graphics_pipeline_internal(&self.gl, arena, create_info)
+        create_graphics_pipeline_internal(&self.gl, arena, root_signature, root_signature_description, create_info)
     }
 
     //----------------------------------------------------------------------------------------------
-    unsafe fn create_pipeline_arguments<'a, 'b>(
+    unsafe fn create_arguments<'a, 'b>(
         &self,
         arena: &'a GlArena,
         signature: &'a GlPipelineSignature,
-        arguments: impl IntoIterator<Item = PipelineArgumentsTypeless<'a, OpenGlBackend>>,
+        arguments: impl IntoIterator<Item = BareArguments<'a, OpenGlBackend>>,
         descriptors: impl IntoIterator<Item = Descriptor<'a, OpenGlBackend>>,
         vertex_buffers: impl IntoIterator<Item = VertexBufferDescriptor<'a, 'b, OpenGlBackend>>,
         index_buffer: Option<IndexBufferDescriptor<'a, OpenGlBackend>>,
@@ -556,8 +560,8 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
         depth_stencil_render_target: Option<RenderTargetDescriptor<'a, OpenGlBackend>>,
         viewports: impl IntoIterator<Item = Viewport>,
         scissors: impl IntoIterator<Item = ScissorRect>,
-    ) -> &'a GlPipelineArguments<'static> {
-        let args = arena.other.alloc(GlPipelineArguments::new(
+    ) -> &'a GlPipelineArguments {
+        GlPipelineArguments::new(
             arena,
             &self.gl,
             &mut self.sampler_cache.lock().unwrap(),
@@ -570,24 +574,22 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
             depth_stencil_render_target,
             viewports,
             scissors,
-        ));
-
-        mem::transmute(args)
+        )
     }
 
-    unsafe fn create_pipeline_signature<'a, 'r: 'a>(
-        &'r self,
+    unsafe fn create_signature<'a>(
+        &'a self,
         arena: &'a GlArena,
-        create_info: &PipelineSignatureDescription,
-    ) -> &'a GlPipelineSignature<'static> {
-        let sig = arena.other.alloc(GlPipelineSignature::new(
+        inherited: &[&'a GlPipelineSignature],
+        description: &SignatureDescription,
+    ) -> &'a GlPipelineSignature {
+        let sig = GlPipelineSignature::new(
             arena,
-            &self.pipeline_signature_cache,
-            create_info,
-        ));
+            inherited,
+            description,
+        );
 
-        // extend lifetime of signature (remove once rust has ATCs)
-        mem::transmute(sig)
+        sig
     }
 
     //----------------------------------------------------------------------------------------------

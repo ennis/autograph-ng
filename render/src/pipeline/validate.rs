@@ -9,6 +9,12 @@ use autograph_spirv::TypeDesc;
 use log::warn;
 use std::error;
 use std::fmt;
+use crate::Backend;
+use crate::pipeline::PipelineSignatureTypeless;
+use crate::pipeline::PipelineSignatureDescription;
+use crate::framebuffer::FragmentOutputDescription;
+use crate::vertex::VertexLayout;
+use crate::vertex::IndexFormat;
 
 #[derive(Copy, Clone, Debug)]
 pub enum InterfaceItem {
@@ -35,6 +41,7 @@ pub enum InterfaceMismatchError {
 pub enum ValidationError {
     InvalidSpirV(spirv::ParseError),
     InterfaceMismatch(Vec<InterfaceMismatchError>),
+    InvalidRootSignature(Vec<String>)
 }
 
 impl fmt::Display for ValidationError {
@@ -47,12 +54,25 @@ impl fmt::Display for ValidationError {
                     writeln!(f, "{:?}", err)?;
                 }
             }
+            ValidationError::InvalidRootSignature(errs) => {
+                writeln!(f, "invalid root signature:")?;
+                for err in errs.iter() {
+                    writeln!(f, "{:?}", err)?;
+                }
+            }
         }
         Ok(())
     }
 }
 
-impl error::Error for ValidationError {}
+impl error::Error for ValidationError {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            ValidationError::InvalidSpirV(ref err) => Some(err),
+            _ => None,
+        }
+    }
+}
 
 fn unwrap_ptr_type<'a>(ptr: &'a TypeDesc<'a>) -> &'a TypeDesc<'a> {
     if let &TypeDesc::Pointer(ty) = ptr {
@@ -90,101 +110,204 @@ fn validate_data_type(
     }
 }
 
-type DescriptorValidationMap<'a> = Vec<Vec<(&'a DescriptorBinding<'a>, bool)>>;
 
-fn find_descriptor<'a>(
-    map: &'_ mut DescriptorValidationMap<'a>,
-    set: u32,
-    binding: u32,
-    interface: InterfaceItem,
-) -> Result<&'a DescriptorBinding<'a>, InterfaceMismatchError> {
-    let set = map.get_mut(set as usize);
-    if let Some(set) = set {
-        for (b, ref mut seen) in set.iter_mut() {
-            if b.binding == binding {
-                //let () = seen;
-                *seen = true;
-                return Ok(b);
+struct ValidationInfo<'a>
+{
+    descriptor_sets: Vec<Vec<(&'a DescriptorBinding<'a>, bool)>>,
+    fragment_outputs: Vec<FragmentOutputDescription>,
+    vertex_layouts: Vec<VertexLayout<'a>>,
+    /// Encountered root sig for vertex inputs
+    vertex_input_root: bool,
+    /// Encountered index buffer
+    index_format: Option<IndexFormat>,
+    /// Encountered depth-stencil frag output
+    depth_stencil_fragment_output: Option<FragmentOutputDescription>,
+    /// Encountered root sig for fragment outputs
+    fragment_output_root: bool,
+}
+
+impl<'a> ValidationInfo<'a>
+{
+    fn new() -> ValidationInfo<'a> {
+        ValidationInfo {
+            descriptor_sets: vec![],
+            fragment_outputs: vec![],
+            vertex_layouts: vec![],
+            vertex_input_root: false,
+            index_format: None,
+            depth_stencil_fragment_output: None,
+            fragment_output_root: false
+        }
+    }
+
+    ///
+    /// # Validation of root pipeline signatures
+    ///
+    fn build(&mut self, signature: &'a PipelineSignatureDescription<'a>) -> Result<(), ValidationError>
+    {
+        let mut errs = Vec::new();
+
+        for &subsig in signature.sub_signatures {
+            self.build(subsig);
+        }
+
+        // If this block has descriptors, then this block defines a new descriptor set
+        if signature.descriptors.len() > 0 {
+            self.descriptor_sets.push(signature.descriptors.iter().map(|d| (d, false)).collect());
+        }
+
+        self.fragment_outputs.extend(signature.fragment_outputs);
+        self.vertex_layouts.extend(signature.vertex_layouts);
+
+        // Vertex input root already encountered but adding new inputs
+        if self.vertex_input_root && (signature.vertex_layouts.len() > 0 || signature.index_format.is_some()) {
+            errs.push("additional vertex inputs outside of root signature".to_string());
+        }
+
+        // Fragment output root already encountered but adding new outputs
+        if self.fragment_output_root && (signature.fragment_outputs.len() > 0 || signature.depth_stencil_fragment_output.is_some()) {
+            errs.push("additional fragment outputs outside of root signature".to_string());
+        }
+
+        if signature.is_root_vertex_input_signature {
+            if self.vertex_input_root {
+                errs.push("multiple vertex input root signatures".to_string());
+            } else {
+                self.vertex_input_root = true;
             }
         }
-    }
-    Err(InterfaceMismatchError::NotFound(interface))
-}
 
-fn validate_descriptor(
-    map: &mut DescriptorValidationMap,
-    set: u32,
-    binding: u32,
-    v: &spirv::ast::Variable,
-) -> Result<(), InterfaceMismatchError> {
-    let has_buffer_block_deco = v.has_buffer_block_decoration().is_some();
+        if signature.is_root_fragment_output_signature {
+            if self.fragment_output_root {
+                errs.push("multiple fragment output root signatures".to_string());
+            } else {
+                self.fragment_output_root = true;
+            }
+        }
 
-    if v.storage == StorageClass::Uniform
-    /*&& has_block_deco*/
-    {
-        // uniform buffer --------------------------------------------------------------------------
-        let interface = InterfaceItem::Descriptor(set, binding, DescriptorType::UniformBuffer);
-        let desc = find_descriptor(map, set, binding, interface)?;
-        validate_descriptor_type(
-            desc.descriptor_type,
-            DescriptorType::UniformBuffer,
-            interface,
-        )?;
-        let shader_ty = unwrap_ptr_type(v.ty);
-        if let Some(tydesc) = desc.tydesc {
-            validate_data_type(tydesc, shader_ty, interface)?;
+        if let Some(index_format) = signature.index_format {
+            if self.index_format.is_some() {
+                errs.push("multiple index buffer descriptors".to_string());
+            } else {
+                self.index_format = Some(index_format);
+            }
         }
-        Ok(())
-    } else if (v.storage == StorageClass::Uniform && has_buffer_block_deco)
-        || (v.storage == StorageClass::StorageBuffer)
-    {
-        // shader storage buffer -------------------------------------------------------------------
-        let interface = InterfaceItem::Descriptor(set, binding, DescriptorType::StorageBuffer);
-        let desc = find_descriptor(map, set, binding, interface)?;
-        validate_descriptor_type(
-            desc.descriptor_type,
-            DescriptorType::StorageBuffer,
-            interface,
-        )?;
-        let shader_ty = unwrap_ptr_type(v.ty);
-        if let Some(tydesc) = desc.tydesc {
-            validate_data_type(tydesc, shader_ty, interface)?;
+
+        if let Some(depth_stencil_fragment_output) = signature.depth_stencil_fragment_output {
+            if self.depth_stencil_fragment_output.is_some() {
+                errs.push("multiple depth stencil render target descriptors".to_string());
+            } else {
+                self.depth_stencil_fragment_output = Some(depth_stencil_fragment_output);
+            }
         }
-        Ok(())
-    } else if v.storage == StorageClass::UniformConstant {
-        if let &TypeDesc::Pointer(&TypeDesc::Image(_, _)) = v.ty {
-            // image -------------------------------------------------------------------------------
-            let interface = InterfaceItem::Descriptor(set, binding, DescriptorType::StorageImage);
-            let desc = find_descriptor(map, set, binding, interface)?;
-            validate_descriptor_type(
-                desc.descriptor_type,
-                DescriptorType::StorageImage,
-                interface,
-            )?;
-            Ok(())
-        } else if let &TypeDesc::Pointer(&TypeDesc::SampledImage(_, _)) = v.ty {
-            // sampled image -----------------------------------------------------------------------
-            let interface = InterfaceItem::Descriptor(set, binding, DescriptorType::SampledImage);
-            let desc = find_descriptor(map, set, binding, interface)?;
-            validate_descriptor_type(
-                desc.descriptor_type,
-                DescriptorType::SampledImage,
-                interface,
-            )?;
-            Ok(())
+
+        // we don't care about viewports
+
+        if errs.len() > 0 {
+            Err(ValidationError::InvalidRootSignature(errs))
         } else {
-            warn!("unhandled uniform constant type: {:?}", v);
-            let interface = InterfaceItem::UnhandledDescriptor(set, binding);
-            let _ = find_descriptor(map, set, binding, interface)?;
             Ok(())
         }
-    } else {
-        warn!("unhandled shader interface: {:?}", v);
-        let interface = InterfaceItem::UnhandledDescriptor(set, binding);
-        let _ = find_descriptor(map, set, binding, interface)?;
-        Ok(())
     }
+
+    fn use_descriptor(
+        &mut self,
+        set: u32,
+        binding: u32,
+        interface: InterfaceItem,
+    ) -> Result<&'a DescriptorBinding<'a>, InterfaceMismatchError> {
+        let set = self.descriptor_sets.get_mut(set as usize);
+        if let Some(set) = set {
+            for (b, ref mut seen) in set.iter_mut() {
+                if b.binding == binding as usize {
+                    //let () = seen;
+                    *seen = true;
+                    return Ok(b);
+                }
+            }
+        }
+        Err(InterfaceMismatchError::NotFound(interface))
+    }
+
+
+    fn validate_descriptor(
+        &mut self,
+        set: u32,
+        binding: u32,
+        v: &spirv::ast::Variable,
+    ) -> Result<(), InterfaceMismatchError> {
+        let has_buffer_block_deco = v.has_buffer_block_decoration().is_some();
+
+        if v.storage == StorageClass::Uniform
+        /*&& has_block_deco*/
+        {
+            // uniform buffer --------------------------------------------------------------------------
+            let interface = InterfaceItem::Descriptor(set, binding, DescriptorType::UniformBuffer);
+            let desc = self.use_descriptor(set, binding, interface)?;
+            validate_descriptor_type(
+                desc.descriptor_type,
+                DescriptorType::UniformBuffer,
+                interface,
+            )?;
+            let shader_ty = unwrap_ptr_type(v.ty);
+            if let Some(tydesc) = desc.tydesc {
+                validate_data_type(tydesc, shader_ty, interface)?;
+            }
+            Ok(())
+        } else if (v.storage == StorageClass::Uniform && has_buffer_block_deco)
+            || (v.storage == StorageClass::StorageBuffer)
+        {
+            // shader storage buffer -------------------------------------------------------------------
+            let interface = InterfaceItem::Descriptor(set, binding, DescriptorType::StorageBuffer);
+            let desc = self.use_descriptor(set, binding, interface)?;
+            validate_descriptor_type(
+                desc.descriptor_type,
+                DescriptorType::StorageBuffer,
+                interface,
+            )?;
+            let shader_ty = unwrap_ptr_type(v.ty);
+            if let Some(tydesc) = desc.tydesc {
+                validate_data_type(tydesc, shader_ty, interface)?;
+            }
+            Ok(())
+        } else if v.storage == StorageClass::UniformConstant {
+            if let &TypeDesc::Pointer(&TypeDesc::Image(_, _)) = v.ty {
+                // image -------------------------------------------------------------------------------
+                let interface = InterfaceItem::Descriptor(set, binding, DescriptorType::StorageImage);
+                let desc = self.use_descriptor(set, binding, interface)?;
+                validate_descriptor_type(
+                    desc.descriptor_type,
+                    DescriptorType::StorageImage,
+                    interface,
+                )?;
+                Ok(())
+            } else if let &TypeDesc::Pointer(&TypeDesc::SampledImage(_, _)) = v.ty {
+                // sampled image -----------------------------------------------------------------------
+                let interface = InterfaceItem::Descriptor(set, binding, DescriptorType::SampledImage);
+                let desc = self.use_descriptor(set, binding, interface)?;
+                validate_descriptor_type(
+                    desc.descriptor_type,
+                    DescriptorType::SampledImage,
+                    interface,
+                )?;
+                Ok(())
+            } else {
+                warn!("unhandled uniform constant type: {:?}", v);
+                let interface = InterfaceItem::UnhandledDescriptor(set, binding);
+                let _ = self.use_descriptor(set, binding, interface)?;
+                Ok(())
+            }
+        } else {
+            warn!("unhandled shader interface: {:?}", v);
+            let interface = InterfaceItem::UnhandledDescriptor(set, binding);
+            let _ = self.use_descriptor(set, binding, interface)?;
+            Ok(())
+        }
+    }
+
 }
+
+
 
 /// Basic verification of graphics pipeline interfaces.
 ///
@@ -198,8 +321,17 @@ fn validate_descriptor(
 /// - validate host-side required outputs
 /// - accept layout-equivalent types (?)
 ///
-pub fn validate_graphics(
-    create_info: &GraphicsPipelineCreateInfoTypeless,
+pub fn validate_spirv_graphics_pipeline(
+    shader_stages: &SpirvGraphicsShaderStages,
+
+    viewport_state: &ViewportState,
+    rasterization_state: &RasterisationState,
+    multisample_state: &MultisampleState,
+    depth_stencil_state: &DepthStencilState,
+    input_assembly_state: &InputAssemblyState,
+    color_blend_state: &ColorBlendState,
+    // traversal of the root signature in depth-first order
+    signatures: &[&PipelineSignatureDescription],
 ) -> Result<(), ValidationError> {
     let a = spirv::ast::Arenas::new();
     // create SPIR-V modules
@@ -262,16 +394,9 @@ pub fn validate_graphics(
     // -
 
     // build descriptor map
-    let mut desc_map: DescriptorValidationMap = create_info
-        .descriptor_set_layouts
-        .iter()
-        .map(|dsl| {
-            dsl.bindings
-                .iter()
-                .map(|dslb| (dslb, false))
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
+    let mut vinfo = ValidationInfo::new();
+    vinfo.build(create_info.root_signature.description());
+
 
     // iterate over all variables
     let all_vars = vert_ast
@@ -287,7 +412,7 @@ pub fn validate_graphics(
         if let Some((_, set)) = v.descriptor_set_decoration() {
             // descriptor-backed interface ---------------------------------------------------------
             let (_, binding) = v.binding_decoration().expect("expected binding decoration");
-            let result = validate_descriptor(&mut desc_map, set, binding, v);
+            let result = vinfo.validate_descriptor(set, binding, v);
             if let Err(e) = result {
                 errors.push(e);
             }

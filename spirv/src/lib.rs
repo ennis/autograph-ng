@@ -18,6 +18,7 @@ use std::marker::PhantomData;
 pub use self::decode::DecodedInstruction;
 pub use self::layout::*;
 pub use spirv_headers as headers;
+use std::error;
 
 /// Error that can happen when parsing.
 #[derive(Debug, Clone)]
@@ -27,6 +28,14 @@ pub enum ParseError {
     IncompleteInstruction,
     UnknownConstant(&'static str, u32),
 }
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "SPIR-V parse error")
+    }
+}
+
+impl error::Error for ParseError {}
 
 /// Be careful not to mix IPtrs between modules
 /// IPtrs are invalidated after the module is edited.
@@ -176,6 +185,28 @@ pub enum TypeDesc<'tcx> {
     Pointer(&'tcx TypeDesc<'tcx>),
     Unknown,
 }
+
+/*
+/// Owned typedesc
+
+impl<'tcx> TypeDesc<'tcx> {
+    pub fn copy_from(other: &TypeDesc,
+                     alloc: &mut impl FnMut(TypeDesc<'tcx>) -> &'tcx TypeDesc<'tcx>,
+                     alloc_layouts: &mut impl) -> &'tcx TypeDesc<'tcx> {
+        match other {
+            &TypeDesc::Primitive(primty) => alloc(TypeDesc::Primitive(primty)),
+            &TypeDesc::Array(elemty, len, stride) => alloc(TypeDesc::Array(TypeDesc::copy_from(elemty, alloc), len, stride)),
+            &TypeDesc::Vector(primty, len) => alloc(TypeDesc::Vector(primty, len)),
+            &TypeDesc::Matrix(primty, rows, cols) => alloc(TypeDesc::Matrix(primty, rows, cols)),
+            &TypeDesc::Struct(StructLayout<'tcx>) => alloc(TypeDesc),
+            &TypeDesc::Image(ImageDataType, Option<ImageFormat>),
+            &TypeDesc::SampledImage(ImageDataType, Option<ImageFormat>),
+            &TypeDesc::Void,
+            &TypeDesc::Pointer(&'tcx TypeDesc<'tcx>),
+            &TypeDesc::Unknown,
+        }
+    }
+}*/
 
 pub const TYPE_FLOAT: TypeDesc = TypeDesc::Primitive(PrimitiveType::Float);
 pub const TYPE_INT: TypeDesc = TypeDesc::Primitive(PrimitiveType::Int);

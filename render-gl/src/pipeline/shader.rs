@@ -163,7 +163,7 @@ pub(crate) struct FlatBinding {
 pub(crate) struct DescriptorMap(pub(crate) Vec<Vec<FlatBinding>>);
 
 impl DescriptorMap {
-    pub fn get_binding_location(&self, set: u32, binding: u32) -> Option<FlatBinding> {
+    /*pub fn get_binding_location(&self, set: u32, binding: u32) -> Option<FlatBinding> {
         self.0.get(set as usize).and_then(|s| {
             s.get(binding as usize).and_then(|loc| {
                 if loc.space == BindingSpace::Empty {
@@ -174,7 +174,7 @@ impl DescriptorMap {
                 }
             })
         })
-    }
+    }*/
 }
 
 #[derive(Clone, Debug)]

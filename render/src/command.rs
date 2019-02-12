@@ -1,7 +1,6 @@
 use crate::buffer::BufferTypeless;
 use crate::image::Image;
 use crate::pipeline::GraphicsPipeline;
-use crate::pipeline::PipelineArguments;
 use crate::pipeline::PipelineInterface;
 use crate::swapchain::Swapchain;
 use crate::sync::MemoryBarrier;
@@ -9,6 +8,7 @@ use crate::sync::PipelineStageFlags;
 use crate::Arena;
 use crate::Backend;
 use std::ops::Range;
+use crate::pipeline::TypedSignature;
 
 /// Represents a command to be executed by the renderer backend.
 ///
@@ -66,7 +66,7 @@ pub enum CommandInner<'a, B: Backend> {
 
     // STATE CHANGE COMMANDS -----------------------------------------------------------------------
     SetPipelineArguments {
-        arguments: &'a B::PipelineArguments,
+        arguments: &'a B::Arguments,
     },
 
     // DRAW (LEAD-OUT) COMMANDS --------------------------------------------------------------------
@@ -176,36 +176,26 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
 
     //----------------------------------------------------------------------------------------------
     // Draw
-    fn set_pipeline<P: PipelineInterface<'a, B>>(
+    fn set_pipeline(
         &mut self,
         sortkey: u64,
-        pipeline: GraphicsPipeline<'a, B, P>,
-        arguments: PipelineArguments<'a, B, P>,
+        pipeline: &'a B::GraphicsPipeline,
+        arguments: &'a B::Arguments,
     ) {
-        self.push_command(
-            sortkey,
-            CommandInner::DrawHeader {
-                pipeline: pipeline.0,
-            },
-        );
-        self.push_command(
-            sortkey,
-            CommandInner::SetPipelineArguments {
-                arguments: arguments.0,
-            },
-        )
+        self.push_command(sortkey, CommandInner::DrawHeader { pipeline });
+        self.push_command(sortkey, CommandInner::SetPipelineArguments { arguments })
     }
 
     pub fn draw<P: PipelineInterface<'a, B>>(
         &mut self,
         sortkey: u64,
         arena: &'a Arena<B>,
-        pipeline: GraphicsPipeline<'a, B, P::IntoInterface>,
+        pipeline: GraphicsPipeline<'a, B, TypedSignature<'a, B, P::IntoInterface>>,
         arguments: P,
         params: DrawParams,
     ) {
-        let arguments = arena.create_pipeline_arguments(arguments);
-        self.set_pipeline(sortkey, pipeline, arguments);
+        let arguments = arguments.into_arguments(pipeline.signature, arena);
+        self.set_pipeline(sortkey, pipeline.inner, arguments.arguments);
         self.push_command(
             sortkey,
             CommandInner::Draw {
@@ -221,12 +211,12 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
         &mut self,
         sortkey: u64,
         arena: &'a Arena<B>,
-        pipeline: GraphicsPipeline<'a, B, P::IntoInterface>,
+        pipeline: GraphicsPipeline<'a, B, TypedSignature<'a, B, P::IntoInterface>>,
         arguments: P,
         params: DrawIndexedParams,
     ) {
-        let arguments = arena.create_pipeline_arguments(arguments);
-        self.set_pipeline(sortkey, pipeline, arguments);
+        let arguments = arguments.into_arguments(pipeline.signature, arena);
+        self.set_pipeline(sortkey, pipeline.inner, arguments.arguments);
         self.push_command(
             sortkey,
             CommandInner::DrawIndexed {

@@ -5,12 +5,15 @@ use crate::vertex::IndexFormat;
 use crate::vertex::VertexLayout;
 use crate::Arena;
 use crate::Backend;
+use crate::Renderer;
 pub use autograph_render_macros::PipelineInterface;
 use bitflags::bitflags;
 use ordered_float::NotNan;
-use std::any::TypeId;
 use std::marker::PhantomData;
 use std::mem;
+use std::fmt::Debug;
+
+//pub mod validate;
 
 bitflags! {
     #[derive(Default)]
@@ -439,9 +442,10 @@ pub struct ColorBlendState<'a> {
 }
 
 #[derive(Copy, Clone)]
-pub struct GraphicsPipelineCreateInfoTypeless<'a, 'b, B: Backend> {
+pub struct GraphicsPipelineCreateInfo<'a, 'b, B: Backend> {
+    /// Shaders
     pub shader_stages: &'b GraphicsShaderStages<'a, 'b, B>,
-    pub vertex_input_state: &'b VertexInputState<'b>,
+    //pub vertex_input_state: &'b VertexInputState<'b>,
     pub viewport_state: &'b ViewportState<'b>,
     pub rasterization_state: &'b RasterisationState,
     pub multisample_state: &'b MultisampleState,
@@ -449,9 +453,9 @@ pub struct GraphicsPipelineCreateInfoTypeless<'a, 'b, B: Backend> {
     pub input_assembly_state: &'b InputAssemblyState,
     pub color_blend_state: &'b ColorBlendState<'b>,
     pub dynamic_state: DynamicStateFlags,
-    pub root_signature: PipelineSignatureTypeless<'a, B>,
 }
 
+/*
 /// Variant of [GraphicsPipelineCreateInfoTypeless] where some information is derived from types
 /// passed to [Arena::create_graphics_pipeline].
 #[derive(Copy, Clone)]
@@ -464,6 +468,7 @@ pub struct GraphicsPipelineCreateInfo<'a, 'b, B: Backend> {
     pub input_assembly_state: &'b InputAssemblyState,
     pub color_blend_state: &'b ColorBlendState<'b>,
 }
+*/
 
 //--------------------------------------------------------------------------------------------------
 
@@ -472,91 +477,118 @@ pub struct GraphicsPipelineCreateInfo<'a, 'b, B: Backend> {
 /// We keep a reference to the SPIR-V bytecode for interface checking when building pipelines.
 #[derive(derivative::Derivative)]
 #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
-pub struct ShaderModule<'a, 'spv, B: Backend>(pub &'a B::ShaderModule, pub &'spv [u8]);
-
-/// Graphics pipeline.
-#[derive(derivative::Derivative)]
-#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
-#[repr(transparent)]
-pub struct GraphicsPipelineTypeless<'a, B: Backend>(pub &'a B::GraphicsPipeline);
-
-/// Graphics pipeline.
-#[derive(derivative::Derivative)]
-#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
-#[repr(transparent)]
-pub struct GraphicsPipeline<'a, B: Backend, T: PipelineInterface<'a, B>>(
-    pub &'a B::GraphicsPipeline,
-    pub(crate) PhantomData<&'a T>,
+pub struct ShaderModule<'a, 'spv, B: Backend>(
+    pub(crate) &'a B::ShaderModule,
+    pub(crate) &'spv [u8],
 );
 
+impl<'a, 'spv, B: Backend> ShaderModule<'a, 'spv, B> {
+    pub fn inner(&self) -> &'a B::ShaderModule {
+        self.0
+    }
+
+    pub fn spirv_binary(&self) -> &'spv [u8] {
+        self.1
+    }
+}
+
+/// Graphics pipeline.
+#[derive(derivative::Derivative)]
+#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+pub struct GraphicsPipelineTypeless<'a, B: Backend>(pub(crate) &'a B::GraphicsPipeline);
+
+/*
+impl<'a, B: Backend, T: PipelineInterface<'a, B>> GraphicsPipeline<'a,B,T> {
+    pub fn root_signature(&self) -> PipelineSignatureTypeless<'a, B> {
+        PipelineSignatureTypeless(self.0.signature)
+    }
+}*/
+
+/*
 // Type erasure for GraphicsPipelines
 impl<'a, B: Backend, T: PipelineInterface<'a, B>> From<GraphicsPipeline<'a, B, T>>
     for GraphicsPipelineTypeless<'a, B>
 {
-    fn from(ds: GraphicsPipeline<'a, B, T>) -> Self {
-        GraphicsPipelineTypeless(ds.0)
+    fn from(pipeline: GraphicsPipeline<'a, B, T>) -> Self {
+        pipeline.0
     }
-}
+}*/
 
-/// Represents the layout of pipeline arguments.
-///
-/// Issue: this API forces the frontend to get/create all sub signatures beforehand,
-/// even if it can lookup the signature by typeid
+/// Complete description of a pipeline signature, including the description of sub-signatures.
+/// Contrary to PipelineSignatureCreateInfo, this doesn't hold any backend signature object.
 #[derive(Copy, Clone, Debug)]
-pub struct PipelineSignatureDescription<'a> {
-    pub sub_signatures: &'a [&'a PipelineSignatureDescription<'a>],
+pub struct SignatureDescription<'a> {
+    pub inherited: &'a [&'a SignatureDescription<'a>],
     pub descriptors: &'a [DescriptorBinding<'a>],
     pub vertex_layouts: &'a [VertexLayout<'a>],
     pub fragment_outputs: &'a [FragmentOutputDescription],
     pub depth_stencil_fragment_output: Option<FragmentOutputDescription>,
     pub index_format: Option<IndexFormat>,
-    pub typeid: Option<TypeId>,
     pub is_root_fragment_output_signature: bool,
     pub is_root_vertex_input_signature: bool,
 }
 
-/// A group of pipeline resources.
-#[derive(derivative::Derivative)]
-#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
-#[repr(transparent)]
-pub struct PipelineSignatureTypeless<'a, B: Backend>(pub &'a B::PipelineSignature);
+pub trait Signature<'a, B: Backend>: Copy + Clone + Debug {
+    fn inner(&self) -> &'a B::Signature;
+    fn description(&self) -> &SignatureDescription;
+}
 
-/// A group of pipeline resources.
 #[derive(derivative::Derivative)]
 #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
-#[repr(transparent)]
-pub struct PipelineArgumentsTypeless<'a, B: Backend>(pub &'a B::PipelineArguments);
-
-/// Represents a group of pipeline states.
-#[derive(derivative::Derivative)]
-#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
-#[repr(transparent)]
-pub struct PipelineArguments<'a, B: Backend, T: PipelineInterface<'a, B>>(
-    pub &'a B::PipelineArguments,
+pub struct TypedSignature<'a, B: Backend, T: PipelineInterface<'a, B>>(
+    pub(crate) &'a B::Signature,
     pub(crate) PhantomData<&'a T>,
 );
 
-impl<'a, B: Backend, P: PipelineInterface<'a, B>> From<PipelineArguments<'a, B, P>>
-    for PipelineArgumentsTypeless<'a, B>
-{
-    fn from(p: PipelineArguments<'a, B, P>) -> Self {
-        PipelineArgumentsTypeless(p.0)
+impl<'a, B: Backend, T: PipelineInterface<'a, B>> Signature<'a, B> for TypedSignature<'a, B, T> {
+    fn inner(&self) -> &'a B::Signature {
+        self.0
+    }
+    fn description(&self) -> &SignatureDescription {
+        T::SIGNATURE
     }
 }
 
-/*
-#[derive(Copy, Clone)]
-pub struct PipelineArgumentsCreateInfoTypeless<'a, 'b> {
-    pub signature: handle::PipelineSignature<'a>,
-    pub arguments: &'b [handle::PipelineArguments<'a>],
-    pub descriptors: &'b [Descriptor<'a>],
-    pub vertex_buffers: &'b [VertexBufferDescriptor<'a, 'b>],
-    pub index_buffer: Option<IndexBufferDescriptor<'a>>,
-    pub render_targets: &'b [RenderTargetDescriptor<'a>],
-    pub depth_stencil_render_target: Option<RenderTargetDescriptor<'a>>,
-    pub viewports: &'b [Viewport],
-    pub scissors: &'b [ScissorRect],
+#[derive(derivative::Derivative)]
+#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+pub struct Arguments<'a, B: Backend, S: Signature<'a, B>> {
+    pub(crate) arguments: &'a B::Arguments,
+    pub(crate) signature: S,
+}
+
+#[derive(derivative::Derivative)]
+#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+pub struct BareArguments<'a, B: Backend>(pub &'a B::Arguments);
+
+impl<'a, B: Backend, S: Signature<'a, B>> Into<BareArguments<'a, B>> for Arguments<'a, B, S>
+{
+    fn into(self) -> BareArguments<'a, B> {
+        BareArguments(self.arguments)
+    }
+}
+
+/*impl<'a, B: Backend, S: Signature<'a, B>> Arguments<'a, B, S>  {
+    fn inner(&self) -> &'a B::Arguments {
+        self.arguments
+    }
+    fn signature(&self) -> S {
+        self.signature
+    }
 }*/
+
+pub type TypedArguments<'a, B, T> = Arguments<'a, B, TypedSignature<'a, B, T>>;
+
+/// Graphics pipeline.
+/// OR GraphicsPipeline<'a, B: Backend, S: Signature> ?
+
+#[derive(derivative::Derivative)]
+#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+pub struct GraphicsPipeline<'a, B: Backend, S: Signature<'a, B>> {
+    pub(crate) inner: &'a B::GraphicsPipeline,
+    pub(crate) signature: S,
+}
+
+pub type TypedGraphicsPipeline<'a, B, T> = GraphicsPipeline<'a, B, TypedSignature<'a, B, T>>;
 
 ///
 /// Describes pipeline states to set before issuing a draw or compute call.
@@ -624,67 +656,36 @@ pub struct PipelineArgumentsCreateInfoTypeless<'a, 'b> {
 /// ```
 ///
 pub trait PipelineInterface<'a, B: Backend>: Sized {
-    const SIGNATURE: &'static PipelineSignatureDescription<'static>;
+    const SIGNATURE: &'static SignatureDescription<'static>;
 
     /// A 'static marker type that uniquely identifies Self: this is for getting a TypeId.
     type UniqueType: 'static;
     type IntoInterface: PipelineInterface<'a, B> + 'a;
 
-    fn into_arguments(self, arena: &'a Arena<B>) -> PipelineArgumentsTypeless<'a, B>;
+    fn get_inherited_signatures(renderer: &'a Renderer<B>) -> Vec<&'a B::Signature>;
+    fn into_arguments(
+        self,
+        signature: TypedSignature<'a, B, Self::IntoInterface>,
+        arena: &'a Arena<B>,
+    ) -> Arguments<'a, B, TypedSignature<'a, B, Self::IntoInterface>>;
 }
 
 impl<'a, B: Backend, P: PipelineInterface<'a, B>> PipelineInterface<'a, B>
-    for PipelineArguments<'a, B, P>
+    for Arguments<'a, B, TypedSignature<'a, B, P>>
 {
-    const SIGNATURE: &'static PipelineSignatureDescription<'static> =
-        <P as PipelineInterface<'a, B>>::SIGNATURE;
-    type UniqueType = <P as PipelineInterface<'a, B>>::UniqueType;
+    const SIGNATURE: &'static SignatureDescription<'static> = P::SIGNATURE;
+    type UniqueType = P::UniqueType;
     type IntoInterface = P;
 
-    fn into_arguments(self, _arena: &'a Arena<B>) -> PipelineArgumentsTypeless<'a, B> {
+    fn get_inherited_signatures(renderer: &'a Renderer<B>) -> Vec<&'a B::Signature> {
+        P::get_inherited_signatures(renderer)
+    }
+
+    fn into_arguments(
+        self,
+        _signature: TypedSignature<'a, B, P>,
+        _arena: &'a Arena<B>,
+    ) -> Arguments<'a, B, TypedSignature<'a, B, P>> {
         self.into()
     }
-}
-
-/// Converts a sequence of VertexLayouts (one for each vertex buffer) into binding descriptions
-/// and vertex attribute descriptions.
-///
-/// This function generates vertex attributes for each element in all layouts,
-/// and laid out sequentially : i.e. if buffer #0 has 4 elements,
-/// and buffer #1 has 2 elements, then 6 attributes will be generated:
-/// attributes 0..=3 will map to vertex buffer 0 and attributes 4..=5 will map to vertex buffer 1.
-///
-/// TODO it might make sense at some point to change the interface to the backend so that
-/// it takes an array of vertex layouts instead of input bindings and attribute locations,
-/// and let the backend assign attribute locations automatically.
-pub(crate) fn build_vertex_input_interface(
-    buffer_layouts: &[VertexLayout],
-) -> (
-    Vec<VertexInputBindingDescription>,
-    Vec<VertexInputAttributeDescription>,
-) {
-    let mut input_bindings = Vec::new();
-    let mut input_attribs = Vec::new();
-
-    let mut location = 0;
-
-    for (binding, &layout) in buffer_layouts.iter().enumerate() {
-        input_bindings.push(VertexInputBindingDescription {
-            binding: binding as u32,
-            stride: layout.stride as u32,
-            input_rate: VertexInputRate::Vertex,
-        });
-
-        for &attrib in layout.elements.iter() {
-            input_attribs.push(VertexInputAttributeDescription {
-                location,
-                binding: binding as u32,
-                format: attrib.format,
-                offset: attrib.offset,
-            });
-            location += 1;
-        }
-    }
-
-    (input_bindings, input_attribs)
 }

@@ -127,7 +127,7 @@ fn compile_glsl_shader(
                         content,
                     })
                 }
-                Err(e) => Err("include file not found".to_owned()),
+                Err(_e) => Err("include file not found".to_owned()),
             }
         },
     );

@@ -7,7 +7,6 @@ use autograph_render::format::Format;
 use autograph_render::glm;
 use autograph_render::image::ImageUsageFlags;
 use autograph_render::image::MipmapsCount;
-use autograph_render::image::SampledImage;
 use autograph_render::include_shader;
 use autograph_render::pipeline::ColorBlendAttachmentState;
 use autograph_render::pipeline::ColorBlendAttachments;
@@ -22,6 +21,7 @@ use autograph_render::pipeline::PrimitiveTopology;
 use autograph_render::pipeline::RasterisationState;
 use autograph_render::pipeline::Scissors;
 use autograph_render::pipeline::ShaderStageFlags;
+use autograph_render::pipeline::DynamicStateFlags;
 use autograph_render::pipeline::Viewport;
 use autograph_render::pipeline::ViewportState;
 use autograph_render::pipeline::Viewports;
@@ -53,10 +53,10 @@ static PATH_FRAG: &[u8] = include_shader!("path.frag");
 type Backend = autograph_render_gl::OpenGlBackend;
 type Arena<'a> = autograph_render::Arena<'a, Backend>;
 type Buffer<'a, T> = autograph_render::buffer::Buffer<'a, Backend, T>;
-type BufferTypeless<'a> = autograph_render::buffer::BufferTypeless<'a, Backend>;
+//type BufferTypeless<'a> = autograph_render::buffer::BufferTypeless<'a, Backend>;
 type Image<'a> = autograph_render::image::Image<'a, Backend>;
-type GraphicsPipeline<'a, T> = autograph_render::pipeline::GraphicsPipeline<'a, Backend, T>;
-type PipelineArguments<'a, T> = autograph_render::pipeline::PipelineArguments<'a, Backend, T>;
+type TypedGraphicsPipeline<'a, T> = autograph_render::pipeline::TypedGraphicsPipeline<'a, Backend, T>;
+type TypedArguments<'a, T> = autograph_render::pipeline::TypedArguments<'a, Backend, T>;
 
 //--------------------------------------------------------------------------------------------------
 // Shader stuff
@@ -109,11 +109,12 @@ struct RenderTargets<'a> {
     viewport: Viewport,
 }
 
+
 #[derive(PipelineInterface)]
 #[pipeline(backend = "Backend")]
 struct Background<'a> {
     #[pipeline(inherit)]
-    render_targets: PipelineArguments<'a, RenderTargets<'a>>,
+    render_targets: TypedArguments<'a, RenderTargets<'a>>,
     #[pipeline(uniform_buffer)]
     params: Buffer<'a, BackgroundParams>,
     #[pipeline(vertex_buffer)]
@@ -139,7 +140,7 @@ struct PrimitiveArray {
 #[pipeline(backend = "Backend")]
 struct PathRendering<'a> {
     #[pipeline(inherit)]
-    render_targets: PipelineArguments<'a, RenderTargets<'a>>,
+    render_targets: TypedArguments<'a, RenderTargets<'a>>,
     // set=0 binding=0
     #[pipeline(uniform_buffer)]
     params: Buffer<'a, BackgroundParams>,
@@ -153,12 +154,14 @@ struct PathRendering<'a> {
 }
 
 struct Pipelines<'a> {
-    background: GraphicsPipeline<'a, Background<'a>>,
-    path: GraphicsPipeline<'a, PathRendering<'a>>,
+    background: TypedGraphicsPipeline<'a, Background<'a>>,
+    path: TypedGraphicsPipeline<'a, PathRendering<'a>>,
 }
 
 fn create_pipelines<'a>(arena: &'a Arena) -> Pipelines<'a> {
     let background = GraphicsPipelineCreateInfo {
+        //root_signature: &(),
+        //root_signature_description: &SignatureDescription {},
         shader_stages: &GraphicsShaderStages {
             vertex: arena.create_shader_module(BACKGROUND_VERT, ShaderStageFlags::VERTEX),
             geometry: None,
@@ -182,11 +185,13 @@ fn create_pipelines<'a>(arena: &'a Arena) -> Pipelines<'a> {
             blend_constants: [0.0.into(); 4],
             logic_op: None,
         },
+        dynamic_state: DynamicStateFlags::empty()
     };
 
-    let background = arena.create_graphics_pipeline(&background, None);
+    let background = arena.create_graphics_pipeline(&background,);
 
     let path = GraphicsPipelineCreateInfo {
+
         shader_stages: &GraphicsShaderStages {
             vertex: arena.create_shader_module(PATH_VERT, ShaderStageFlags::VERTEX),
             geometry: None,
@@ -210,9 +215,10 @@ fn create_pipelines<'a>(arena: &'a Arena) -> Pipelines<'a> {
             blend_constants: [0.0.into(); 4],
             logic_op: None,
         },
+        dynamic_state: DynamicStateFlags::empty()
     };
 
-    let path = arena.create_graphics_pipeline(&path, None);
+    let path = arena.create_graphics_pipeline(&path);
 
     Pipelines { background, path }
 }
@@ -326,7 +332,7 @@ fn test_simple() {
             ImageUsageFlags::COLOR_ATTACHMENT,
         );
 
-        let render_targets = arena_1.create_pipeline_arguments(RenderTargets {
+        let render_targets = arena_1.create_typed_arguments(RenderTargets {
             color_target: color_buffer,
             viewport: (w, h).into(),
         });

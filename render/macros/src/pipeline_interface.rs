@@ -118,14 +118,15 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     let mut iter_viewports = Vec::new();
     let mut iter_scissors = Vec::new();
 
-    let mut i_subsig = Vec::new();
+    let mut i_inherited_ty = Vec::new();
+    let mut i_inherited = Vec::new();
     let mut i_fragout = Vec::new();
     let mut i_vtxin = Vec::new();
     let mut i_desc = Vec::new();
     let mut ib_format = None;
     let mut seen_dst = false;
-    let mut n_viewports = 0usize;
-    let mut n_scissors = 0usize;
+    let mut _n_viewports = 0usize;
+    let mut _n_scissors = 0usize;
 
     for f in fields.iter() {
         let ty = &f.ty;
@@ -199,7 +200,8 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                     iter_args.push(quote! {
                         std::iter::once(self.#name.into())
                     });
-                    i_subsig.push(quote! { <#ty as #gfx::pipeline::PipelineInterface<#ty_backend>>::SIGNATURE });
+                    i_inherited.push(quote! { <#ty as #gfx::pipeline::PipelineInterface<#ty_backend>>::SIGNATURE });
+                    i_inherited_ty.push(quote!(#ty));
                 }
                 // render target --------------------------------------------
                 else if pitem.render_target.is_some() {
@@ -286,7 +288,6 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                         std::iter::once(self.#name.into())
                     });
 
-                    let index = i_vtxin.len();
                     i_vtxin.push(quote! {
                         <<#ty as #gfx::vertex::VertexBufferInterface<#ty_backend>>::Vertex as #gfx::vertex::VertexData>::LAYOUT
                     });
@@ -317,7 +318,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                         std::iter::once(self.#name.clone().into())
                     });
 
-                    n_viewports += 1;
+                    _n_viewports += 1;
                 }
                 // scissor --------------------------------------------
                 else if pitem.scissor.is_some() {
@@ -325,7 +326,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                         std::iter::once(self.#name.clone().into())
                     });
 
-                    n_scissors += 1;
+                    _n_scissors += 1;
                 } else if pitem.viewport_array.is_some() {
                     unimplemented!()
                 } else if pitem.scissor_array.is_some() {
@@ -380,26 +381,33 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
             type UniqueType = #privmod::Dummy<#(#ty_params2,)*>;
             type IntoInterface = Self;
 
-            const SIGNATURE: &'static #gfx::pipeline::PipelineSignatureDescription<'static> = &#gfx::pipeline::PipelineSignatureDescription {
+            const SIGNATURE: &'static #gfx::pipeline::SignatureDescription<'static> = &#gfx::pipeline::SignatureDescription {
                 is_root_fragment_output_signature : #is_root_fragment_output_signature,
                 is_root_vertex_input_signature    : #is_root_vertex_input_signature,
-                sub_signatures                    : &[#(#i_subsig,)*],
+                inherited                         : &[#(#i_inherited,)*],
                 descriptors                       : &[#(#i_desc,)*],
                 vertex_layouts                    : &[#(#i_vtxin,)*],
                 fragment_outputs                  : &[#(#i_fragout,)*],
                 depth_stencil_fragment_output     : #depth_stencil_fragment_output,
                 index_format                      : #ib_format,
-                typeid                            : Some(std::any::TypeId::of::<Self::UniqueType>()),
+                //typeid                            : Some(std::any::TypeId::of::<Self::UniqueType>()),
             };
+
+            fn get_inherited_signatures(renderer: &#lt_arena #gfx::Renderer<#ty_backend>) -> Vec<&#lt_arena <#ty_backend as #gfx::Backend>::Signature> {
+                use autograph_render::pipeline::Signature;
+                let mut sig = Vec::new();
+                #(sig.push(renderer.get_cached_signature::<#i_inherited_ty>().inner());)*
+                sig
+            }
 
             fn into_arguments(
                     self,
-                    arena: &#lt_arena #gfx::Arena <#ty_backend>) -> #gfx::pipeline::PipelineArgumentsTypeless<#lt_arena, #ty_backend>
+                    signature: #gfx::pipeline::TypedSignature<#lt_arena, #ty_backend, Self::IntoInterface>,
+                    arena: &#lt_arena #gfx::Arena <#ty_backend>) ->
+                    #gfx::pipeline::Arguments<#lt_arena,  #ty_backend, #gfx::pipeline::TypedSignature<#lt_arena, #ty_backend, Self::IntoInterface>>
             {
                 use #gfx::pipeline::PipelineInterface;
-
-                let signature =
-                    arena.create_pipeline_signature_typeless(Self::SIGNATURE);
+                use autograph_render::pipeline::Arguments;
 
                 let mut index_buffer = None;
                 let mut depth_stencil_render_target = None;
@@ -413,7 +421,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                 let viewports = std::iter::empty()#(.chain(#iter_viewports))*;
                 let scissors = std::iter::empty()#(.chain(#iter_scissors))*;
 
-                arena.create_pipeline_arguments_typeless(
+                arena.create_arguments(
                     signature,
                     arguments,
                     descriptors,
