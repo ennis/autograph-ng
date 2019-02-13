@@ -1857,3 +1857,19 @@ GraphicsPipeline trait
 - create root signature and graphics pipeline at the same time
     - don't share root signatures
     - but can share inherited signatures
+    
+#### Synchronization may be costly
+- mutex lock on every arena access
+- sync should be opt-in
+    - arenas not sync by default
+    - objects still sync, but no mutable access to them anyway
+    - let the user handle it
+- should backend be accessed with &mut?
+    - issue: alloc = mutable borrow
+    
+#### Alternative API for argument blocks
+- just copy the pipeline interface in an arena, and have backend either
+    - just put the interface INSIDE the command buffer! (through a dyn pointer)
+        - simple memcpy
+    - store a dyn pointer an impl of PipelineInterface<B>
+   

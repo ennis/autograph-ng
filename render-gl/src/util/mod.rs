@@ -1,4 +1,7 @@
-use fxhash::FxBuildHasher;
+mod dropless_arena;
+pub use self::dropless_arena::DroplessArena;
+
+/*use fxhash::FxBuildHasher;
 use fxhash::FxHashMap;
 use std::hash::Hash;
 use std::mem;
@@ -132,3 +135,4 @@ impl<K: Eq + Hash, V: Copy> SyncDroplessArenaHashMap<K, V> {
         }
     }
 }
+*/

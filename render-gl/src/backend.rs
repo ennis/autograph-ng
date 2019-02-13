@@ -8,7 +8,6 @@ use crate::buffer::RawBuffer;
 use crate::buffer::UploadBuffer;
 use crate::command::StateCache;
 use crate::command::SubmissionContext;
-//use crate::descriptor::GlDescriptorSet;
 use crate::framebuffer::GlFramebuffer;
 use crate::image::upload_image_region;
 use crate::image::GlImage;
@@ -25,9 +24,6 @@ use crate::swapchain::GlSwapchain;
 use crate::swapchain::SwapchainInner;
 use crate::sync::GpuSyncObject;
 use crate::sync::Timeline;
-use crate::util::SyncArena;
-use crate::util::SyncDroplessArena;
-//use crate::util::SyncDroplessArenaHashMap;
 use crate::AliasInfo;
 use crate::ImplementationParameters;
 use autograph_render::command::Command;
@@ -53,11 +49,14 @@ use std::os::raw::c_char;
 use std::ptr;
 use std::slice;
 use std::str;
-use std::sync::Mutex;
 use std::time::Duration;
 use autograph_render::pipeline::GraphicsPipelineCreateInfo;
 use autograph_render::pipeline::SignatureDescription;
 use autograph_render::pipeline::BareArguments;
+use crate::util::DroplessArena;
+use typed_arena::Arena;
+use std::cell::RefCell;
+use std::cell::Cell;
 
 //--------------------------------------------------------------------------------------------------
 extern "system" fn debug_callback(
@@ -100,31 +99,29 @@ impl Backend for OpenGlBackend {
 
 //--------------------------------------------------------------------------------------------------
 pub struct GlArena {
-    pub(crate) _swapchains: SyncArena<GlSwapchain>,
-    pub(crate) buffers: SyncArena<GlBuffer>,
-    pub(crate) images: SyncArena<GlImage>,
-    pub(crate) shader_modules: SyncArena<GlShaderModule>,
-    pub(crate) signatures: SyncArena<GlPipelineSignature>,
-    //pub(crate) pipeline_arguments: SyncArena<GlPipelineArguments<'a>>,
-    pub(crate) graphics_pipelines: SyncArena<GlGraphicsPipeline>,
-    pub(crate) framebuffers: SyncArena<GlFramebuffer>,
+    pub(crate) _swapchains: Arena<GlSwapchain>,
+    pub(crate) buffers: Arena<GlBuffer>,
+    pub(crate) images: Arena<GlImage>,
+    pub(crate) shader_modules: Arena<GlShaderModule>,
+    pub(crate) signatures: Arena<GlPipelineSignature>,
+    pub(crate) graphics_pipelines: Arena<GlGraphicsPipeline>,
+    pub(crate) framebuffers: Arena<GlFramebuffer>,
     pub(crate) upload_buffer: UploadBuffer,
-    pub(crate) other: SyncDroplessArena,
+    pub(crate) other: DroplessArena,
 }
 
 impl GlArena {
     pub(crate) fn new(upload_buffer: UploadBuffer) -> GlArena {
         GlArena {
-            _swapchains: SyncArena::new(),
-            buffers: SyncArena::new(),
-            images: SyncArena::new(),
-            shader_modules: SyncArena::new(),
-            signatures: SyncArena::new(),
-            //pipeline_arguments: SyncArena::new(),
-            graphics_pipelines: SyncArena::new(),
-            framebuffers: SyncArena::new(),
+            _swapchains: Arena::new(),
+            buffers: Arena::new(),
+            images: Arena::new(),
+            shader_modules: Arena::new(),
+            signatures: Arena::new(),
+            graphics_pipelines: Arena::new(),
+            framebuffers: Arena::new(),
             upload_buffer,
-            other: SyncDroplessArena::new(),
+            other: DroplessArena::new(),
         }
     }
 }
@@ -133,50 +130,9 @@ impl GlArena {
 pub(crate) type ImagePool = AliasPool<ImageDescription, ImageAliasKey, RawImage>;
 //pub(crate) type BufferPool = AliasPool<BufferDescription, BufferAliasKey, RawBuffer>;
 
-/*
-pub(crate) struct PipelineSignatureCache {
-    /// 'static because it's self-referential: signatures may refer to other signatures in the
-    /// same arena. Since signatures are dropless, it should be OK.
-    ///
-    /// However, this means that accessing the cache directly is unsafe. Must use a wrapper method.
-    cache: SyncDroplessArenaHashMap<TypeId, GlPipelineSignature<'static>>,
-}*/
-
-/*
-impl PipelineSignatureCache {
-    pub(crate) fn new() -> PipelineSignatureCache {
-        PipelineSignatureCache {
-            cache: SyncDroplessArenaHashMap::new(),
-        }
-    }
-
-    /// Note that the return type is not 'static.
-    pub(crate) fn get<'a>(&'a self, typeid: TypeId) -> Option<&'a GlPipelineSignature<'a>> {
-        self.cache.get(typeid)
-    }
-
-    pub(crate) fn get_or_insert_with<'a>(
-        &'a self,
-        typeid: TypeId,
-        f: impl FnOnce() -> GlPipelineSignature<'a>,
-    ) -> &'a GlPipelineSignature<'a> {
-        self.cache.get_or_insert_with(typeid, || {
-            let sig = f();
-            // extend lifetime
-            unsafe {
-                mem::transmute::<_, _>(sig)
-                (&sig as *const GlPipelineSignature)
-            }
-        })
-    }
-}
-
-*/
-
 ///
 struct Resources {
     image_pool: ImagePool,
-    //buffer_pool: BufferPool,
     upload_buffer_size: usize,
     upload_buffers: Vec<MappedBuffer>,
     upload_buffers_in_use: VecDeque<GpuSyncObject<Vec<MappedBuffer>>>,
@@ -301,11 +257,11 @@ impl Resources {
 
 //--------------------------------------------------------------------------------------------------
 pub struct OpenGlInstance {
-    rsrc: Mutex<Resources>,
-    timeline: Mutex<Timeline>,
-    frame_num: Mutex<u64>, // replace with AtomicU64 once stabilized
-    state_cache: Mutex<StateCache>,
-    sampler_cache: Mutex<SamplerCache>,
+    rsrc: RefCell<Resources>,
+    timeline: RefCell<Timeline>,
+    frame_num: Cell<u64>, // replace with AtomicU64 once stabilized
+    state_cache: RefCell<StateCache>,
+    sampler_cache: RefCell<SamplerCache>,
     //pipeline_signature_cache: PipelineSignatureCache,
     //desc_set_layout_cache: SyncArenaHashMap<TypeId, GlDescriptorSetLayout>,
     limits: ImplementationParameters,
@@ -359,18 +315,17 @@ impl OpenGlInstance {
         let state_cache = StateCache::new(&limits);
 
         OpenGlInstance {
-            rsrc: Mutex::new(Resources::new(upload_buffer_size as usize)),
-            timeline: Mutex::new(timeline),
-            frame_num: Mutex::new(1),
+            rsrc: RefCell::new(Resources::new(upload_buffer_size as usize)),
+            timeline: RefCell::new(timeline),
+            frame_num: Cell::new(1),
             def_swapchain: GlSwapchain {
                 inner: default_swapchain,
             },
-            //desc_set_layout_cache: SyncArenaHashMap::new(),
             gl,
             max_frames_in_flight,
             limits,
-            state_cache: Mutex::new(state_cache),
-            sampler_cache: Mutex::new(SamplerCache::new()),
+            state_cache: RefCell::new(state_cache),
+            sampler_cache: RefCell::new(SamplerCache::new()),
         }
     }
 
@@ -392,11 +347,11 @@ const FRAME_WAIT_TIMEOUT: Duration = Duration::from_millis(500);
 
 impl Instance<OpenGlBackend> for OpenGlInstance {
     unsafe fn create_arena(&self) -> Box<GlArena> {
-        self.rsrc.lock().unwrap().create_arena(&self.gl)
+        self.rsrc.borrow_mut().create_arena(&self.gl)
     }
 
     unsafe fn drop_arena(&self, arena: Box<GlArena>) {
-        self.rsrc.lock().unwrap().drop_arena(&self.gl, arena)
+        self.rsrc.borrow_mut().drop_arena(&self.gl, arena)
     }
 
     //----------------------------------------------------------------------------------------------
@@ -451,27 +406,10 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
         samples: u32,
         usage: ImageUsageFlags,
     ) -> &'a GlImage {
-        self.rsrc
-            .lock()
-            .unwrap()
+        self.rsrc.borrow_mut()
             .alloc_aliased_image(&self.gl, arena, scope, fmt, dims, mipcount, samples, usage)
     }
 
-    //----------------------------------------------------------------------------------------------
-
-    /*
-    /// Creates a framebuffer. See trait documentation for explanation of unsafety.
-    fn create_framebuffer<'a>(
-        &self,
-        arena: &'a GlArena,
-        color_att: &[&'a GlImage],
-        depth_stencil_att: Option<&'a GlImage>,
-    ) -> &'a GlFramebuffer {
-        let arena: &GlArena = arena.downcast_ref_unwrap();
-        arena
-            .framebuffers
-            .alloc(GlFramebuffer::new(&self.gl, color_att, depth_stencil_att).unwrap())
-    }*/
 
     //----------------------------------------------------------------------------------------------
     unsafe fn create_immutable_buffer<'a>(
@@ -561,10 +499,11 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
         viewports: impl IntoIterator<Item = Viewport>,
         scissors: impl IntoIterator<Item = ScissorRect>,
     ) -> &'a GlPipelineArguments {
+        let mut sampler_cache = self.sampler_cache.borrow_mut();
         GlPipelineArguments::new(
             arena,
             &self.gl,
-            &mut self.sampler_cache.lock().unwrap(),
+            &mut sampler_cache,
             signature,
             arguments,
             descriptors,
@@ -599,8 +538,7 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
 
     //----------------------------------------------------------------------------------------------
     unsafe fn submit_frame<'a>(&self, frame: &[Command<'a, OpenGlBackend>]) {
-        //let mut rsrc = self.rsrc.lock().unwrap();
-        let mut scache = self.state_cache.lock().unwrap();
+        let mut scache = self.state_cache.borrow_mut();
 
         // invalidate the cache, because deletion of objects in arenas between two calls
         // to `submit_frame` may have automatically 'unbound' objects from the pipeline.
@@ -614,16 +552,16 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
             }
         }
 
-        let mut fnum = self.frame_num.lock().unwrap();
-        let mut timeline = self.timeline.lock().unwrap();
-        timeline.signal(&self.gl, *fnum);
+        let fnum = self.frame_num.get();
+        let mut timeline = self.timeline.borrow_mut();
+        timeline.signal(&self.gl, fnum);
 
         // wait for previous frames before starting a new one
         // if max_frames_in_flight is zero, then will wait on the previously signalled point.
-        if *fnum > u64::from(self.max_frames_in_flight) {
+        if fnum > u64::from(self.max_frames_in_flight) {
             let timeout = !timeline.client_sync(
                 &self.gl,
-                *fnum - u64::from(self.max_frames_in_flight),
+                fnum - u64::from(self.max_frames_in_flight),
                 FRAME_WAIT_TIMEOUT,
             );
             if timeout {
@@ -634,7 +572,7 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
             }
         }
 
-        *fnum += 1;
+        self.frame_num.set(fnum+1);
     }
 
     unsafe fn update_image(

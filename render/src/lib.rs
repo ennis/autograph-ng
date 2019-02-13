@@ -379,19 +379,6 @@ impl<'r, B: Backend> Arena<'r, B> {
         )
     }
 
-    /*/// Creates a graphics pipeline given the pipeline description passed in create_info.
-    #[inline]
-    pub fn create_graphics_pipeline_typeless<'a>(
-        &'a self,
-        create_info: &GraphicsPipelineCreateInfoTypeless<'a, '_, B>,
-    ) -> GraphicsPipelineTypeless<'a, B> {
-        GraphicsPipelineTypeless {
-            pipeline: unsafe {
-                self.instance.create_graphics_pipeline( & self.inner(), create_info)
-            },
-            signature: create_info.root_signature.0
-        }
-    }*/
 
     /// Creates a graphics pipeline given the pipeline description passed in create_info
     /// and information derived from the pipeline interface type.
@@ -565,16 +552,6 @@ impl<'r, B: Backend> Arena<'r, B> {
         )
     }
 
-    /*
-    pub fn create_pipeline_signature_typeless<'a, 'rr: 'a>(
-        &'rr self,
-        description: &'b PipelineSignatureDescription<'b>,
-    ) -> PipelineSignatureTypeless<'a, B> {
-        PipelineSignatureTypeless(unsafe {
-            self.instance
-                .create_pipeline_signature(&self.inner(), description)
-        }, description)
-    }*/
 
     pub fn create_arguments<'a, 'b, S: Signature<'a, B>>(
         &'a self,

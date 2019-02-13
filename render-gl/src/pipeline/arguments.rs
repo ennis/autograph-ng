@@ -153,6 +153,11 @@ impl GlPipelineSignature {
 /// - the blocks are allocated on the same arena as the object.
 ///
 /// Q: Do we need a ref to the signature?
+/// A: Not necessarily
+///
+/// Q: Could we replace blocks with a safe slice?
+/// A: Cannot introduce a lifetime parameter in the struct
+/// A2: Actually, can, but must cast to some handle type before returning
 #[derive(Copy, Clone, Debug)]
 pub struct GlPipelineArguments {
     pub(crate) signature: *const GlPipelineSignature,
