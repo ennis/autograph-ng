@@ -16,7 +16,7 @@ use autograph_render::pipeline::GraphicsPipelineCreateInfo;
 use autograph_render::pipeline::GraphicsShaderStages;
 use autograph_render::pipeline::InputAssemblyState;
 use autograph_render::pipeline::MultisampleState;
-use autograph_render::pipeline::PipelineInterface;
+use autograph_render::pipeline::Arguments;
 use autograph_render::pipeline::PrimitiveTopology;
 use autograph_render::pipeline::RasterisationState;
 use autograph_render::pipeline::Scissors;
@@ -56,7 +56,7 @@ type Buffer<'a, T> = autograph_render::buffer::Buffer<'a, Backend, T>;
 //type BufferTypeless<'a> = autograph_render::buffer::BufferTypeless<'a, Backend>;
 type Image<'a> = autograph_render::image::Image<'a, Backend>;
 type TypedGraphicsPipeline<'a, T> = autograph_render::pipeline::TypedGraphicsPipeline<'a, Backend, T>;
-type TypedArguments<'a, T> = autograph_render::pipeline::TypedArguments<'a, Backend, T>;
+type TypedArgumentBlock<'a, T> = autograph_render::pipeline::TypedArgumentBlock<'a, Backend, T>;
 
 //--------------------------------------------------------------------------------------------------
 // Shader stuff
@@ -100,24 +100,24 @@ struct BackgroundParams {
     zoom: f32,
 }
 
-#[derive(PipelineInterface)]
-#[pipeline(backend = "Backend")]
+#[derive(Arguments)]
+#[argument(backend = "Backend")]
 struct RenderTargets<'a> {
-    #[pipeline(render_target)]
+    #[argument(render_target)]
     color_target: Image<'a>,
-    #[pipeline(viewport)]
+    #[argument(viewport)]
     viewport: Viewport,
 }
 
 
-#[derive(PipelineInterface)]
-#[pipeline(backend = "Backend")]
+#[derive(Arguments)]
+#[argument(backend = "Backend")]
 struct Background<'a> {
-    #[pipeline(inherit)]
-    render_targets: TypedArguments<'a, RenderTargets<'a>>,
-    #[pipeline(uniform_buffer)]
+    #[argument(inherit)]
+    render_targets: TypedArgumentBlock<'a, RenderTargets<'a>>,
+    #[argument(uniform_buffer)]
     params: Buffer<'a, BackgroundParams>,
-    #[pipeline(vertex_buffer)]
+    #[argument(vertex_buffer)]
     vertex_buffer: Buffer<'a, [Vertex2D]>,
 }
 
@@ -136,20 +136,20 @@ struct PrimitiveArray {
     primitives: [Primitive; 32],
 }
 
-#[derive(PipelineInterface)]
-#[pipeline(backend = "Backend")]
+#[derive(Arguments)]
+#[argument(backend = "Backend")]
 struct PathRendering<'a> {
-    #[pipeline(inherit)]
-    render_targets: TypedArguments<'a, RenderTargets<'a>>,
+    #[argument(inherit)]
+    render_targets: TypedArgumentBlock<'a, RenderTargets<'a>>,
     // set=0 binding=0
-    #[pipeline(uniform_buffer)]
+    #[argument(uniform_buffer)]
     params: Buffer<'a, BackgroundParams>,
     // set=0 binding=1
-    #[pipeline(uniform_buffer)]
+    #[argument(uniform_buffer)]
     primitives: Buffer<'a, Primitive>,
-    #[pipeline(vertex_buffer)]
+    #[argument(vertex_buffer)]
     vertex_buffer: Buffer<'a, [VertexPath]>,
-    #[pipeline(index_buffer)]
+    #[argument(index_buffer)]
     index_buffer: Buffer<'a, [u16]>,
 }
 
@@ -332,7 +332,7 @@ fn test_simple() {
             ImageUsageFlags::COLOR_ATTACHMENT,
         );
 
-        let render_targets = arena_1.create_typed_arguments(RenderTargets {
+        let render_targets = arena_1.create_typed_argument_block(RenderTargets {
             color_target: color_buffer,
             viewport: (w, h).into(),
         });

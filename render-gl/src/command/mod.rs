@@ -11,7 +11,7 @@ use autograph_render::command::CommandInner;
 mod state;
 pub use self::state::StateCache;
 use crate::backend::OpenGlBackend;
-use crate::pipeline::GlPipelineArguments;
+use crate::pipeline::GlArgumentBlock;
 use crate::pipeline::StateBlock;
 use std::slice;
 
@@ -110,7 +110,7 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
 
     //unsafe fn cmd_set_pipeline_arguments_rec(&mut self, args: &GlPipelineArguments) {}
 
-    fn cmd_set_pipeline_arguments(&mut self, args: &GlPipelineArguments, is_root: bool) {
+    fn cmd_set_pipeline_arguments(&mut self, args: &GlArgumentBlock, is_root: bool) {
         let pipeline = self.current_pipeline.unwrap();
         let _descriptor_map = pipeline.descriptor_map();
 

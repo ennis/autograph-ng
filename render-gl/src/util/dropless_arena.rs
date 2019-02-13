@@ -34,15 +34,18 @@ impl<T> ChunkList<T> {
     }
 }
 
+/// An arena for Copy types (which don't have any destructors, hence the name).
 pub struct DroplessArena {
     chunks: RefCell<ChunkList<u8>>,
 }
 
 impl DroplessArena {
+    /// Creates a new arena with an unspecified default initial capacity.
     pub fn new() -> DroplessArena {
         DroplessArena::with_capacity(INITIAL_SIZE)
     }
 
+    /// Creates a new arena with a specified initial capacity.
     pub fn with_capacity(n: usize) -> DroplessArena {
         let n = cmp::max(MIN_CAPACITY, n);
         DroplessArena {
@@ -53,14 +56,26 @@ impl DroplessArena {
         }
     }
 
+    /// Stores a value of type `T` into the arena.
+    ///
+    /// Returns a mutable reference to the stored values.
     pub fn alloc<T: Copy>(&self, value: T) -> &mut T {
         &mut self.alloc_extend(iter::once(value))[0]
     }
 
+    /// Allocates uninitialized space for `len` elements of type `T`.
     pub unsafe fn alloc_uninitialized<T: Copy>(&self, len: usize) -> &mut [T] {
         self.alloc_extend(iter::repeat(mem::uninitialized()).take(len))
     }
 
+    /// Stores all elements from the provided iterator into a contiguous slice inside the arena.
+    ///
+    /// Returns a mutable slice to the stored values.
+    ///
+    /// # Note
+    /// This method uses `Iterator::size_hint` to preallocate space in the arena.
+    /// This is more efficient if the exact number of elements returned by the iterator is known in
+    /// advance.
     pub fn alloc_extend<I, T: Copy>(&self, iterable: I) -> &mut [T]
     where
         I: IntoIterator<Item = T>,

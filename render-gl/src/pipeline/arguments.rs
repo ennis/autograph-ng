@@ -16,14 +16,14 @@ use autograph_render::vertex::IndexFormat;
 use autograph_render::vertex::VertexBufferDescriptor;
 use std::iter;
 use std::slice;
-use autograph_render::pipeline::BareArguments;
+use autograph_render::pipeline::BareArgumentBlock;
 
 /// Proposal: flatten signature?
 /// At least, no need to store inherited (only the length matters)
 #[derive(Clone, Debug)]
-pub struct GlPipelineSignature {
+pub struct GlSignature {
     //pub(crate) num_inherited: usize,
-    pub(crate) inherited: Vec<*const GlPipelineSignature>,
+    pub(crate) inherited: Vec<*const GlSignature>,
     // descriptor #n -> binding space
     pub(crate) descriptor_map: Vec<DescriptorType>,
     pub(crate) num_state_blocks: usize,
@@ -40,14 +40,14 @@ pub struct GlPipelineSignature {
 }
 
 // It's read-only so it should be safe?
-unsafe impl Sync for GlPipelineSignature {}
+unsafe impl Sync for GlSignature {}
 
-impl GlPipelineSignature {
+impl GlSignature {
     pub(crate) fn new<'a>(
         arena: &'a GlArena,
-        inherited: &[&'a GlPipelineSignature],
+        inherited: &[&'a GlSignature],
         description: &SignatureDescription,
-    ) -> &'a GlPipelineSignature {
+    ) -> &'a GlSignature {
         // TODO allocate directly in arena when alloc_extend is implemented
         let inherited = inherited
             .iter()
@@ -119,7 +119,7 @@ impl GlPipelineSignature {
         // viewports & scissors
         num_state_blocks += 2;
 
-        arena.signatures.alloc(GlPipelineSignature {
+        arena.signatures.alloc(GlSignature {
             inherited,
             descriptor_map,
             num_state_blocks,
@@ -159,14 +159,14 @@ impl GlPipelineSignature {
 /// A: Cannot introduce a lifetime parameter in the struct
 /// A2: Actually, can, but must cast to some handle type before returning
 #[derive(Copy, Clone, Debug)]
-pub struct GlPipelineArguments {
-    pub(crate) signature: *const GlPipelineSignature,
+pub struct GlArgumentBlock {
+    pub(crate) signature: *const GlSignature,
     pub(crate) blocks: *const StateBlock,
 }
 
-unsafe impl Sync for GlPipelineArguments {}
+unsafe impl Sync for GlArgumentBlock {}
 
-impl GlPipelineArguments {
+impl GlArgumentBlock {
     /// Unsafe access to contents.
     pub(crate) unsafe fn collect_render_targets<'a>(
         &'a self,
@@ -201,8 +201,8 @@ impl GlPipelineArguments {
         arena: &'a GlArena,
         gl: &Gl,
         sampler_cache: &mut SamplerCache,
-        signature: &'a GlPipelineSignature,
-        arguments: impl IntoIterator<Item = BareArguments<'a, OpenGlBackend>>,
+        signature: &'a GlSignature,
+        arguments: impl IntoIterator<Item = BareArgumentBlock<'a, OpenGlBackend>>,
         descriptors: impl IntoIterator<Item = Descriptor<'a, OpenGlBackend>>,
         vertex_buffers: impl IntoIterator<Item = VertexBufferDescriptor<'a, 'b, OpenGlBackend>>,
         index_buffer: Option<IndexBufferDescriptor<'a, OpenGlBackend>>,
@@ -210,7 +210,7 @@ impl GlPipelineArguments {
         depth_stencil_render_target: Option<RenderTargetDescriptor<'a, OpenGlBackend>>,
         viewports: impl IntoIterator<Item = Viewport>,
         scissors: impl IntoIterator<Item = ScissorRect>,
-    ) -> &'a GlPipelineArguments {
+    ) -> &'a GlArgumentBlock {
         // TODO This function is a bit hard to digest: refactor
         // TODO Gratuitous usage of unsafety here; blame the lack of ATCs
 
@@ -475,7 +475,7 @@ impl GlPipelineArguments {
             push_state_block(StateBlock::Scissors(scissors.len(), scissors.as_ptr()));
         }
 
-        let args = GlPipelineArguments {
+        let args = GlArgumentBlock {
             signature: signature as *const _,
             blocks: state_blocks.as_ptr(),
         };
@@ -486,7 +486,7 @@ impl GlPipelineArguments {
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) enum StateBlock {
-    Inherited(*const *const GlPipelineArguments),
+    Inherited(*const *const GlArgumentBlock),
     UniformBuffers {
         buffers: *const GLuint,
         offsets: *const GLintptr,

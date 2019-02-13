@@ -1,7 +1,7 @@
 use crate::buffer::BufferTypeless;
 use crate::image::Image;
 use crate::pipeline::GraphicsPipeline;
-use crate::pipeline::PipelineInterface;
+use crate::pipeline::Arguments;
 use crate::swapchain::Swapchain;
 use crate::sync::MemoryBarrier;
 use crate::sync::PipelineStageFlags;
@@ -66,7 +66,7 @@ pub enum CommandInner<'a, B: Backend> {
 
     // STATE CHANGE COMMANDS -----------------------------------------------------------------------
     SetPipelineArguments {
-        arguments: &'a B::Arguments,
+        arguments: &'a B::ArgumentBlock,
     },
 
     // DRAW (LEAD-OUT) COMMANDS --------------------------------------------------------------------
@@ -180,13 +180,13 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
         &mut self,
         sortkey: u64,
         pipeline: &'a B::GraphicsPipeline,
-        arguments: &'a B::Arguments,
+        arguments: &'a B::ArgumentBlock,
     ) {
         self.push_command(sortkey, CommandInner::DrawHeader { pipeline });
         self.push_command(sortkey, CommandInner::SetPipelineArguments { arguments })
     }
 
-    pub fn draw<P: PipelineInterface<'a, B>>(
+    pub fn draw<P: Arguments<'a, B>>(
         &mut self,
         sortkey: u64,
         arena: &'a Arena<B>,
@@ -194,7 +194,7 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
         arguments: P,
         params: DrawParams,
     ) {
-        let arguments = arguments.into_arguments(pipeline.signature, arena);
+        let arguments = arguments.into_block(pipeline.signature, arena);
         self.set_pipeline(sortkey, pipeline.inner, arguments.arguments);
         self.push_command(
             sortkey,
@@ -207,7 +207,7 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
         );
     }
 
-    pub fn draw_indexed<P: PipelineInterface<'a, B>>(
+    pub fn draw_indexed<P: Arguments<'a, B>>(
         &mut self,
         sortkey: u64,
         arena: &'a Arena<B>,
@@ -215,7 +215,7 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
         arguments: P,
         params: DrawIndexedParams,
     ) {
-        let arguments = arguments.into_arguments(pipeline.signature, arena);
+        let arguments = arguments.into_block(pipeline.signature, arena);
         self.set_pipeline(sortkey, pipeline.inner, arguments.arguments);
         self.push_command(
             sortkey,

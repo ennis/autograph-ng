@@ -8,7 +8,7 @@ use autograph_render::framebuffer::Framebuffer;
 use autograph_render::glm;
 use autograph_render::image::SampledImage;
 use autograph_render::include_shader;
-use autograph_render::pipeline::PipelineInterface;
+use autograph_render::pipeline::Arguments;
 use autograph_render::pipeline::Viewport;
 use autograph_render::vertex::VertexData;
 
@@ -146,7 +146,7 @@ pub struct SubstrateDescriptorSet<'a> {
     pub depth_tex: SampledImage<'a>,
 }
 
-#[derive(PipelineInterface)]
+#[derive(Arguments)]
 pub struct SubstrateCommon<'a> {
     #[pipeline(framebuffer)]
     pub framebuffer: Framebuffer<'a>,
@@ -157,7 +157,7 @@ pub struct SubstrateCommon<'a> {
 }
 
 /// Pipeline interface for substrate shaders.
-#[derive(PipelineInterface)]
+#[derive(Arguments)]
 pub struct SubstrateSimple<'a> {
     #[pipeline(inherit)]
     pub common: SubstrateCommon<'a>,
@@ -166,7 +166,7 @@ pub struct SubstrateSimple<'a> {
 }
 
 /// Pipeline interface for substrate shaders that need UV coordinates
-#[derive(PipelineInterface)]
+#[derive(Arguments)]
 pub struct SubstrateUV<'a> {
     #[pipeline(inherit)]
     pub common: SubstrateCommon<'a>,

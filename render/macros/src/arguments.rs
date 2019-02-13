@@ -10,8 +10,8 @@ use syn::spanned::Spanned;
 // vertex_buffer, vertex_buffer_array
 
 #[derive(FromDeriveInput, Debug)]
-#[darling(attributes(pipeline), forward_attrs(allow, doc, cfg, repr))]
-struct PipelineInterfaceStruct {
+#[darling(attributes(argument), forward_attrs(allow, doc, cfg, repr))]
+struct ArgumentsStruct {
     ident: syn::Ident,
     generics: syn::Generics,
     vis: syn::Visibility,
@@ -24,8 +24,8 @@ struct PipelineInterfaceStruct {
 }
 
 #[derive(FromField)]
-#[darling(attributes(pipeline))]
-struct PipelineInterfaceItem {
+#[darling(attributes(argument))]
+struct ArgumentsItem {
     #[darling(default)]
     inherit: Flag,
     #[darling(default)]
@@ -77,8 +77,8 @@ fn quote_descriptor(
 }
 
 pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
-    let s: PipelineInterfaceStruct =
-        <PipelineInterfaceStruct as FromDeriveInput>::from_derive_input(ast).unwrap();
+    let s: ArgumentsStruct =
+        <ArgumentsStruct as FromDeriveInput>::from_derive_input(ast).unwrap();
 
     let gfx = autograph_name();
     let struct_name = &s.ident;
@@ -92,7 +92,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     } else {
         return syn::Error::new(
             s.generics.span(),
-            "expected exactly one lifetime on target of `#[derive(PipelineInterface)]`",
+            "expected exactly one lifetime on target of `#[derive(Arguments)]`",
         )
         .to_compile_error();
     };
@@ -107,7 +107,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     let fields = match fields {
         syn::Fields::Named(ref fields_named) => &fields_named.named,
         syn::Fields::Unnamed(ref fields_unnamed) => &fields_unnamed.unnamed,
-        syn::Fields::Unit => panic!("PipelineInterface trait cannot be derived on unit structs"),
+        syn::Fields::Unit => panic!("Arguments trait cannot be derived on unit structs"),
     };
 
     let mut stmts = Vec::new();
@@ -132,7 +132,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
         let ty = &f.ty;
         let name = &f.ident.as_ref().unwrap();
 
-        match <PipelineInterfaceItem as FromField>::from_field(f) {
+        match <ArgumentsItem as FromField>::from_field(f) {
             Ok(pitem) => {
                 // check for duplicates
                 let mut num_attrs = 0;
@@ -180,14 +180,14 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                 }
 
                 if num_attrs == 0 {
-                    stmts.push(syn::Error::new(name.span(), "missing or incomplete `pipeline(...)` attribute. See the documentation of `PipelineInterface` for more information.")
+                    stmts.push(syn::Error::new(name.span(), "missing or incomplete `argument(...)` attribute. See the documentation of `Arguments` for more information.")
                         .to_compile_error());
                     continue;
                 } else if num_attrs > 1 {
                     stmts.push(
                         syn::Error::new(
                             name.span(),
-                            "field has more than one `pipeline(...)` attribute.",
+                            "field has more than one `argument(...)` attribute.",
                         )
                         .to_compile_error(),
                     );
@@ -200,7 +200,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                     iter_args.push(quote! {
                         std::iter::once(self.#name.into())
                     });
-                    i_inherited.push(quote! { <#ty as #gfx::pipeline::PipelineInterface<#ty_backend>>::SIGNATURE });
+                    i_inherited.push(quote! { <#ty as #gfx::pipeline::Arguments<#ty_backend>>::SIGNATURE });
                     i_inherited_ty.push(quote!(#ty));
                 }
                 // render target --------------------------------------------
@@ -220,7 +220,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                         stmts.push(
                             syn::Error::new(
                                 name.span(),
-                                "duplicate `pipeline(depth_stencil_render_target)` attribute",
+                                "duplicate `argument(depth_stencil_render_target)` attribute",
                             )
                             .to_compile_error(),
                         );
@@ -306,7 +306,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                         stmts.push(
                             syn::Error::new(
                                 name.span(),
-                                "duplicate `pipeline(index_buffer)` attribute",
+                                "duplicate `argument(index_buffer)` attribute",
                             )
                             .to_compile_error(),
                         );
@@ -339,7 +339,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                 stmts.push(
                     syn::Error::new(
                         name.span(),
-                        format!("failed to parse `pipeline(...)` attribute: {}", e),
+                        format!("failed to parse `argument(...)` attribute: {}", e),
                     )
                     .to_compile_error(),
                 );
@@ -360,7 +360,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     };
 
     let privmod = syn::Ident::new(
-        &format!("__PipelineInterface_UniqueType_{}", struct_name),
+        &format!("__Arguments_UniqueType_{}", struct_name),
         Span::call_site(),
     );
 
@@ -376,7 +376,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
             pub struct Dummy<#(#ty_params,)*>;
         }
 
-        impl #impl_generics #gfx::pipeline::PipelineInterface<#lt_arena, #ty_backend> for #struct_name #ty_generics #where_clause {
+        impl #impl_generics #gfx::pipeline::Arguments<#lt_arena, #ty_backend> for #struct_name #ty_generics #where_clause {
 
             type UniqueType = #privmod::Dummy<#(#ty_params2,)*>;
             type IntoInterface = Self;
@@ -400,14 +400,14 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                 sig
             }
 
-            fn into_arguments(
+            fn into_block(
                     self,
                     signature: #gfx::pipeline::TypedSignature<#lt_arena, #ty_backend, Self::IntoInterface>,
                     arena: &#lt_arena #gfx::Arena <#ty_backend>) ->
-                    #gfx::pipeline::Arguments<#lt_arena,  #ty_backend, #gfx::pipeline::TypedSignature<#lt_arena, #ty_backend, Self::IntoInterface>>
+                    #gfx::pipeline::ArgumentBlock<#lt_arena,  #ty_backend, #gfx::pipeline::TypedSignature<#lt_arena, #ty_backend, Self::IntoInterface>>
             {
-                use #gfx::pipeline::PipelineInterface;
-                use autograph_render::pipeline::Arguments;
+                //use #gfx::pipeline::ArgumentBlock;
+                use #gfx::pipeline::Arguments;
 
                 let mut index_buffer = None;
                 let mut depth_stencil_render_target = None;
@@ -421,7 +421,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                 let viewports = std::iter::empty()#(.chain(#iter_viewports))*;
                 let scissors = std::iter::empty()#(.chain(#iter_scissors))*;
 
-                arena.create_arguments(
+                arena.create_argument_block(
                     signature,
                     arguments,
                     descriptors,

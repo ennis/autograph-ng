@@ -24,7 +24,7 @@ use autograph_render::pipeline::GraphicsPipelineCreateInfo;
 use autograph_render::pipeline::GraphicsShaderStages;
 use autograph_render::pipeline::InputAssemblyState;
 use autograph_render::pipeline::MultisampleState;
-use autograph_render::pipeline::PipelineInterface;
+use autograph_render::pipeline::Arguments;
 use autograph_render::pipeline::PipelineLayout;
 use autograph_render::pipeline::PrimitiveTopology;
 use autograph_render::pipeline::RasterisationState;
@@ -72,7 +72,7 @@ pub struct PerObject<'a> {
     pub dither: SampledImage<'a>,
 }
 
-#[derive(PipelineInterface)]
+#[derive(Arguments)]
 // could also be an associated const...
 // more concise this way?
 /*#[pipeline(

@@ -1871,5 +1871,6 @@ GraphicsPipeline trait
 - just copy the pipeline interface in an arena, and have backend either
     - just put the interface INSIDE the command buffer! (through a dyn pointer)
         - simple memcpy
+        - also, some "compiled" arg block if backend needs it (no-op otherwise)
     - store a dyn pointer an impl of PipelineInterface<B>
-   
+        

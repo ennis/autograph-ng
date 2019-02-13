@@ -101,7 +101,7 @@ use crate::framebuffer::RenderTargetDescriptor;
 use crate::pipeline::DynamicStateFlags;
 use crate::pipeline::GraphicsPipeline;
 use crate::pipeline::GraphicsPipelineCreateInfo;
-use crate::pipeline::PipelineInterface;
+use crate::pipeline::Arguments;
 use crate::pipeline::ScissorRect;
 use crate::pipeline::ShaderModule;
 use crate::pipeline::ShaderStageFlags;
@@ -114,12 +114,12 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::mem;
 //use crate::pipeline::validate::ValidationError;
-use crate::pipeline::Arguments;
+use crate::pipeline::ArgumentBlock;
 use crate::pipeline::Signature;
 use crate::pipeline::SignatureDescription;
 use crate::pipeline::TypedSignature;
 use std::sync::Mutex;
-use crate::pipeline::BareArguments;
+use crate::pipeline::BareArgumentBlock;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -193,8 +193,6 @@ pub trait Instance<B: Backend> {
     ) -> &'a B::Image;
 
     /// Creates an image containing uninitialized data.
-    ///
-    /// See [Arena::create_image](crate::arena::Arena::create_image).
     unsafe fn create_image<'a>(
         &self,
         arena: &'a B::Arena,
@@ -218,14 +216,6 @@ pub trait Instance<B: Backend> {
         data: &[u8],
     );
 
-    /*/// See [Arena::create_framebuffer](crate::arena::Arena::create_framebuffer).
-    fn create_framebuffer<'a>(
-        &self,
-        arena: &'a Arena<B>,
-        color_attachments: &[handle::Image<'a>],
-        depth_stencil_attachment: Option<handle::Image<'a>>,
-    ) -> handle::Framebuffer<'a>;*/
-
     /// TODO
     unsafe fn create_immutable_buffer<'a>(
         &self,
@@ -237,7 +227,6 @@ pub trait Instance<B: Backend> {
     /// TODO
     unsafe fn create_buffer<'a>(&self, arena: &'a B::Arena, size: u64) -> &'a B::Buffer;
 
-    /// See [Arena::create_shader_module](crate::arena::Arena::create_shader_module).
     unsafe fn create_shader_module<'a>(
         &self,
         arena: &'a B::Arena,
@@ -245,7 +234,6 @@ pub trait Instance<B: Backend> {
         stage: ShaderStageFlags,
     ) -> &'a B::ShaderModule;
 
-    /// See [Arena::create_graphics_pipeline](crate::arena::Arena::create_graphics_pipeline).
     unsafe fn create_graphics_pipeline<'a>(
         &self,
         arena: &'a B::Arena,
@@ -254,7 +242,6 @@ pub trait Instance<B: Backend> {
         create_info: &GraphicsPipelineCreateInfo<'a, '_, B>,
     ) -> &'a B::GraphicsPipeline;
 
-    ///
     unsafe fn create_signature<'a>(
         &'a self,
         arena: &'a B::Arena,
@@ -262,15 +249,12 @@ pub trait Instance<B: Backend> {
         description: &SignatureDescription,
     ) -> &'a B::Signature;
 
-    /// Creates a new argument group,
-    /// which describes a set of resources to be bound to the graphics
-    /// pipeline, and state to be set.
-    unsafe fn create_arguments<'a, 'b>(
+    unsafe fn create_argument_block<'a, 'b>(
         &self,
         arena: &'a B::Arena,
         signature: &'a B::Signature,
         //description: &SignatureDescription,
-        arguments: impl IntoIterator<Item = BareArguments<'a, B>>,
+        arguments: impl IntoIterator<Item = BareArgumentBlock<'a, B>>,
         descriptors: impl IntoIterator<Item = Descriptor<'a, B>>,
         vertex_buffers: impl IntoIterator<Item = VertexBufferDescriptor<'a, 'b, B>>,
         index_buffer: Option<IndexBufferDescriptor<'a, B>>,
@@ -278,9 +262,8 @@ pub trait Instance<B: Backend> {
         depth_stencil_render_target: Option<RenderTargetDescriptor<'a, B>>,
         viewports: impl IntoIterator<Item = Viewport>,
         scissors: impl IntoIterator<Item = ScissorRect>,
-    ) -> &'a B::Arguments;
+    ) -> &'a B::ArgumentBlock;
 
-    /// Creates a reference to host data that is going to be used in pipeline arguments.
     unsafe fn create_host_reference<'a>(
         &self,
         arena: &'a B::Arena,
@@ -317,7 +300,7 @@ pub trait Backend:
     type ShaderModule: Sync + Debug;
     type GraphicsPipeline: Sync + Debug;
     type Signature: Sync + Debug;
-    type Arguments: Sync + Debug;
+    type ArgumentBlock: Sync + Debug;
     type HostReference: Sync + Debug;
 }
 
@@ -382,7 +365,7 @@ impl<'r, B: Backend> Arena<'r, B> {
 
     /// Creates a graphics pipeline given the pipeline description passed in create_info
     /// and information derived from the pipeline interface type.
-    pub fn create_graphics_pipeline<'a, P: PipelineInterface<'a, B>>(
+    pub fn create_graphics_pipeline<'a, P: Arguments<'a, B>>(
         &'a self,
         create_info: &GraphicsPipelineCreateInfo<'a, '_, B>,
     ) -> GraphicsPipeline<'a, B, TypedSignature<'a, B, P>>
@@ -552,11 +535,13 @@ impl<'r, B: Backend> Arena<'r, B> {
         )
     }
 
-
-    pub fn create_arguments<'a, 'b, S: Signature<'a, B>>(
+    /// Creates an _argument block_.
+    ///
+    ///
+    pub fn create_argument_block<'a, 'b, S: Signature<'a, B>>(
         &'a self,
         signature: S,
-        inherited: impl IntoIterator<Item = BareArguments<'a, B>>,
+        inherited: impl IntoIterator<Item = BareArgumentBlock<'a, B>>,
         descriptors: impl IntoIterator<Item = Descriptor<'a, B>>,
         vertex_buffers: impl IntoIterator<Item = VertexBufferDescriptor<'a, 'b, B>>,
         index_buffer: Option<IndexBufferDescriptor<'a, B>>,
@@ -564,10 +549,10 @@ impl<'r, B: Backend> Arena<'r, B> {
         depth_stencil_render_target: Option<RenderTargetDescriptor<'a, B>>,
         viewports: impl IntoIterator<Item = Viewport>,
         scissors: impl IntoIterator<Item = ScissorRect>,
-    ) -> Arguments<'a, B, S> {
-        Arguments {
+    ) -> ArgumentBlock<'a, B, S> {
+        ArgumentBlock {
             arguments: unsafe {
-                self.instance.create_arguments(
+                self.instance.create_argument_block(
                     &self.inner(),
                     signature.inner(),
                     //signature.description(),
@@ -585,36 +570,35 @@ impl<'r, B: Backend> Arena<'r, B> {
         }
     }
 
-    pub fn create_typed_arguments<'a, 'b, T: PipelineInterface<'a, B>>(
+    pub fn create_typed_argument_block<'a, 'b, T: Arguments<'a, B>>(
         &'a self,
         args: T,
-    ) -> Arguments<'a, B, TypedSignature<'a, B, T::IntoInterface>> {
+    ) -> ArgumentBlock<'a, B, TypedSignature<'a, B, T::IntoInterface>> {
         let sig = self.renderer.get_cached_signature::<T::IntoInterface>();
-        args.into_arguments(sig, self)
+        args.into_block(sig, self)
     }
-
-    /*
-    /// Creates a pipeline argument group.
-    ///
-    /// Note: this must be fast, and allocate as little as possible.
-    /// Issue: this will entail a hash map lookup, though.
-    /// Avoid intermediate buffers. Ideally, have the backend directly visit the arguments.
-    pub fn create_arguments<'a, T: PipelineInterface<'a, B>>(
-        &'a self,
-        arguments: T,
-    ) -> PipelineArguments<'a, B, T::IntoInterface> {
-        // get the signature
-        let signature = self.create_pipeline_signature_typeless(T::SIGNATURE);
-        PipelineArguments(arguments.into_arguments(signature, self).0, PhantomData)
-    }*/
 }
 
 //--------------------------------------------------------------------------------------------------
 
-/// Renderer
+/// Renderer.
+///
+/// This is the main interface for interacting with a backend.
+/// All GPU resources (images, buffers, etc.) are allocated in _arenas_, and all elements of
+/// an arena are dropped at the same time. The [create_arena] method creates a new arena.
+///
+/// Commands (draw, compute, upload...) are not sent immediately to the GPU.
+/// Instead, they are first collected in _command buffers_.
+/// Command buffers are created using the [create_command_buffer] method.
+/// Once you have finished filling command buffers, they can be submitted all at once to the GPU
+/// via the [submit_frame] method.
+///
+/// Note that the final submission order of commands to the GPU is defined by their associated
+/// _sort key_. See (TODO) for more info.
 pub struct Renderer<B: Backend> {
+    /// Backend instance
     instance: B::Instance,
-    /// Arena for long-lived or cached objects, such as pipeline signatures.
+    /// Arena for long-lived or cached objects, such as pipeline signatures
     default_arena: Option<Box<B::Arena>>,
     /// Cache of pipeline signatures
     signature_cache: Mutex<HashMap<TypeId, *const B::Signature>>,
@@ -640,7 +624,7 @@ impl<B: Backend> Renderer<B> {
     }
 
     /// Returns or creates the pipeline signature associated to the pipeline interface type.
-    pub fn get_cached_signature<'r, P: PipelineInterface<'r, B>>(
+    pub fn get_cached_signature<'r, P: Arguments<'r, B>>(
         &'r self,
     ) -> TypedSignature<'r, B, P> {
         let typeid = TypeId::of::<P::UniqueType>();

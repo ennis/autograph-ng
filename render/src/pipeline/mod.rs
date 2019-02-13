@@ -6,7 +6,7 @@ use crate::vertex::VertexLayout;
 use crate::Arena;
 use crate::Backend;
 use crate::Renderer;
-pub use autograph_render_macros::PipelineInterface;
+pub use autograph_render_macros::Arguments;
 use bitflags::bitflags;
 use ordered_float::NotNan;
 use std::marker::PhantomData;
@@ -455,21 +455,6 @@ pub struct GraphicsPipelineCreateInfo<'a, 'b, B: Backend> {
     pub dynamic_state: DynamicStateFlags,
 }
 
-/*
-/// Variant of [GraphicsPipelineCreateInfoTypeless] where some information is derived from types
-/// passed to [Arena::create_graphics_pipeline].
-#[derive(Copy, Clone)]
-pub struct GraphicsPipelineCreateInfo<'a, 'b, B: Backend> {
-    pub shader_stages: &'b GraphicsShaderStages<'a, 'b, B>,
-    pub viewport_state: &'b ViewportState<'b>,
-    pub rasterization_state: &'b RasterisationState,
-    pub multisample_state: &'b MultisampleState,
-    pub depth_stencil_state: &'b DepthStencilState,
-    pub input_assembly_state: &'b InputAssemblyState,
-    pub color_blend_state: &'b ColorBlendState<'b>,
-}
-*/
-
 //--------------------------------------------------------------------------------------------------
 
 /// Shader module.
@@ -491,11 +476,6 @@ impl<'a, 'spv, B: Backend> ShaderModule<'a, 'spv, B> {
         self.1
     }
 }
-
-/// Graphics pipeline.
-#[derive(derivative::Derivative)]
-#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
-pub struct GraphicsPipelineTypeless<'a, B: Backend>(pub(crate) &'a B::GraphicsPipeline);
 
 /*
 impl<'a, B: Backend, T: PipelineInterface<'a, B>> GraphicsPipeline<'a,B,T> {
@@ -535,12 +515,12 @@ pub trait Signature<'a, B: Backend>: Copy + Clone + Debug {
 
 #[derive(derivative::Derivative)]
 #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
-pub struct TypedSignature<'a, B: Backend, T: PipelineInterface<'a, B>>(
+pub struct TypedSignature<'a, B: Backend, T: Arguments<'a, B>>(
     pub(crate) &'a B::Signature,
     pub(crate) PhantomData<&'a T>,
 );
 
-impl<'a, B: Backend, T: PipelineInterface<'a, B>> Signature<'a, B> for TypedSignature<'a, B, T> {
+impl<'a, B: Backend, T: Arguments<'a, B>> Signature<'a, B> for TypedSignature<'a, B, T> {
     fn inner(&self) -> &'a B::Signature {
         self.0
     }
@@ -549,38 +529,37 @@ impl<'a, B: Backend, T: PipelineInterface<'a, B>> Signature<'a, B> for TypedSign
     }
 }
 
+/// Argument block.
+///
+/// An _argument block_ is a set of GPU states that are set before executing a command. They can be
+/// seen as a block of arguments for draw or compute commands.
+/// They are typically created from an object implementing the [Arguments] trait, but can be created
+/// manually if necessary (e.g. when the interface to a shader is not known until runtime).
+///
 #[derive(derivative::Derivative)]
 #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
-pub struct Arguments<'a, B: Backend, S: Signature<'a, B>> {
-    pub(crate) arguments: &'a B::Arguments,
+pub struct ArgumentBlock<'a, B: Backend, S: Signature<'a, B>> {
+    pub(crate) arguments: &'a B::ArgumentBlock,
     pub(crate) signature: S,
 }
 
+/// Type alias for argument blocks with a statically known signature.
+pub type TypedArgumentBlock<'a, B, T> = ArgumentBlock<'a, B, TypedSignature<'a, B, T>>;
+
+/// Argument block without an associated signature.
 #[derive(derivative::Derivative)]
 #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
-pub struct BareArguments<'a, B: Backend>(pub &'a B::Arguments);
+pub struct BareArgumentBlock<'a, B: Backend>(pub &'a B::ArgumentBlock);
 
-impl<'a, B: Backend, S: Signature<'a, B>> Into<BareArguments<'a, B>> for Arguments<'a, B, S>
+impl<'a, B: Backend, S: Signature<'a, B>> Into<BareArgumentBlock<'a, B>> for ArgumentBlock<'a, B, S>
 {
-    fn into(self) -> BareArguments<'a, B> {
-        BareArguments(self.arguments)
+    fn into(self) -> BareArgumentBlock<'a, B> {
+        BareArgumentBlock(self.arguments)
     }
 }
 
-/*impl<'a, B: Backend, S: Signature<'a, B>> Arguments<'a, B, S>  {
-    fn inner(&self) -> &'a B::Arguments {
-        self.arguments
-    }
-    fn signature(&self) -> S {
-        self.signature
-    }
-}*/
-
-pub type TypedArguments<'a, B, T> = Arguments<'a, B, TypedSignature<'a, B, T>>;
 
 /// Graphics pipeline.
-/// OR GraphicsPipeline<'a, B: Backend, S: Signature> ?
-
 #[derive(derivative::Derivative)]
 #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
 pub struct GraphicsPipeline<'a, B: Backend, S: Signature<'a, B>> {
@@ -588,90 +567,106 @@ pub struct GraphicsPipeline<'a, B: Backend, S: Signature<'a, B>> {
     pub(crate) signature: S,
 }
 
+/// Graphics pipeline without an associated signature.
+#[derive(derivative::Derivative)]
+#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+pub struct GraphicsPipelineTypeless<'a, B: Backend>(pub(crate) &'a B::GraphicsPipeline);
+
+/// Type alias for argument blocks with a statically known signature.
 pub type TypedGraphicsPipeline<'a, B, T> = GraphicsPipeline<'a, B, TypedSignature<'a, B, T>>;
 
 ///
 /// Describes pipeline states to set before issuing a draw or compute call.
 ///
+/// Types implementing the [Arguments] trait contain the following pieces of information:
+/// * descriptors to bind to the pipeline
+///     * uniform buffers
+///     * storage buffers
+///     * sampled images
+///     * storage images
+///     * etc.
+/// * vertex buffers
+/// * index buffer
+/// * render targets (color, depth and stencil)
+/// * viewports
+/// * scissor rectangles
+/// * inherited argument blocks
+///
+/// They provide the [into_block] methods for turning them into a form optimized for GPU submission
+/// (see [ArgumentBlock]).
+///
+/// Common sets of arguments can be reused and shared via _inherited argument blocks_.
+/// It is advised to create different argument blocks for arguments that are shared by many commands,
+/// and depending on the update frequency of the data they refer to.
+/// For instance, one would typically create a separate argument block for render targets
+/// and keep it across frames as render targets change infrequently.
+///
 /// #### Custom derive
-/// It is possible to automatically derive [PipelineInterface] for structs with named fields.
-///
-/// By default, the implementation is generic over the backend type, and expects the struct to have
-/// one lifetime parameter (`'a`) and a single type parameter for the renderer backend
-/// (`T: RendererBackend`).
-///
-/// Attributes define the interpretation of struct fields in terms of pipeline bindings.
-/// The field must be convertible via [Into] to the target binding type:
-/// * `descriptor_set(index=n)` specifies a descriptor set.
-/// The field must implement `Into<DescriptorSet>`.
-/// * `vertex_buffer` specifies a vertex buffer. The field must implement `Into<BufferTypeless>`.
-/// * `index_buffer` specifies an index buffer. The field must implement `Into<BufferTypeless>`.
-///   Annotating more than one field with this attribute is an error.
-/// * `viewport` specifies a viewport. The field must implement `Into<Viewport>`.
-/// * `scissor` specifies a scissor rectangle. The field must implement `Into<ScissorRect>`.
-///
-/// It is also possible to specify arrays of pipeline bindings:
-/// * `descriptor_set_array(base_index=n)` specifies an array of descriptor sets.
-///   The field must implement `IntoIterator<DescriptorSet>`.
-/// * `vertex_buffer_array(base_index=n)` specifies an array of vertex buffers.
-///   The field must implement `IntoIterator<BufferTypeless>`.
-/// * `viewport_array(base_index=n)` specifies an array of viewports.
-///   The field must implement `IntoIterator<Viewport>`.
-/// * `scissor_array(base_index=n)` specifies an array of scissor rectangles.
-///   The field must implement `IntoIterator<ScissorRect>`.
-///
-/// When a binding index is required, it is derived from the order of appearance of the binding in
-/// the struct. For instance:
-///
-/// ```
-/// #[derive(PipelineInterface)]
-/// pub struct ExampleInterface<'a> {
-///     #[descriptor_set] ds_a: DescriptorSet<'a>,     // index 0
-///     ...
-///     #[descriptor_set] ds_b: DescriptorSet<'a>,     // index 1
-///     ...
-///     #[descriptor_set_array] dss: DescriptorSet<'a>,   // indices 2..2+dss.len
-///     ...
-///     #[descriptor_set] ds_c: DescriptorSet<'a>,   // index dss.len
-/// }
-/// ```
-///
-/// #### Example
+/// It is possible to automatically derive the [Arguments] traits for structs. E.g:
 ///
 ///```
-/// #[derive(PipelineInterface)]
+/// #[derive(Arguments)]
+/// #[argument(backend="B")]
 /// pub struct ExampleInterface<'a> {
-///    #[framebuffer]
-///    pub framebuffer: Framebuffer<'a>,
-///    #[descriptor_set]
-///    pub per_object: DescriptorSet<'a>,   // DS index 0
-///    #[viewport]
+///    #[argument(render_target)]
+///    pub color_target: Image<'a>,
+///    #[argument(uniform_buffer)]
+///    pub per_frame: Buffer<'a, PerFrameParams>,
+///    #[argument(uniform_buffer)]
+///    pub per_object: Buffer<'a, PerObjectParams>,
+///    #[argument(viewport)]
 ///    pub viewport: Viewport,
-///    // Buffer<T> implements Into<BufferTypeless>
-///    #[vertex_buffer(base_location=0)]
-///    pub vertex_buffer: Buffer<'a, [Vertex]>,  // VB index 0
-///    #[descriptor_set]
-///    pub other: DescriptorSet<'a>,  // DS index 1
+///    #[argument(vertex_buffer)]
+///    pub vertex_buffer: Buffer<'a, [Vertex]>,
 /// }
 /// ```
 ///
-pub trait PipelineInterface<'a, B: Backend>: Sized {
+/// In that case, if the render target is shared between different pipeline interfaces, it is better
+/// to put it in a separate argument block:
+///
+/// ```
+/// #[derive(Arguments)]
+/// #[argument(backend="B")]
+/// pub struct RenderTargets<'a> {
+///    #[argument(render_target)]
+///    pub color_target: Image<'a>,
+/// }
+///
+/// #[derive(Arguments)]
+/// #[argument(backend="B")]
+/// pub struct ExampleA<'a> {
+///    #[argument(inherit)]
+///    pub render_targets: RenderTargets<'a>,
+///    // ...
+/// }
+///
+/// #[derive(Arguments)]
+/// #[argument(backend="B")]
+/// pub struct ExampleB<'a> {
+///    #[argument(inherit)]
+///    pub render_targets: RenderTargets<'a>,
+///    // ...
+/// }
+/// ```
+///
+/// TODO document more
+pub trait Arguments<'a, B: Backend>: Sized {
     const SIGNATURE: &'static SignatureDescription<'static>;
 
     /// A 'static marker type that uniquely identifies Self: this is for getting a TypeId.
     type UniqueType: 'static;
-    type IntoInterface: PipelineInterface<'a, B> + 'a;
+    type IntoInterface: Arguments<'a, B> + 'a;
 
     fn get_inherited_signatures(renderer: &'a Renderer<B>) -> Vec<&'a B::Signature>;
-    fn into_arguments(
+    fn into_block(
         self,
         signature: TypedSignature<'a, B, Self::IntoInterface>,
         arena: &'a Arena<B>,
-    ) -> Arguments<'a, B, TypedSignature<'a, B, Self::IntoInterface>>;
+    ) -> ArgumentBlock<'a, B, TypedSignature<'a, B, Self::IntoInterface>>;
 }
 
-impl<'a, B: Backend, P: PipelineInterface<'a, B>> PipelineInterface<'a, B>
-    for Arguments<'a, B, TypedSignature<'a, B, P>>
+impl<'a, B: Backend, P: Arguments<'a, B>> Arguments<'a, B>
+    for ArgumentBlock<'a, B, TypedSignature<'a, B, P>>
 {
     const SIGNATURE: &'static SignatureDescription<'static> = P::SIGNATURE;
     type UniqueType = P::UniqueType;
@@ -681,11 +676,11 @@ impl<'a, B: Backend, P: PipelineInterface<'a, B>> PipelineInterface<'a, B>
         P::get_inherited_signatures(renderer)
     }
 
-    fn into_arguments(
+    fn into_block(
         self,
         _signature: TypedSignature<'a, B, P>,
         _arena: &'a Arena<B>,
-    ) -> Arguments<'a, B, TypedSignature<'a, B, P>> {
+    ) -> ArgumentBlock<'a, B, TypedSignature<'a, B, P>> {
         self.into()
     }
 }

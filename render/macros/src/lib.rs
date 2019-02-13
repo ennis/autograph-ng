@@ -14,7 +14,7 @@ extern crate syn;
 
 //mod descriptor_set_interface;
 mod layout;
-mod pipeline_interface;
+mod arguments;
 
 fn autograph_name() -> syn::Path {
     syn::parse_str("autograph_render").unwrap()
@@ -44,25 +44,12 @@ pub fn vertex_data_derive(input: proc_macro::TokenStream) -> proc_macro::TokenSt
     result.into()
 }
 
-/*
-#[proc_macro_derive(DescriptorSetInterface, attributes(descriptor))]
-pub fn descriptor_set_interface_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+#[proc_macro_derive(Arguments, attributes(argument))]
+pub fn arguments_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast: syn::DeriveInput = syn::parse(input).expect("Couldn't parse item");
 
     let result = match ast.data {
-        syn::Data::Struct(ref s) => descriptor_set_interface::generate(&ast, &s.fields),
-        _ => panic!("DescriptorSetInterface trait can only be derived on structs"),
-    };
-
-    result.into()
-}*/
-
-#[proc_macro_derive(PipelineInterface, attributes(pipeline))]
-pub fn pipeline_interface_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let ast: syn::DeriveInput = syn::parse(input).expect("Couldn't parse item");
-
-    let result = match ast.data {
-        syn::Data::Struct(ref s) => pipeline_interface::generate(&ast, &s.fields),
+        syn::Data::Struct(ref s) => arguments::generate(&ast, &s.fields),
         _ => panic!("PipelineInterface trait can only be derived on structs"),
     };
 

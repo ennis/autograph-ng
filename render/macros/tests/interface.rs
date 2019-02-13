@@ -20,7 +20,7 @@ pub struct Vertex {
     pub tex: [f32; 2],
 }
 
-#[derive(PipelineInterface)]
+#[derive(Arguments)]
 pub struct TestPipelineInterface<'a, R: Backend> {
     #[framebuffer]
     pub framebuffer: Framebuffer<'a, R>,

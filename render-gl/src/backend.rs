@@ -16,8 +16,8 @@ use crate::image::ImageDescription;
 use crate::image::RawImage;
 use crate::pipeline::create_graphics_pipeline_internal;
 use crate::pipeline::GlGraphicsPipeline;
-use crate::pipeline::GlPipelineArguments;
-use crate::pipeline::GlPipelineSignature;
+use crate::pipeline::GlArgumentBlock;
+use crate::pipeline::GlSignature;
 use crate::pipeline::GlShaderModule;
 use crate::sampler::SamplerCache;
 use crate::swapchain::GlSwapchain;
@@ -52,7 +52,7 @@ use std::str;
 use std::time::Duration;
 use autograph_render::pipeline::GraphicsPipelineCreateInfo;
 use autograph_render::pipeline::SignatureDescription;
-use autograph_render::pipeline::BareArguments;
+use autograph_render::pipeline::BareArgumentBlock;
 use crate::util::DroplessArena;
 use typed_arena::Arena;
 use std::cell::RefCell;
@@ -92,8 +92,8 @@ impl Backend for OpenGlBackend {
     type Buffer = GlBuffer;
     type ShaderModule = GlShaderModule;
     type GraphicsPipeline = GlGraphicsPipeline;
-    type Signature = GlPipelineSignature;
-    type Arguments = GlPipelineArguments;
+    type Signature = GlSignature;
+    type ArgumentBlock = GlArgumentBlock;
     type HostReference = ();
 }
 
@@ -103,7 +103,7 @@ pub struct GlArena {
     pub(crate) buffers: Arena<GlBuffer>,
     pub(crate) images: Arena<GlImage>,
     pub(crate) shader_modules: Arena<GlShaderModule>,
-    pub(crate) signatures: Arena<GlPipelineSignature>,
+    pub(crate) signatures: Arena<GlSignature>,
     pub(crate) graphics_pipelines: Arena<GlGraphicsPipeline>,
     pub(crate) framebuffers: Arena<GlFramebuffer>,
     pub(crate) upload_buffer: UploadBuffer,
@@ -478,7 +478,7 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
     unsafe fn create_graphics_pipeline<'a, 'b>(
         &self,
         arena: &'a GlArena,
-        root_signature: &'a GlPipelineSignature,
+        root_signature: &'a GlSignature,
         root_signature_description: &SignatureDescription,
         create_info: &GraphicsPipelineCreateInfo<'a, 'b, OpenGlBackend>,
     ) -> &'a GlGraphicsPipeline {
@@ -486,11 +486,11 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
     }
 
     //----------------------------------------------------------------------------------------------
-    unsafe fn create_arguments<'a, 'b>(
+    unsafe fn create_argument_block<'a, 'b>(
         &self,
         arena: &'a GlArena,
-        signature: &'a GlPipelineSignature,
-        arguments: impl IntoIterator<Item = BareArguments<'a, OpenGlBackend>>,
+        signature: &'a GlSignature,
+        arguments: impl IntoIterator<Item = BareArgumentBlock<'a, OpenGlBackend>>,
         descriptors: impl IntoIterator<Item = Descriptor<'a, OpenGlBackend>>,
         vertex_buffers: impl IntoIterator<Item = VertexBufferDescriptor<'a, 'b, OpenGlBackend>>,
         index_buffer: Option<IndexBufferDescriptor<'a, OpenGlBackend>>,
@@ -498,9 +498,9 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
         depth_stencil_render_target: Option<RenderTargetDescriptor<'a, OpenGlBackend>>,
         viewports: impl IntoIterator<Item = Viewport>,
         scissors: impl IntoIterator<Item = ScissorRect>,
-    ) -> &'a GlPipelineArguments {
+    ) -> &'a GlArgumentBlock {
         let mut sampler_cache = self.sampler_cache.borrow_mut();
-        GlPipelineArguments::new(
+        GlArgumentBlock::new(
             arena,
             &self.gl,
             &mut sampler_cache,
@@ -519,10 +519,10 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
     unsafe fn create_signature<'a>(
         &'a self,
         arena: &'a GlArena,
-        inherited: &[&'a GlPipelineSignature],
+        inherited: &[&'a GlSignature],
         description: &SignatureDescription,
-    ) -> &'a GlPipelineSignature {
-        let sig = GlPipelineSignature::new(
+    ) -> &'a GlSignature {
+        let sig = GlSignature::new(
             arena,
             inherited,
             description,

@@ -22,8 +22,8 @@ mod vao;
 use self::program::create_graphics_program;
 use self::vao::create_vertex_array_object;
 
-pub(crate) use self::arguments::GlPipelineArguments;
-pub(crate) use self::arguments::GlPipelineSignature;
+pub(crate) use self::arguments::GlArgumentBlock;
+pub(crate) use self::arguments::GlSignature;
 pub(crate) use self::arguments::StateBlock;
 pub(crate) use self::shader::DescriptorMap;
 pub(crate) use self::shader::GlShaderModule;
@@ -125,7 +125,7 @@ pub(crate) fn build_vertex_input_interface(
 pub(crate) unsafe fn create_graphics_pipeline_internal<'a>(
     gl: &Gl,
     arena: &'a GlArena,
-    _root_signature: &'a GlPipelineSignature,
+    _root_signature: &'a GlSignature,
     root_signature_description: &SignatureDescription,
     ci: &GraphicsPipelineCreateInfo<'a, '_, OpenGlBackend>,
 ) -> &'a GlGraphicsPipeline
