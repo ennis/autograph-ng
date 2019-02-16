@@ -152,8 +152,8 @@ struct ViewportEntry {
 #[derive(Copy, Clone)]
 #[repr(C)]
 struct DepthRangeEntry {
-    min: NotNan<f32>,
-    max: NotNan<f32>,
+    min: NotNan<f64>,
+    max: NotNan<f64>,
 }
 
 impl StateCache {
@@ -351,12 +351,12 @@ impl StateCache {
                     cur_viewports[i].height = vp.height;
                 }
 
-                if cur_depth_ranges[i].min != vp.min_depth
-                    || cur_depth_ranges[i].max != vp.max_depth
+                if cur_depth_ranges[i].min != unsafe {NotNan::unchecked_new(vp.min_depth.into_inner() as f64)}
+                    || cur_depth_ranges[i].max != unsafe {NotNan::unchecked_new(vp.max_depth.into_inner() as f64)}
                 {
                     should_update_depth_ranges = true;
-                    cur_depth_ranges[i].min = vp.min_depth;
-                    cur_depth_ranges[i].max = vp.max_depth;
+                    cur_depth_ranges[i].min = unsafe {NotNan::unchecked_new(vp.min_depth.into_inner() as f64)};
+                    cur_depth_ranges[i].max = unsafe {NotNan::unchecked_new(vp.max_depth.into_inner() as f64)};
                 }
             }
         } else {
@@ -384,8 +384,8 @@ impl StateCache {
                     height: vp.height.into(),
                 };
                 new_depth_ranges[i] = DepthRangeEntry {
-                    min: vp.min_depth.into(),
-                    max: vp.max_depth.into(),
+                    min: unsafe {NotNan::unchecked_new(vp.min_depth.into_inner() as f64)},
+                    max: unsafe {NotNan::unchecked_new(vp.max_depth.into_inner() as f64)},
                 };
             }
             self.viewports = Some((new_viewports, new_depth_ranges));
@@ -405,7 +405,7 @@ impl StateCache {
                 gl.DepthRangeArrayv(
                     0,
                     self.max_viewports as i32,
-                    depth_ranges.as_ptr() as *const _,
+                    depth_ranges.as_ptr() as *const f64,
                 );
             }
         }
@@ -528,6 +528,7 @@ impl StateCache {
     pub fn set_uniform_buffers(
         &mut self,
         gl: &Gl,
+        first: usize,
         buffers: &[GLuint],
         buffer_offsets: &[GLintptr],
         buffer_sizes: &[GLintptr],
@@ -539,7 +540,7 @@ impl StateCache {
             if count != 0 {
                 gl.BindBuffersRange(
                     gl::UNIFORM_BUFFER,
-                    0,
+                    first as u32,
                     count as i32,
                     buffers.as_ptr(),
                     buffer_offsets.as_ptr(),
@@ -552,6 +553,7 @@ impl StateCache {
     pub fn set_shader_storage_buffers(
         &mut self,
         gl: &Gl,
+        first: usize,
         buffers: &[GLuint],
         buffer_offsets: &[GLintptr],
         buffer_sizes: &[GLintptr],
@@ -563,7 +565,7 @@ impl StateCache {
             if count != 0 {
                 gl.BindBuffersRange(
                     gl::SHADER_STORAGE_BUFFER,
-                    0,
+                    first as u32,
                     count as i32,
                     buffers.as_ptr(),
                     buffer_offsets.as_ptr(),
@@ -573,27 +575,28 @@ impl StateCache {
         }
     }
 
-    pub fn set_samplers(&mut self, gl: &Gl, samplers: &[GLuint]) {
+    pub fn set_samplers(&mut self, gl: &Gl, first: usize, samplers: &[GLuint]) {
         // passthrough, for now
         // may do a comparison, or a quick diff in the future
-        unsafe { gl.BindSamplers(0, samplers.len() as i32, samplers.as_ptr()) }
+        unsafe { gl.BindSamplers(first as u32, samplers.len() as i32, samplers.as_ptr()) }
     }
 
-    pub fn set_textures(&mut self, gl: &Gl, textures: &[GLuint]) {
+    pub fn set_textures(&mut self, gl: &Gl, first: usize, textures: &[GLuint]) {
         // passthrough, for now
         // may do a comparison, or a quick diff in the future
-        unsafe { gl.BindTextures(0, textures.len() as i32, textures.as_ptr()) }
+        unsafe { gl.BindTextures(first as u32, textures.len() as i32, textures.as_ptr()) }
     }
 
-    pub fn set_images(&mut self, gl: &Gl, images: &[GLuint]) {
+    pub fn set_images(&mut self, gl: &Gl, first: usize, images: &[GLuint]) {
         // passthrough, for now
         // may do a comparison, or a quick diff in the future
-        unsafe { gl.BindImageTextures(0, images.len() as i32, images.as_ptr()) }
+        unsafe { gl.BindImageTextures(first as u32, images.len() as i32, images.as_ptr()) }
     }
 
     pub fn set_vertex_buffers(
         &mut self,
         gl: &Gl,
+        first: usize,
         buffers: &[GLuint],
         buffer_offsets: &[GLintptr],
         buffer_strides: &[GLsizei],
@@ -604,7 +607,7 @@ impl StateCache {
             let count = buffers.len();
             if count != 0 {
                 gl.BindVertexBuffers(
-                    0,
+                    first as u32,
                     count as i32,
                     buffers.as_ptr(),
                     buffer_offsets.as_ptr(),

@@ -8,6 +8,7 @@ use crate::OpenGlBackend;
 use autograph_render::descriptor::Descriptor;
 use autograph_render::descriptor::DescriptorType;
 use autograph_render::framebuffer::RenderTargetDescriptor;
+use autograph_render::pipeline::BareArgumentBlock;
 use autograph_render::pipeline::ScissorRect;
 use autograph_render::pipeline::SignatureDescription;
 use autograph_render::pipeline::Viewport;
@@ -16,7 +17,6 @@ use autograph_render::vertex::IndexFormat;
 use autograph_render::vertex::VertexBufferDescriptor;
 use std::iter;
 use std::slice;
-use autograph_render::pipeline::BareArgumentBlock;
 
 /// Proposal: flatten signature?
 /// At least, no need to store inherited (only the length matters)
@@ -190,7 +190,7 @@ impl GlArgumentBlock {
                     let num_targets = signature.num_render_targets;
                     let rt = slice::from_raw_parts(rt as *const _, num_targets);
                     color_targets.extend_from_slice(rt)
-                },
+                }
                 &StateBlock::DepthStencilRenderTarget(rt) => *depth_stencil_target = Some(&*rt),
                 _ => {}
             }
@@ -440,8 +440,11 @@ impl GlArgumentBlock {
             }
 
             // build framebuffer
-            let fb = GlFramebuffer::new(gl, dbg!(&tmp_color[..]), tmp_depth_stencil)
-                .expect("failed to create framebuffer");
+            // put in arena so that it's deleted at the same time as the argument block
+            let fb = arena.framebuffers.alloc(
+                GlFramebuffer::new(gl, dbg!(&tmp_color[..]), tmp_depth_stencil)
+                    .expect("failed to create framebuffer"),
+            );
 
             push_state_block(StateBlock::Framebuffer(fb.obj));
         } else {

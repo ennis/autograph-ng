@@ -1,20 +1,17 @@
-//use crate::descriptor::Descriptor;
 use crate::descriptor::DescriptorBinding;
 use crate::descriptor::DescriptorType;
-//use crate::pipeline::GraphicsPipelineCreateInfo;
-use crate::pipeline::GraphicsPipelineCreateInfoTypeless;
+use crate::framebuffer::FragmentOutputDescription;
+use crate::pipeline::GraphicsPipelineCreateInfo;
+use crate::pipeline::SignatureDescription;
+use crate::vertex::IndexFormat;
+use crate::vertex::VertexLayout;
+use crate::Backend;
 use autograph_spirv as spirv;
 use autograph_spirv::headers::StorageClass;
 use autograph_spirv::TypeDesc;
 use log::warn;
 use std::error;
 use std::fmt;
-use crate::Backend;
-use crate::pipeline::PipelineSignatureTypeless;
-use crate::pipeline::PipelineSignatureDescription;
-use crate::framebuffer::FragmentOutputDescription;
-use crate::vertex::VertexLayout;
-use crate::vertex::IndexFormat;
 
 #[derive(Copy, Clone, Debug)]
 pub enum InterfaceItem {
@@ -41,7 +38,7 @@ pub enum InterfaceMismatchError {
 pub enum ValidationError {
     InvalidSpirV(spirv::ParseError),
     InterfaceMismatch(Vec<InterfaceMismatchError>),
-    InvalidRootSignature(Vec<String>)
+    InvalidRootSignature(Vec<String>),
 }
 
 impl fmt::Display for ValidationError {
@@ -110,9 +107,7 @@ fn validate_data_type(
     }
 }
 
-
-struct ValidationInfo<'a>
-{
+struct ValidationInfo<'a> {
     descriptor_sets: Vec<Vec<(&'a DescriptorBinding<'a>, bool)>>,
     fragment_outputs: Vec<FragmentOutputDescription>,
     vertex_layouts: Vec<VertexLayout<'a>>,
@@ -126,8 +121,7 @@ struct ValidationInfo<'a>
     fragment_output_root: bool,
 }
 
-impl<'a> ValidationInfo<'a>
-{
+impl<'a> ValidationInfo<'a> {
     fn new() -> ValidationInfo<'a> {
         ValidationInfo {
             descriptor_sets: vec![],
@@ -136,36 +130,41 @@ impl<'a> ValidationInfo<'a>
             vertex_input_root: false,
             index_format: None,
             depth_stencil_fragment_output: None,
-            fragment_output_root: false
+            fragment_output_root: false,
         }
     }
 
     ///
     /// # Validation of root pipeline signatures
     ///
-    fn build(&mut self, signature: &'a PipelineSignatureDescription<'a>) -> Result<(), ValidationError>
-    {
+    fn build(&mut self, signature: &'a SignatureDescription<'a>) -> Result<(), ValidationError> {
         let mut errs = Vec::new();
 
-        for &subsig in signature.sub_signatures {
-            self.build(subsig);
+        for &subsig in signature.inherited {
+            self.build(subsig)?;
         }
 
         // If this block has descriptors, then this block defines a new descriptor set
         if signature.descriptors.len() > 0 {
-            self.descriptor_sets.push(signature.descriptors.iter().map(|d| (d, false)).collect());
+            self.descriptor_sets
+                .push(signature.descriptors.iter().map(|d| (d, false)).collect());
         }
 
         self.fragment_outputs.extend(signature.fragment_outputs);
         self.vertex_layouts.extend(signature.vertex_layouts);
 
         // Vertex input root already encountered but adding new inputs
-        if self.vertex_input_root && (signature.vertex_layouts.len() > 0 || signature.index_format.is_some()) {
+        if self.vertex_input_root
+            && (signature.vertex_layouts.len() > 0 || signature.index_format.is_some())
+        {
             errs.push("additional vertex inputs outside of root signature".to_string());
         }
 
         // Fragment output root already encountered but adding new outputs
-        if self.fragment_output_root && (signature.fragment_outputs.len() > 0 || signature.depth_stencil_fragment_output.is_some()) {
+        if self.fragment_output_root
+            && (signature.fragment_outputs.len() > 0
+                || signature.depth_stencil_fragment_output.is_some())
+        {
             errs.push("additional fragment outputs outside of root signature".to_string());
         }
 
@@ -229,7 +228,6 @@ impl<'a> ValidationInfo<'a>
         Err(InterfaceMismatchError::NotFound(interface))
     }
 
-
     fn validate_descriptor(
         &mut self,
         set: u32,
@@ -273,7 +271,8 @@ impl<'a> ValidationInfo<'a>
         } else if v.storage == StorageClass::UniformConstant {
             if let &TypeDesc::Pointer(&TypeDesc::Image(_, _)) = v.ty {
                 // image -------------------------------------------------------------------------------
-                let interface = InterfaceItem::Descriptor(set, binding, DescriptorType::StorageImage);
+                let interface =
+                    InterfaceItem::Descriptor(set, binding, DescriptorType::StorageImage);
                 let desc = self.use_descriptor(set, binding, interface)?;
                 validate_descriptor_type(
                     desc.descriptor_type,
@@ -283,7 +282,8 @@ impl<'a> ValidationInfo<'a>
                 Ok(())
             } else if let &TypeDesc::Pointer(&TypeDesc::SampledImage(_, _)) = v.ty {
                 // sampled image -----------------------------------------------------------------------
-                let interface = InterfaceItem::Descriptor(set, binding, DescriptorType::SampledImage);
+                let interface =
+                    InterfaceItem::Descriptor(set, binding, DescriptorType::SampledImage);
                 let desc = self.use_descriptor(set, binding, interface)?;
                 validate_descriptor_type(
                     desc.descriptor_type,
@@ -304,10 +304,7 @@ impl<'a> ValidationInfo<'a>
             Ok(())
         }
     }
-
 }
-
-
 
 /// Basic verification of graphics pipeline interfaces.
 ///
@@ -321,17 +318,9 @@ impl<'a> ValidationInfo<'a>
 /// - validate host-side required outputs
 /// - accept layout-equivalent types (?)
 ///
-pub fn validate_spirv_graphics_pipeline(
-    shader_stages: &SpirvGraphicsShaderStages,
-
-    viewport_state: &ViewportState,
-    rasterization_state: &RasterisationState,
-    multisample_state: &MultisampleState,
-    depth_stencil_state: &DepthStencilState,
-    input_assembly_state: &InputAssemblyState,
-    color_blend_state: &ColorBlendState,
-    // traversal of the root signature in depth-first order
-    signatures: &[&PipelineSignatureDescription],
+pub fn validate_spirv_graphics_pipeline<B: Backend>(
+    signature_desc: &SignatureDescription,
+    create_info: &GraphicsPipelineCreateInfo<B>,
 ) -> Result<(), ValidationError> {
     let a = spirv::ast::Arenas::new();
     // create SPIR-V modules
@@ -395,8 +384,7 @@ pub fn validate_spirv_graphics_pipeline(
 
     // build descriptor map
     let mut vinfo = ValidationInfo::new();
-    vinfo.build(create_info.root_signature.description());
-
+    vinfo.build(signature_desc)?;
 
     // iterate over all variables
     let all_vars = vert_ast

@@ -9,11 +9,11 @@ use crate::Renderer;
 pub use autograph_render_macros::Arguments;
 use bitflags::bitflags;
 use ordered_float::NotNan;
+use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::mem;
-use std::fmt::Debug;
 
-//pub mod validate;
+pub mod validate;
 
 bitflags! {
     #[derive(Default)]
@@ -551,13 +551,13 @@ pub type TypedArgumentBlock<'a, B, T> = ArgumentBlock<'a, B, TypedSignature<'a, 
 #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
 pub struct BareArgumentBlock<'a, B: Backend>(pub &'a B::ArgumentBlock);
 
-impl<'a, B: Backend, S: Signature<'a, B>> Into<BareArgumentBlock<'a, B>> for ArgumentBlock<'a, B, S>
+impl<'a, B: Backend, S: Signature<'a, B>> Into<BareArgumentBlock<'a, B>>
+    for ArgumentBlock<'a, B, S>
 {
     fn into(self) -> BareArgumentBlock<'a, B> {
         BareArgumentBlock(self.arguments)
     }
 }
-
 
 /// Graphics pipeline.
 #[derive(derivative::Derivative)]

@@ -10,7 +10,8 @@ OK (spirv) Implement `std140_layout_and_size` for array of structs
 OK (render/pipeline) FragmentOutputInterface, create framebuffers from that
 - (spirv) Unit-tests for layout calculation
 - (spirv) Parse constant values for array sizes (panic on specialization for now)
-- (shader-macros) Cleanup autograph_shader_macros (keep only include_shader, nuke the preprocessor)
+- (shader/macros) Cleanup autograph_shader_macros (keep only include_shader, nuke the preprocessor)
+- (shader/macros) include_str all includes so that shader is recompiled even if a header changed
 - (render/backend) backend calls: return Result<> instead of panicking
 - (render/pipeline/validation) Check vertex input interfaces
 - (render/pipeline/validation) Precise errors
@@ -19,6 +20,10 @@ OK (render/pipeline) FragmentOutputInterface, create framebuffers from that
 - (render-gl/util) unit tests for dropless arena
 OK (render) remove TypeId in create_info, replace with generic methods in the backend instance (can fake typeids)
     - caching now done in frontend
+- (render) convenience methods
+    - create_{vertex,fragment,...}_shader(_module)
+
     
 ### Enhancements
 - (render/validation) accept structs with single member in place of just the member
+- (render/pipeline/args) support reuse of Arguments struct without ArgumentBlock indirection (paste copy of Arguments)

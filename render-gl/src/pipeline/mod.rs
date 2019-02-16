@@ -29,9 +29,9 @@ pub(crate) use self::shader::DescriptorMap;
 pub(crate) use self::shader::GlShaderModule;
 use autograph_render::pipeline::GraphicsPipelineCreateInfo;
 use autograph_render::pipeline::SignatureDescription;
-use autograph_render::vertex::VertexLayout;
 use autograph_render::pipeline::VertexInputAttributeDescription;
 use autograph_render::pipeline::VertexInputRate;
+use autograph_render::vertex::VertexLayout;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct StaticSamplerEntry {
@@ -76,7 +76,6 @@ impl GlGraphicsPipeline {
     }*/
 }
 
-
 /// Converts a sequence of VertexLayouts (one for each vertex buffer) into binding descriptions
 /// and vertex attribute descriptions.
 ///
@@ -84,10 +83,6 @@ impl GlGraphicsPipeline {
 /// and laid out sequentially : i.e. if buffer #0 has 4 elements,
 /// and buffer #1 has 2 elements, then 6 attributes will be generated:
 /// attributes 0..=3 will map to vertex buffer 0 and attributes 4..=5 will map to vertex buffer 1.
-///
-/// TODO it might make sense at some point to change the interface to the backend so that
-/// it takes an array of vertex layouts instead of input bindings and attribute locations,
-/// and let the backend assign attribute locations automatically.
 pub(crate) fn build_vertex_input_interface(
     buffer_layouts: &[VertexLayout],
 ) -> (
@@ -120,6 +115,13 @@ pub(crate) fn build_vertex_input_interface(
     (input_bindings, input_attribs)
 }
 
+fn collect_vertex_layouts<'a>(sig: &'a SignatureDescription<'a>, out: &mut Vec<VertexLayout<'a>>)
+{
+    for &i in sig.inherited {
+        collect_vertex_layouts(i, out);
+    }
+    out.extend(sig.vertex_layouts.iter().cloned());
+}
 
 //--------------------------------------------------------------------------------------------------
 pub(crate) unsafe fn create_graphics_pipeline_internal<'a>(
@@ -128,8 +130,7 @@ pub(crate) unsafe fn create_graphics_pipeline_internal<'a>(
     _root_signature: &'a GlSignature,
     root_signature_description: &SignatureDescription,
     ci: &GraphicsPipelineCreateInfo<'a, '_, OpenGlBackend>,
-) -> &'a GlGraphicsPipeline
-{
+) -> &'a GlGraphicsPipeline {
     let (program, descriptor_map) = {
         let vs = ci.shader_stages.vertex.inner();
         let fs = ci.shader_stages.fragment.map(|s| s.inner());
@@ -139,17 +140,12 @@ pub(crate) unsafe fn create_graphics_pipeline_internal<'a>(
         create_graphics_program(gl, vs, fs, gs, tcs, tes).expect("failed to create program")
     };
 
-    //assert_eq!(vertex_shader.stage, ShaderStageFlags::VERTEX);
-    // TODO
-    // combine static & dynamic
-    let vertex_layouts = root_signature_description
-        .vertex_layouts
-        .iter()
-        .cloned()
-        //.chain(extra_signature.vertex_layouts.iter().cloned())
-        .collect::<Vec<_>>();
+    // collect vertex layouts
+    let mut vertex_layouts = Vec::new();
+    collect_vertex_layouts(root_signature_description, &mut vertex_layouts);
 
-    let (vertex_input_bindings, vertex_input_attribs) = build_vertex_input_interface(&vertex_layouts);
+    let (vertex_input_bindings, vertex_input_attribs) =
+        build_vertex_input_interface(&vertex_layouts);
     let vao = create_vertex_array_object(gl, &vertex_input_attribs);
 
     let color_blend_state = PipelineColorBlendStateOwned {
@@ -200,4 +196,3 @@ impl GlGraphicsPipeline {
         }
     }
 }
-

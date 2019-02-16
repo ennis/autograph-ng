@@ -77,8 +77,7 @@ fn quote_descriptor(
 }
 
 pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
-    let s: ArgumentsStruct =
-        <ArgumentsStruct as FromDeriveInput>::from_derive_input(ast).unwrap();
+    let s: ArgumentsStruct = <ArgumentsStruct as FromDeriveInput>::from_derive_input(ast).unwrap();
 
     let gfx = autograph_name();
     let struct_name = &s.ident;
@@ -100,7 +99,16 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     let ty_backend = if let Some(ref backend) = s.backend {
         syn::Ident::new(backend, Span::call_site())
     } else {
-        syn::Ident::new("B", Span::call_site())
+        // no backend specified, assume that it's the first generic type argument
+        let first_ty = s.generics.type_params().next();
+        if let Some(ty) = first_ty {
+            ty.ident.clone()
+        } else {
+            s.ident.span().unstable().error("could not deduce backend type")
+                .help("specify the backend type with #[pipeline(backend=\"...\")] or make it a generic type parameter on the type")
+                .emit();
+            return quote!();
+        }
     };
 
     //----------------------------------------------------------------------------------------------
@@ -200,7 +208,9 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                     iter_args.push(quote! {
                         std::iter::once(self.#name.into())
                     });
-                    i_inherited.push(quote! { <#ty as #gfx::pipeline::Arguments<#ty_backend>>::SIGNATURE });
+                    i_inherited.push(
+                        quote! { <#ty as #gfx::pipeline::Arguments<#ty_backend>>::SIGNATURE },
+                    );
                     i_inherited_ty.push(quote!(#ty));
                 }
                 // render target --------------------------------------------

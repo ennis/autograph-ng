@@ -1,14 +1,14 @@
 use crate::buffer::BufferTypeless;
 use crate::image::Image;
-use crate::pipeline::GraphicsPipeline;
 use crate::pipeline::Arguments;
+use crate::pipeline::GraphicsPipeline;
+use crate::pipeline::TypedSignature;
 use crate::swapchain::Swapchain;
 use crate::sync::MemoryBarrier;
 use crate::sync::PipelineStageFlags;
 use crate::Arena;
 use crate::Backend;
 use std::ops::Range;
-use crate::pipeline::TypedSignature;
 
 /// Represents a command to be executed by the renderer backend.
 ///

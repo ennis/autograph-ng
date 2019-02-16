@@ -15,15 +15,16 @@ use crate::image::ImageAliasKey;
 use crate::image::ImageDescription;
 use crate::image::RawImage;
 use crate::pipeline::create_graphics_pipeline_internal;
-use crate::pipeline::GlGraphicsPipeline;
 use crate::pipeline::GlArgumentBlock;
-use crate::pipeline::GlSignature;
+use crate::pipeline::GlGraphicsPipeline;
 use crate::pipeline::GlShaderModule;
+use crate::pipeline::GlSignature;
 use crate::sampler::SamplerCache;
 use crate::swapchain::GlSwapchain;
 use crate::swapchain::SwapchainInner;
 use crate::sync::GpuSyncObject;
 use crate::sync::Timeline;
+use crate::util::DroplessArena;
 use crate::AliasInfo;
 use crate::ImplementationParameters;
 use autograph_render::command::Command;
@@ -33,8 +34,11 @@ use autograph_render::framebuffer::RenderTargetDescriptor;
 use autograph_render::image::Dimensions;
 use autograph_render::image::ImageUsageFlags;
 use autograph_render::image::MipmapsCount;
+use autograph_render::pipeline::BareArgumentBlock;
+use autograph_render::pipeline::GraphicsPipelineCreateInfo;
 use autograph_render::pipeline::ScissorRect;
 use autograph_render::pipeline::ShaderStageFlags;
+use autograph_render::pipeline::SignatureDescription;
 use autograph_render::pipeline::Viewport;
 use autograph_render::vertex::IndexBufferDescriptor;
 use autograph_render::vertex::VertexBufferDescriptor;
@@ -42,6 +46,8 @@ use autograph_render::AliasScope;
 use autograph_render::Backend;
 use autograph_render::Instance;
 use config::Config;
+use std::cell::Cell;
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::ffi::CStr;
 use std::mem;
@@ -50,13 +56,7 @@ use std::ptr;
 use std::slice;
 use std::str;
 use std::time::Duration;
-use autograph_render::pipeline::GraphicsPipelineCreateInfo;
-use autograph_render::pipeline::SignatureDescription;
-use autograph_render::pipeline::BareArgumentBlock;
-use crate::util::DroplessArena;
 use typed_arena::Arena;
-use std::cell::RefCell;
-use std::cell::Cell;
 
 //--------------------------------------------------------------------------------------------------
 extern "system" fn debug_callback(
@@ -406,10 +406,10 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
         samples: u32,
         usage: ImageUsageFlags,
     ) -> &'a GlImage {
-        self.rsrc.borrow_mut()
+        self.rsrc
+            .borrow_mut()
             .alloc_aliased_image(&self.gl, arena, scope, fmt, dims, mipcount, samples, usage)
     }
-
 
     //----------------------------------------------------------------------------------------------
     unsafe fn create_immutable_buffer<'a>(
@@ -482,7 +482,13 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
         root_signature_description: &SignatureDescription,
         create_info: &GraphicsPipelineCreateInfo<'a, 'b, OpenGlBackend>,
     ) -> &'a GlGraphicsPipeline {
-        create_graphics_pipeline_internal(&self.gl, arena, root_signature, root_signature_description, create_info)
+        create_graphics_pipeline_internal(
+            &self.gl,
+            arena,
+            root_signature,
+            root_signature_description,
+            create_info,
+        )
     }
 
     //----------------------------------------------------------------------------------------------
@@ -522,11 +528,7 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
         inherited: &[&'a GlSignature],
         description: &SignatureDescription,
     ) -> &'a GlSignature {
-        let sig = GlSignature::new(
-            arena,
-            inherited,
-            description,
-        );
+        let sig = GlSignature::new(arena, inherited, description);
 
         sig
     }
@@ -572,7 +574,7 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
             }
         }
 
-        self.frame_num.set(fnum+1);
+        self.frame_num.set(fnum + 1);
     }
 
     unsafe fn update_image(

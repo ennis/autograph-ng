@@ -5,6 +5,7 @@
 //! - `VertexLayout` for verifying the layout of vertex buffers
 //!
 #![recursion_limit = "256"]
+#![feature(proc_macro_diagnostic)]
 
 extern crate darling; // this is a _good crate_
 extern crate proc_macro;
@@ -13,8 +14,8 @@ extern crate quote;
 extern crate syn;
 
 //mod descriptor_set_interface;
-mod layout;
 mod arguments;
+mod layout;
 
 fn autograph_name() -> syn::Path {
     syn::parse_str("autograph_render").unwrap()

@@ -110,6 +110,11 @@ pub fn generate_structured_buffer_data(
         let offset = &layout.offsets[i];
         let offset = &offset.ident;
 
+        // skip padding fields (with an underscore)
+        if f.ident.as_ref().unwrap().to_string().starts_with('_') {
+            continue;
+        }
+
         field_descs.push(
             quote! { (#privmod::#offset, <#field_ty as #gfx::buffer::StructuredBufferData>::TYPE) },
         );

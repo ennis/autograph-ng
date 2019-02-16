@@ -22,6 +22,18 @@ pub struct SubmissionContext<'a, 'rcx> {
     current_pipeline: Option<&'rcx GlGraphicsPipeline>,
 }
 
+#[derive(Default)]
+struct BaseSlots
+{
+    ubo: usize,
+    ssbo: usize,
+    tex: usize,
+    samplers: usize,
+    img: usize,
+    vbo: usize,
+}
+
+
 impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
     pub fn new(
         gl: &'a Gl,
@@ -110,7 +122,7 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
 
     //unsafe fn cmd_set_pipeline_arguments_rec(&mut self, args: &GlPipelineArguments) {}
 
-    fn cmd_set_pipeline_arguments(&mut self, args: &GlArgumentBlock, is_root: bool) {
+    fn cmd_set_pipeline_arguments(&mut self, args: &GlArgumentBlock, base_slots: &mut BaseSlots, is_root: bool) {
         let pipeline = self.current_pipeline.unwrap();
         let _descriptor_map = pipeline.descriptor_map();
 
@@ -123,7 +135,7 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
                 &StateBlock::Inherited(args) => {
                     let args = unsafe { slice::from_raw_parts(args, sig.inherited.len()) };
                     for &a in args {
-                        self.cmd_set_pipeline_arguments(unsafe  { &*a }, false);
+                        self.cmd_set_pipeline_arguments(unsafe { &*a }, base_slots, false);
                     }
                 }
                 &StateBlock::UniformBuffers {
@@ -132,11 +144,12 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
                     sizes,
                 } => {
                     let n = sig.num_uniform_buffers;
-                    let buffers = unsafe { slice::from_raw_parts(buffers, n)};
+                    let buffers = unsafe { slice::from_raw_parts(buffers, n) };
                     let offsets = unsafe { slice::from_raw_parts(offsets, n) };
                     let sizes = unsafe { slice::from_raw_parts(sizes, n) };
                     self.state_cache
-                        .set_uniform_buffers(self.gl, buffers, offsets, sizes);
+                        .set_uniform_buffers(self.gl, base_slots.ubo, buffers, offsets, sizes);
+                    base_slots.ubo += n;
                 }
                 &StateBlock::ShaderStorageBuffers {
                     buffers,
@@ -148,7 +161,8 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
                     let offsets = unsafe { slice::from_raw_parts(offsets, n) };
                     let sizes = unsafe { slice::from_raw_parts(sizes, n) };
                     self.state_cache
-                        .set_shader_storage_buffers(self.gl, buffers, offsets, sizes);
+                        .set_shader_storage_buffers(self.gl, base_slots.ssbo, buffers, offsets, sizes);
+                    base_slots.ssbo += n;
                 }
                 &StateBlock::VertexBuffers {
                     buffers,
@@ -160,7 +174,8 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
                     let offsets = unsafe { slice::from_raw_parts(offsets, n) };
                     let strides = unsafe { slice::from_raw_parts(strides, n) };
                     self.state_cache
-                        .set_vertex_buffers(self.gl, buffers, offsets, strides);
+                        .set_vertex_buffers(self.gl, base_slots.vbo, buffers, offsets, strides);
+                    base_slots.vbo += n;
                 }
                 &StateBlock::IndexBuffer {
                     buffer,
@@ -172,15 +187,18 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
                 }
                 &StateBlock::Textures(textures) => {
                     let textures = unsafe { slice::from_raw_parts(textures, sig.num_textures) };
-                    self.state_cache.set_textures(self.gl, textures);
+                    self.state_cache.set_textures(self.gl, base_slots.tex, textures);
+                    base_slots.tex += sig.num_textures;
                 }
                 &StateBlock::Samplers(samplers) => {
                     let samplers = unsafe { slice::from_raw_parts(samplers, sig.num_textures) };
-                    self.state_cache.set_samplers(self.gl, samplers);
+                    self.state_cache.set_samplers(self.gl, base_slots.samplers, samplers);
+                    base_slots.samplers += sig.num_textures;
                 }
                 &StateBlock::Images(images) => {
                     let images = unsafe { slice::from_raw_parts(images, sig.num_images) };
-                    self.state_cache.set_images(self.gl, images);
+                    self.state_cache.set_images(self.gl, base_slots.img, images);
+                    base_slots.img += sig.num_images;
                 }
                 &StateBlock::RenderTarget(_) => {
                     if is_root {
@@ -384,7 +402,7 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
                 self.cmd_clear_depth_stencil_image(image, depth, stencil);
             }
             CommandInner::SetPipelineArguments { arguments } => {
-                self.cmd_set_pipeline_arguments(arguments, true);
+                self.cmd_set_pipeline_arguments(arguments, &mut BaseSlots::default(), true);
             }
             /*CommandInner::SetDescriptorSets {
                 ref descriptor_sets,

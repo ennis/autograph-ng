@@ -91,17 +91,16 @@ pub use self::util::*;
 // re-export macros
 pub use autograph_shader_macros::{
     glsl_compute, glsl_fragment, glsl_geometry, glsl_tess_control, glsl_tess_eval, glsl_vertex,
-    include_combined_shader, include_shader,
+    include_shader,
 };
 use std::marker::PhantomData;
 
 //use crate::pipeline::build_vertex_input_interface;
 //use crate::pipeline::validate::validate_graphics;
 use crate::framebuffer::RenderTargetDescriptor;
-use crate::pipeline::DynamicStateFlags;
+use crate::pipeline::Arguments;
 use crate::pipeline::GraphicsPipeline;
 use crate::pipeline::GraphicsPipelineCreateInfo;
-use crate::pipeline::Arguments;
 use crate::pipeline::ScissorRect;
 use crate::pipeline::ShaderModule;
 use crate::pipeline::ShaderStageFlags;
@@ -114,12 +113,13 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::mem;
 //use crate::pipeline::validate::ValidationError;
+use crate::pipeline::validate::validate_spirv_graphics_pipeline;
 use crate::pipeline::ArgumentBlock;
+use crate::pipeline::BareArgumentBlock;
 use crate::pipeline::Signature;
 use crate::pipeline::SignatureDescription;
 use crate::pipeline::TypedSignature;
 use std::sync::Mutex;
-use crate::pipeline::BareArgumentBlock;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -362,43 +362,29 @@ impl<'r, B: Backend> Arena<'r, B> {
         )
     }
 
-
     /// Creates a graphics pipeline given the pipeline description passed in create_info
     /// and information derived from the pipeline interface type.
     pub fn create_graphics_pipeline<'a, P: Arguments<'a, B>>(
         &'a self,
         create_info: &GraphicsPipelineCreateInfo<'a, '_, B>,
-    ) -> GraphicsPipeline<'a, B, TypedSignature<'a, B, P>>
-    {
-
-
+    ) -> GraphicsPipeline<'a, B, TypedSignature<'a, B, P>> {
         let root_signature = self.renderer.get_cached_signature::<P>();
 
-        let create_info_full = GraphicsPipelineCreateInfo {
-            shader_stages: create_info.shader_stages,
-            //vertex_input_state: &vertex_input_state,
-            viewport_state: create_info.viewport_state,
-            rasterization_state: create_info.rasterization_state,
-            multisample_state: create_info.multisample_state,
-            depth_stencil_state: create_info.depth_stencil_state,
-            input_assembly_state: create_info.input_assembly_state,
-            color_blend_state: create_info.color_blend_state,
-            dynamic_state: DynamicStateFlags::empty(),
-        };
-
         // validate the pipeline
-        //let validation_result = validate_graphics(&create_info_full);
-        //if let Err(e) = validation_result {
-        //    panic!("graphics pipeline validation failed: {}", e);
-        //}
+        let validation_result =
+            validate_spirv_graphics_pipeline(root_signature.description(), &create_info);
+        if let Err(e) = validation_result {
+            panic!("graphics pipeline validation failed: {}", e);
+        }
 
         GraphicsPipeline {
             inner: unsafe {
-                self.instance
-                    .create_graphics_pipeline(&self.inner(),
-                                              root_signature.0,
-                                              P::SIGNATURE,
-                                              &create_info_full)
+                self.instance.create_graphics_pipeline(
+                    &self.inner(),
+                    root_signature.0,
+                    P::SIGNATURE,
+                    &create_info,
+                )
             },
             signature: root_signature,
         }
@@ -624,9 +610,7 @@ impl<B: Backend> Renderer<B> {
     }
 
     /// Returns or creates the pipeline signature associated to the pipeline interface type.
-    pub fn get_cached_signature<'r, P: Arguments<'r, B>>(
-        &'r self,
-    ) -> TypedSignature<'r, B, P> {
+    pub fn get_cached_signature<'r, P: Arguments<'r, B>>(&'r self) -> TypedSignature<'r, B, P> {
         let typeid = TypeId::of::<P::UniqueType>();
         let cached = self.signature_cache.lock().unwrap().get(&typeid).cloned();
         if let Some(cached) = cached {
@@ -634,11 +618,13 @@ impl<B: Backend> Renderer<B> {
         } else {
             // signature not created yet
             let inherited = P::get_inherited_signatures(self);
-            let sig = unsafe {self.instance.create_signature(
-                self.default_arena.as_ref().unwrap(),
-                &inherited,
-                P::SIGNATURE,
-            )};
+            let sig = unsafe {
+                self.instance.create_signature(
+                    self.default_arena.as_ref().unwrap(),
+                    &inherited,
+                    P::SIGNATURE,
+                )
+            };
             self.signature_cache
                 .lock()
                 .unwrap()

@@ -14,6 +14,7 @@
 // Performs a sobel edge detection on RGBD channels
 // -> Based on the sobel image processing operator by Sobel and Feldman 1968
 //    [1968] A 3x3 Isotropic Gradient Operator for Image Processing
+
 void main() {
     ivec2 loc = ivec2(gl_FragCoord.xy);  // for load sampling
 
