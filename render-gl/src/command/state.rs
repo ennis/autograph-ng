@@ -351,12 +351,16 @@ impl StateCache {
                     cur_viewports[i].height = vp.height;
                 }
 
-                if cur_depth_ranges[i].min != unsafe {NotNan::unchecked_new(vp.min_depth.into_inner() as f64)}
-                    || cur_depth_ranges[i].max != unsafe {NotNan::unchecked_new(vp.max_depth.into_inner() as f64)}
+                if cur_depth_ranges[i].min
+                    != unsafe { NotNan::unchecked_new(vp.min_depth.into_inner() as f64) }
+                    || cur_depth_ranges[i].max
+                        != unsafe { NotNan::unchecked_new(vp.max_depth.into_inner() as f64) }
                 {
                     should_update_depth_ranges = true;
-                    cur_depth_ranges[i].min = unsafe {NotNan::unchecked_new(vp.min_depth.into_inner() as f64)};
-                    cur_depth_ranges[i].max = unsafe {NotNan::unchecked_new(vp.max_depth.into_inner() as f64)};
+                    cur_depth_ranges[i].min =
+                        unsafe { NotNan::unchecked_new(vp.min_depth.into_inner() as f64) };
+                    cur_depth_ranges[i].max =
+                        unsafe { NotNan::unchecked_new(vp.max_depth.into_inner() as f64) };
                 }
             }
         } else {
@@ -384,8 +388,8 @@ impl StateCache {
                     height: vp.height.into(),
                 };
                 new_depth_ranges[i] = DepthRangeEntry {
-                    min: unsafe {NotNan::unchecked_new(vp.min_depth.into_inner() as f64)},
-                    max: unsafe {NotNan::unchecked_new(vp.max_depth.into_inner() as f64)},
+                    min: unsafe { NotNan::unchecked_new(vp.min_depth.into_inner() as f64) },
+                    max: unsafe { NotNan::unchecked_new(vp.max_depth.into_inner() as f64) },
                 };
             }
             self.viewports = Some((new_viewports, new_depth_ranges));

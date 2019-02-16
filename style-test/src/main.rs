@@ -31,7 +31,10 @@ use autograph_render_boilerplate::Event;
 use autograph_render_boilerplate::KeyboardInput;
 use autograph_render_boilerplate::WindowEvent;
 use log::{debug, info, warn};
+use openimageio as oiio;
 use std::env;
+use std::mem;
+use std::slice;
 
 type Backend = autograph_render_gl::OpenGlBackend;
 type Arena<'a> = autograph_render::Arena<'a, Backend>;
@@ -245,7 +248,6 @@ pub struct SubstrateCommon<'a> {
     pub vertex_buffer: Buffer<'a, [Vertex2DTexcoord]>,
 }
 
-
 struct Pipelines<'a> {
     edge_detection_dog_rgbd: TypedGraphicsPipeline<'a, EdgeDetection<'a>>,
     edge_detection_sobel_rgbd: TypedGraphicsPipeline<'a, EdgeDetection<'a>>,
@@ -395,22 +397,39 @@ fn main() {
                 ImageUsageFlags::COLOR_ATTACHMENT | ImageUsageFlags::SAMPLED,
             );
 
-            let depth = arena_frame.create_image(
-                AliasScope::no_alias(),
+            let mut img =
+                oiio::ImageInput::open("../openimageio-rs/test_images/output0013.exr").unwrap();
+            let subimage_0 = img.subimage_0();
+            let (w, h) = (subimage_0.width(), subimage_0.height());
+
+            let color_data: oiio::ImageBuffer<f32> =
+                subimage_0.read(r"RenderLayer\.Combined\.[RGBA]").unwrap();
+            assert_eq!(color_data.num_channels(), 4);
+
+            let normal_data: oiio::ImageBuffer<f32> =
+                subimage_0.read(r"RenderLayer\.Normal\.[XYZ]").unwrap();
+            assert_eq!(normal_data.num_channels(), 3);
+
+            let depth_data: oiio::ImageBuffer<f32> =
+                subimage_0.read(r"RenderLayer\.Depth\.Z").unwrap();
+            assert_eq!(depth_data.num_channels(), 1);
+
+            let depth = arena_frame.create_immutable_image(
                 Format::R32_SFLOAT,
                 (w, h).into(),
                 MipmapsCount::One,
                 1,
                 ImageUsageFlags::DEPTH_ATTACHMENT | ImageUsageFlags::SAMPLED,
+                depth_data.as_bytes(),
             );
 
-            let diffuse = arena_frame.create_image(
-                AliasScope::no_alias(),
-                Format::R16G16B16A16_SFLOAT,
+            let diffuse = arena_frame.create_immutable_image(
+                Format::R32G32B32A32_SFLOAT,
                 (w, h).into(),
                 MipmapsCount::One,
                 1,
                 ImageUsageFlags::DEPTH_ATTACHMENT | ImageUsageFlags::SAMPLED,
+                color_data.as_bytes(),
             );
 
             // TODO transfer normals, depth, base color from file
@@ -418,7 +437,7 @@ fn main() {
             // edge map
             let edge_map = arena_frame.create_image(
                 AliasScope::no_alias(),
-                Format::R16_SFLOAT,
+                Format::R32_SFLOAT,
                 (w, h).into(),
                 MipmapsCount::One,
                 1,

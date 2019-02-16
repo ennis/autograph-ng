@@ -115,8 +115,7 @@ pub(crate) fn build_vertex_input_interface(
     (input_bindings, input_attribs)
 }
 
-fn collect_vertex_layouts<'a>(sig: &'a SignatureDescription<'a>, out: &mut Vec<VertexLayout<'a>>)
-{
+fn collect_vertex_layouts<'a>(sig: &'a SignatureDescription<'a>, out: &mut Vec<VertexLayout<'a>>) {
     for &i in sig.inherited {
         collect_vertex_layouts(i, out);
     }

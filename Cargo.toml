@@ -9,6 +9,8 @@ members = [
     "spirv",
     "common_shaders",
     "style-test",
+    "openimageio-rs/openimageio-sys",
+    "openimageio-rs/openimageio",
     "xxgui",
     # for testing
     "plugin/tests/test_dylib"
