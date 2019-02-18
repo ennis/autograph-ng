@@ -16,7 +16,11 @@
 - (render-gl/util) unit tests for dropless arena
 - (render) convenience methods
     - create_{vertex,fragment,...}_shader(_module)
-
+- (shader/macros) investigate slow quoting of large bytecodes
+    - possibly not our fault
+        - report bug
+    - try alternate solution: write bytecode to file, then include binary, or write a byte string
+    
     
 ### Enhancements
 - (render/validation) accept structs with single member in place of just the member

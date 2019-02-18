@@ -6,10 +6,11 @@ use crate::ChannelDesc;
 use crate::Error;
 use crate::ImageSpec;
 use crate::ImageSpecOwned;
-use core::mem;
 use openimageio_sys as sys;
 use openimageio_sys::AsStringRef;
 use std::ffi::c_void;
+use std::mem;
+use std::ops::Range;
 use std::path::Path;
 use std::ptr;
 use std::slice;
@@ -86,26 +87,42 @@ pub struct SubimageInput<'a> {
 }
 
 impl<'a> SubimageInput<'a> {
+    /// Returns the metadata of this subimage.
     pub fn spec(&self) -> &ImageSpec {
         &self.spec
     }
 
+    /// Returns the width of this image.
+    ///
+    /// Equivalent to `spec().width()`.
     pub fn width(&self) -> u32 {
         self.spec().width()
     }
 
+    /// Returns the width of this image.
+    ///
+    /// Equivalent to `spec().height()`.
     pub fn height(&self) -> u32 {
         self.spec().height()
     }
 
+    /// Returns the width of this image.
+    ///
+    /// Equivalent to `spec().depth()`.
     pub fn depth(&self) -> u32 {
         self.spec().depth()
     }
 
+    /// Returns the index of this subimage in the parent [ImageInput].
     pub fn subimage_index(&self) -> usize {
         self.subimage
     }
 
+    /// Returns the mip level of this subimage.
+    ///
+    /// 0 is the topmost and largest level. It is also the value returned if the image has no mipmap.
+    ///
+    /// A subimage is uniquely identified by its subimage index and mip level.
     pub fn mip_level(&self) -> usize {
         self.miplevel
     }
@@ -135,37 +152,13 @@ impl<'a> SubimageInput<'a> {
         // calculate necessary size
         let (nch, chans) = channels.into_channel_ranges(spec);
         let n = (spec.width() * spec.height() * spec.depth()) as usize * nch;
+
         let mut data: Vec<T> = Vec::with_capacity(n);
-        let mut channels = Vec::new();
 
-        // read all channel ranges
-        let mut success = true;
-        let mut ich = 0;
-        for r in chans.iter() {
-            for ch in r.clone() {
-                channels.push(self.spec.channel_by_index(ch).unwrap().to_channel_desc());
-            }
-            success &= unsafe {
-                sys::OIIO_ImageInput_read_image_format2(
-                    self.img.0,
-                    r.start as i32,
-                    r.end as i32,
-                    T::DESC.0,
-                    data.as_mut_ptr().offset(ich) as *mut c_void,
-                    (nch * mem::size_of::<T>()) as isize,
-                    sys::OIIO_AutoStride,
-                    sys::OIIO_AutoStride,
-                    ptr::null_mut(),
-                )
-            };
+        unsafe {
+            let channels = self.read_unchecked(nch, &chans, data.as_mut_ptr())?;
+            data.set_len(n);
 
-            ich += r.len() as isize;
-        }
-
-        if success {
-            unsafe {
-                data.set_len(n);
-            }
             Ok(ImageBuffer {
                 width: self.width() as usize,
                 height: self.height() as usize,
@@ -173,6 +166,58 @@ impl<'a> SubimageInput<'a> {
                 data,
                 channels,
             })
+        }
+    }
+
+    /// Reads channels into an existing buffer.
+    pub fn read_into<T: ImageData, C: ChannelSelect>(
+        &self,
+        channels: C,
+        out: &mut [T],
+    ) -> Result<Vec<ChannelDesc>, Error> {
+        let spec = self.spec();
+        let (nch, chans) = channels.into_channel_ranges(spec);
+        let n = (spec.width() * spec.height() * spec.depth()) as usize * nch;
+        if out.len() < n {
+            return Err(Error::BufferTooSmall {
+                len: out.len(),
+                expected: n,
+            });
+        }
+
+        unsafe { self.read_unchecked(nch, &chans, out.as_mut_ptr()) }
+    }
+
+    unsafe fn read_unchecked<T: ImageData>(
+        &self,
+        num_channels: usize,
+        channel_ranges: &[Range<usize>],
+        out: *mut T,
+    ) -> Result<Vec<ChannelDesc>, Error> {
+        let mut channels = Vec::new();
+        let mut success = true;
+        let mut ich = 0;
+        for r in channel_ranges.iter() {
+            for ch in r.clone() {
+                channels.push(self.spec.channel_by_index(ch).unwrap().to_channel_desc());
+            }
+            success &= sys::OIIO_ImageInput_read_image_format2(
+                self.img.0,
+                r.start as i32,
+                r.end as i32,
+                T::DESC.0,
+                out.offset(ich) as *mut c_void,
+                (num_channels * mem::size_of::<T>()) as isize,
+                sys::OIIO_AutoStride,
+                sys::OIIO_AutoStride,
+                ptr::null_mut(),
+            );
+
+            ich += r.len() as isize;
+        }
+
+        if success {
+            Ok(channels)
         } else {
             Err(Error::ReadError(self.img.get_last_error()))
         }

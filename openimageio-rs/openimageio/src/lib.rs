@@ -1,8 +1,8 @@
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
+mod cache;
 mod error;
-mod imagecache;
 mod input;
 mod output;
 mod roi;

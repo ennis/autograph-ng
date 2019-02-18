@@ -7,24 +7,23 @@ pub enum Error {
     OpenError(String),
     WriteError(String),
     ReadError(String),
+    BufferTooSmall { len: usize, expected: usize },
 }
 
-impl error::Error for Error {
-    fn description(&self) -> &str {
-        match *self {
-            Error::OpenError(_) => "error opening image",
-            Error::WriteError(_) => "error writing image data",
-            _ => "unknown error",
-        }
-    }
-}
+impl error::Error for Error {}
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
             Error::OpenError(ref msg) => write!(f, "Error opening image: {}", msg),
             Error::WriteError(ref msg) => write!(f, "Error writing image data: {}", msg),
-            _ => write!(f, "Unknown error."),
+            Error::ReadError(ref msg) => write!(f, "Error reading image data: {}", msg),
+            Error::BufferTooSmall { len, expected } => write!(
+                f,
+                "Buffer was too small (len = {}, expected = {})",
+                len, expected
+            ),
+            //_ => write!(f, "Unknown error."),
         }
     }
 }

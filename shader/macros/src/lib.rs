@@ -6,17 +6,16 @@ extern crate proc_macro2;
 use lazy_static::lazy_static;
 use proc_macro2::Span;
 use quote::quote;
+use quote::quote_spanned;
 use regex::Regex;
 use shaderc;
 use std::fs;
-use std::fs::File;
-use std::io::Read;
 use std::path::Path;
 use std::path::PathBuf;
 use syn;
-//use syn::spanned::Spanned;
-use shaderc::IncludeType;
 use shaderc::ResolvedInclude;
+use std::cell::RefCell;
+use std::time;
 
 lazy_static! {
     static ref RE_COMPILE_ERROR: Regex =
@@ -136,48 +135,63 @@ pub fn include_shader(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     );
 
     // include_str so that it is considered when tracking dirty files
-    let q = quote! { (include_str!(#pathlit), #bytecode).1 };
+    let q = quote! { (#bytecode, include_str!(#pathlit)).0 };
+
     q.into()
+
+    /*let words = vec![0u8; 10000];
+    let words = &words;
+    let time_begin = time::Instant::now();
+    let q = quote!(&[ #(#words,)*]);
+    let elapsed = time_begin.elapsed();
+    let sec = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1_000_000_000.0);
+    pathlit.span().unstable().warning(format!("compile_into_spirv took {}s", sec))
+        .note(format!("bytecode size: {} bytes", words.len()))
+        .emit();
+
+    q.into()*/
 }
 
-fn compile_glsl_shader(
-    src: &str,
-    span: &Span,
-    file: &str,
+fn compile_glsl_shader<'a, 'b, 'c>(
+    src: &'a str,
+    span: &'b Span,
+    file: &'c str,
     file_span: Option<&Span>,
     stage: shaderc::ShaderKind,
-) -> proc_macro2::TokenStream {
+) -> proc_macro2::TokenStream
+{
     // the doc says that we should preferably create one instance of the compiler
     // and reuse it, but I don't see a way to reuse a compiler instance
     // between macro invocations. Notably, it cannot be put into a lazy_static block wrapped
     // in a mutex since it complains that `*mut shaderc::ffi::ShadercCompiler` is not `Send`.
     let mut compiler = shaderc::Compiler::new().unwrap();
+    let all_includes = RefCell::new(Vec::new()); // RefCell because include_callback is not FnMut
     let mut opt = shaderc::CompileOptions::new().unwrap();
     opt.set_target_env(shaderc::TargetEnv::Vulkan, 0);
     opt.set_optimization_level(shaderc::OptimizationLevel::Zero);
-    opt.set_include_callback(
-        |name: &str, _include_type: IncludeType, _source_name: &str, _depth: usize| {
-            let path = Path::new(file);
-            let mut inc = path.parent().unwrap().to_owned();
-            inc.push(name);
+    opt.set_include_callback(|name, _include_type, _source_name, _depth| {
+        let path = Path::new(file);
+        let mut inc = path.parent().unwrap().to_owned();
+        inc.push(name);
 
-            match File::open(&inc) {
-                Ok(mut incfile) => {
-                    let mut content = String::new();
-                    incfile.read_to_string(&mut content).unwrap();
-                    Ok(ResolvedInclude {
-                        resolved_name: inc.canonicalize().unwrap().to_str().unwrap().to_owned(),
-                        content,
-                    })
-                }
-                Err(_e) => Err("include file not found".to_owned()),
+        match fs::read_to_string(&inc) {
+            Ok(content) => {
+                let resolved_name = inc.canonicalize().unwrap().to_str().unwrap().to_owned();
+                all_includes.borrow_mut().push(resolved_name.clone());
+                Ok(ResolvedInclude {
+                    resolved_name,
+                    content,
+                })
             }
-        },
-    );
+            Err(e) => Err(format!("error reading include file: {}", e)),
+        }
+    });
 
+    // compile GLSL (and output time)
     let ca = compiler.compile_into_spirv(&src, stage, file, "main", Some(&opt));
 
     match ca {
+        // Failed to compile
         Err(ref e) => {
             let mut diag = span
                 .unstable()
@@ -224,18 +238,32 @@ fn compile_glsl_shader(
             diag.emit();
             quote!(&[])
         }
+        // Compilation successful
         Ok(ca) => {
             // any warnings?
-            let nw = ca.get_num_warnings();
-            if nw != 0 {
+            if ca.get_num_warnings() != 0 {
                 span.unstable()
                     .warning("warnings emitted during compilation")
                     .note(format!("compiler messages:\n{}", ca.get_warning_messages()));
             }
 
-            let words = ca.as_binary_u8();
+            let bin = ca.as_binary_u8();
+            // write the bytecode as a byte string because quoting a u8 slice is surprisingly slow.
+            let binstr = syn::LitByteStr::new(bin, span.clone());
 
-            quote!(&[ #(#words,)* ])
+            // include_str all include files so that their changes are tracked
+            let a = all_includes.borrow();
+            let a = a.iter();
+
+            //let time_begin = time::Instant::now();
+            let q = quote!((#binstr, #(include_str!(#a)),*).0);
+            //let elapsed = time_begin.elapsed();
+            //let sec = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1_000_000_000.0);
+            //span.unstable().warning(format!("compile_into_spirv took {}s", sec))
+            //    .note(format!("bytecode size: {} bytes", bin.len()))
+            //    .emit();
+
+            q
         }
     }
 }

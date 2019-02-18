@@ -6,10 +6,10 @@ edition = "2018"
 
 [dependencies]
 log = "0.4.6"
-quote = "0.6.10"
-syn = { version = "0.15.23", features = ["full"] }
-darling = "0.8.1"
-proc-macro2 = { version = "0.4.24", features = ["nightly"] }
+quote = "0.6.11"
+syn = { version = "0.15.26", features = ["full"] }
+darling = "0.8.5"
+proc-macro2 = { version = "0.4.27", features = ["nightly"] }
 lazy_static = "1.2.0"
 shaderc = { version = "0.3.16", default-features = false }
 regex= "1.1.0"
