@@ -2,7 +2,9 @@ use crate::descriptor::DescriptorBinding;
 use crate::descriptor::DescriptorType;
 use crate::framebuffer::FragmentOutputDescription;
 use crate::pipeline::GraphicsPipelineCreateInfo;
+use crate::pipeline::Scissors;
 use crate::pipeline::SignatureDescription;
+use crate::pipeline::Viewports;
 use crate::vertex::IndexFormat;
 use crate::vertex::VertexLayout;
 use crate::Backend;
@@ -37,25 +39,21 @@ pub enum InterfaceMismatchError {
 #[derive(Debug)]
 pub enum ValidationError {
     InvalidSpirV(spirv::ParseError),
-    InterfaceMismatch(Vec<InterfaceMismatchError>),
-    InvalidRootSignature(Vec<String>),
+    InterfaceMismatch(InterfaceMismatchError),
+    InvalidRootSignature(String),
 }
+
+type ValidationResult<T> = Result<T, Vec<ValidationError>>;
 
 impl fmt::Display for ValidationError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ValidationError::InvalidSpirV(_err) => write!(f, "invalid SPIR-V bytecode")?,
-            ValidationError::InterfaceMismatch(errs) => {
-                writeln!(f, "interface mismatch ({} errors):", errs.len())?;
-                for err in errs.iter() {
-                    writeln!(f, "{:?}", err)?;
-                }
+            ValidationError::InvalidSpirV(err) => write!(f, "invalid SPIR-V bytecode: {:?}", err)?,
+            ValidationError::InterfaceMismatch(err) => {
+                writeln!(f, "interface mismatch: {:?}", err)?;
             }
-            ValidationError::InvalidRootSignature(errs) => {
-                writeln!(f, "invalid root signature:")?;
-                for err in errs.iter() {
-                    writeln!(f, "{:?}", err)?;
-                }
+            ValidationError::InvalidRootSignature(err) => {
+                writeln!(f, "invalid root signature: {}", err)?;
             }
         }
         Ok(())
@@ -119,6 +117,10 @@ struct ValidationInfo<'a> {
     depth_stencil_fragment_output: Option<FragmentOutputDescription>,
     /// Encountered root sig for fragment outputs
     fragment_output_root: bool,
+    /// Number of viewport entries
+    num_viewports: usize,
+    /// Number of scissor entries
+    num_scissors: usize,
 }
 
 impl<'a> ValidationInfo<'a> {
@@ -131,79 +133,88 @@ impl<'a> ValidationInfo<'a> {
             index_format: None,
             depth_stencil_fragment_output: None,
             fragment_output_root: false,
+            num_viewports: 0,
+            num_scissors: 0,
         }
     }
 
     ///
     /// # Validation of root pipeline signatures
     ///
-    fn build(&mut self, signature: &'a SignatureDescription<'a>) -> Result<(), ValidationError> {
+    fn build(&mut self, signature: &'a SignatureDescription<'a>) -> ValidationResult<()> {
         let mut errs = Vec::new();
 
-        for &subsig in signature.inherited {
-            self.build(subsig)?;
-        }
-
-        // If this block has descriptors, then this block defines a new descriptor set
-        if signature.descriptors.len() > 0 {
-            self.descriptor_sets
-                .push(signature.descriptors.iter().map(|d| (d, false)).collect());
-        }
-
-        self.fragment_outputs.extend(signature.fragment_outputs);
-        self.vertex_layouts.extend(signature.vertex_layouts);
-
-        // Vertex input root already encountered but adding new inputs
-        if self.vertex_input_root
-            && (signature.vertex_layouts.len() > 0 || signature.index_format.is_some())
         {
-            errs.push("additional vertex inputs outside of root signature".to_string());
-        }
+            let mut push_err = |err| {
+                errs.push(ValidationError::InvalidRootSignature(err));
+            };
 
-        // Fragment output root already encountered but adding new outputs
-        if self.fragment_output_root
-            && (signature.fragment_outputs.len() > 0
-                || signature.depth_stencil_fragment_output.is_some())
-        {
-            errs.push("additional fragment outputs outside of root signature".to_string());
-        }
-
-        if signature.is_root_vertex_input_signature {
-            if self.vertex_input_root {
-                errs.push("multiple vertex input root signatures".to_string());
-            } else {
-                self.vertex_input_root = true;
+            for &subsig in signature.inherited {
+                self.build(subsig)?;
             }
-        }
 
-        if signature.is_root_fragment_output_signature {
-            if self.fragment_output_root {
-                errs.push("multiple fragment output root signatures".to_string());
-            } else {
-                self.fragment_output_root = true;
+            // If this block has descriptors, then this block defines a new descriptor set
+            if signature.descriptors.len() > 0 {
+                self.descriptor_sets
+                    .push(signature.descriptors.iter().map(|d| (d, false)).collect());
             }
-        }
 
-        if let Some(index_format) = signature.index_format {
-            if self.index_format.is_some() {
-                errs.push("multiple index buffer descriptors".to_string());
-            } else {
-                self.index_format = Some(index_format);
+            self.fragment_outputs.extend(signature.fragment_outputs);
+            self.vertex_layouts.extend(signature.vertex_layouts);
+
+            // Vertex input root already encountered but adding new inputs
+            if self.vertex_input_root
+                && (signature.vertex_layouts.len() > 0 || signature.index_format.is_some())
+            {
+                push_err("additional vertex inputs outside of root signature".to_string());
             }
-        }
 
-        if let Some(depth_stencil_fragment_output) = signature.depth_stencil_fragment_output {
-            if self.depth_stencil_fragment_output.is_some() {
-                errs.push("multiple depth stencil render target descriptors".to_string());
-            } else {
-                self.depth_stencil_fragment_output = Some(depth_stencil_fragment_output);
+            // Fragment output root already encountered but adding new outputs
+            if self.fragment_output_root
+                && (signature.fragment_outputs.len() > 0
+                    || signature.depth_stencil_fragment_output.is_some())
+            {
+                push_err("additional fragment outputs outside of root signature".to_string());
             }
-        }
 
-        // we don't care about viewports
+            if signature.is_root_vertex_input_signature {
+                if self.vertex_input_root {
+                    push_err("multiple vertex input root signatures".to_string());
+                } else {
+                    self.vertex_input_root = true;
+                }
+            }
+
+            if signature.is_root_fragment_output_signature {
+                if self.fragment_output_root {
+                    push_err("multiple fragment output root signatures".to_string());
+                } else {
+                    self.fragment_output_root = true;
+                }
+            }
+
+            if let Some(index_format) = signature.index_format {
+                if self.index_format.is_some() {
+                    push_err("multiple index buffer descriptors".to_string());
+                } else {
+                    self.index_format = Some(index_format);
+                }
+            }
+
+            if let Some(depth_stencil_fragment_output) = signature.depth_stencil_fragment_output {
+                if self.depth_stencil_fragment_output.is_some() {
+                    push_err("multiple depth stencil render target descriptors".to_string());
+                } else {
+                    self.depth_stencil_fragment_output = Some(depth_stencil_fragment_output);
+                }
+            }
+
+            self.num_viewports += signature.num_viewports;
+            self.num_scissors += signature.num_scissors;
+        }
 
         if errs.len() > 0 {
-            Err(ValidationError::InvalidRootSignature(errs))
+            Err(errs)
         } else {
             Ok(())
         }
@@ -321,36 +332,36 @@ impl<'a> ValidationInfo<'a> {
 pub fn validate_spirv_graphics_pipeline<B: Backend>(
     signature_desc: &SignatureDescription,
     create_info: &GraphicsPipelineCreateInfo<B>,
-) -> Result<(), ValidationError> {
+) -> ValidationResult<()> {
     let a = spirv::ast::Arenas::new();
     // create SPIR-V modules
     let vert = spirv::Module::from_bytes(create_info.shader_stages.vertex.1)
-        .map_err(|e| ValidationError::InvalidSpirV(e))?;
+        .map_err(|e| vec![ValidationError::InvalidSpirV(e)])?;
     // yay transpose
     let frag = create_info
         .shader_stages
         .fragment
         .map(|s| spirv::Module::from_bytes(s.1))
         .transpose()
-        .map_err(|e| ValidationError::InvalidSpirV(e))?;
+        .map_err(|e| vec![ValidationError::InvalidSpirV(e)])?;
     let geom = create_info
         .shader_stages
         .geometry
         .map(|s| spirv::Module::from_bytes(s.1))
         .transpose()
-        .map_err(|e| ValidationError::InvalidSpirV(e))?;
+        .map_err(|e| vec![ValidationError::InvalidSpirV(e)])?;
     let tese = create_info
         .shader_stages
         .tess_eval
         .map(|s| spirv::Module::from_bytes(s.1))
         .transpose()
-        .map_err(|e| ValidationError::InvalidSpirV(e))?;
+        .map_err(|e| vec![ValidationError::InvalidSpirV(e)])?;
     let tesc = create_info
         .shader_stages
         .tess_control
         .map(|s| spirv::Module::from_bytes(s.1))
         .transpose()
-        .map_err(|e| ValidationError::InvalidSpirV(e))?;
+        .map_err(|e| vec![ValidationError::InvalidSpirV(e)])?;
 
     // parse into structured ASTs
     let vert_ast = spirv::ast::Ast::new(&a, &vert);
@@ -386,6 +397,33 @@ pub fn validate_spirv_graphics_pipeline<B: Backend>(
     let mut vinfo = ValidationInfo::new();
     vinfo.build(signature_desc)?;
 
+    let mut errors = Vec::new();
+
+    // check viewports & scissors
+    let num_viewports = match create_info.viewport_state.viewports {
+        Viewports::Static(vp) => {
+            if vinfo.num_viewports != 0 {
+                errors.push(ValidationError::InvalidRootSignature("root signature contains viewport entries but dynamic viewports are not enabled in GraphicsPipelineCreateInfo".to_string()));
+            }
+            vp.len()
+        }
+        Viewports::Dynamic => vinfo.num_viewports,
+    };
+
+    let num_scissors = match create_info.viewport_state.scissors {
+        Scissors::Static(s) => {
+            if vinfo.num_scissors != 0 {
+                errors.push(ValidationError::InvalidRootSignature("root signature contains scissor entries but dynamic scissors are not enabled in GraphicsPipelineCreateInfo".to_string()));
+            }
+            s.len()
+        }
+        Scissors::Dynamic => vinfo.num_scissors,
+    };
+
+    if num_viewports != num_scissors {
+        errors.push(ValidationError::InvalidRootSignature(format!("the number of scissor entries does not match the number of viewports (num_scissors={}, num_viewports={})", num_scissors, num_viewports)));
+    }
+
     // iterate over all variables
     let all_vars = vert_ast
         .variables()
@@ -394,17 +432,16 @@ pub fn validate_spirv_graphics_pipeline<B: Backend>(
         .chain(tese_ast.iter().flat_map(|ast| ast.variables()))
         .chain(tesc_ast.iter().flat_map(|ast| ast.variables()));
 
-    let mut errors = Vec::new();
-
     for (_, v) in all_vars {
         if let Some((_, set)) = v.descriptor_set_decoration() {
             // descriptor-backed interface ---------------------------------------------------------
             let (_, binding) = v.binding_decoration().expect("expected binding decoration");
             let result = vinfo.validate_descriptor(set, binding, v);
             if let Err(e) = result {
-                errors.push(e);
+                errors.push(ValidationError::InterfaceMismatch(e));
             }
         } else {
+            //v.de
             // TODO vertex inputs
         }
     }
@@ -412,6 +449,6 @@ pub fn validate_spirv_graphics_pipeline<B: Backend>(
     if errors.is_empty() {
         Ok(())
     } else {
-        Err(ValidationError::InterfaceMismatch(errors))
+        Err(errors)
     }
 }

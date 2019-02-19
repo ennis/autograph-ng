@@ -13,6 +13,8 @@ pub use self::state::StateCache;
 use crate::backend::OpenGlBackend;
 use crate::pipeline::GlArgumentBlock;
 use crate::pipeline::StateBlock;
+use autograph_render::pipeline::Scissor;
+use autograph_render::traits::Swapchain;
 use std::slice;
 
 pub struct SubmissionContext<'a, 'rcx> {
@@ -30,6 +32,8 @@ struct BaseSlots {
     samplers: usize,
     img: usize,
     vbo: usize,
+    //viewports: usize,
+    //scissors: usize,
 }
 
 impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
@@ -46,6 +50,11 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
         }
     }
 
+    /// Disable scissor test on the first viewport
+    fn disable_scissor_test(&mut self) {
+        self.state_cache.set_scissors(self.gl, &[Scissor::Disabled]);
+    }
+
     fn cmd_clear_image_float(&mut self, image: &GlImage, color: &[f32; 4]) {
         if image.raw.target == gl::RENDERBUFFER {
             // create temporary framebuffer
@@ -60,6 +69,7 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
                 );
                 self.gl
                     .NamedFramebufferDrawBuffers(tmpfb, 1, (&[gl::COLOR_ATTACHMENT0]).as_ptr());
+                self.disable_scissor_test();
                 self.gl
                     .ClearNamedFramebufferfv(tmpfb, gl::COLOR, 0, color.as_ptr());
                 self.gl.DeleteFramebuffers(1, &tmpfb);
@@ -91,6 +101,7 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
                     gl::RENDERBUFFER,
                     obj,
                 );
+                self.disable_scissor_test();
                 if let Some(_stencil) = stencil {
                     unimplemented!()
                 } else {
@@ -233,43 +244,20 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
                 &StateBlock::Framebuffer(obj) => {
                     self.state_cache.set_draw_framebuffer(self.gl, obj);
                 }
-                &StateBlock::Viewports(num_viewports, viewports) => {
-                    let viewports = unsafe { slice::from_raw_parts(viewports, num_viewports) };
+                &StateBlock::Viewports(viewports) => {
+                    let viewports = unsafe { slice::from_raw_parts(viewports, sig.num_viewports) };
+                    // FIXME this assumes that all viewports are in the same argblock
                     self.state_cache.set_viewports(self.gl, viewports);
+                    //base_slots.viewports += sig.num_viewports;
                 }
-                &StateBlock::Scissors(num_scissors, scissors) => {
-                    let _scissors = unsafe { slice::from_raw_parts(scissors, num_scissors) };
-                    //self.state_cache.set_scissors(self.gl, viewports);
+                &StateBlock::Scissors(scissors) => {
+                    let scissors = unsafe { slice::from_raw_parts(scissors, sig.num_scissors) };
+                    self.state_cache.set_scissors(self.gl, scissors);
+                    //base_slots.viewports += sig.num_scissors;
                 }
                 &StateBlock::Empty => {}
             }
         }
-
-        /*
-        // recursively bind
-
-        let mut sr = ShaderResourceBindings::new();
-
-        for (i, &ds) in descriptor_sets.iter().enumerate() {
-            let ds: &GlDescriptorSet = ds.downcast_ref_unwrap();
-            ds.collect(i as u32, descriptor_map, &mut sr);
-        }
-
-        self.state_cache.set_uniform_buffers(
-            self.gl,
-            &sr.uniform_buffers,
-            &sr.uniform_buffer_offsets,
-            &sr.uniform_buffer_sizes,
-        );
-        self.state_cache.set_shader_storage_buffers(
-            self.gl,
-            &sr.shader_storage_buffers,
-            &sr.shader_storage_buffer_offsets,
-            &sr.shader_storage_buffer_sizes,
-        );
-        self.state_cache.set_textures(self.gl, &sr.textures);
-        self.state_cache.set_samplers(self.gl, &sr.samplers);
-        self.state_cache.set_images(self.gl, &sr.images);*/
     }
 
     fn cmd_present(&mut self, image: &GlImage, swapchain: &GlSwapchain) {
@@ -293,7 +281,9 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
                     .NamedFramebufferTexture(tmpfb, gl::COLOR_ATTACHMENT0, image.raw.obj, 0);
             }
             // blit to default framebuffer
-            let (w, h): (u32, u32) = swapchain.inner.size();
+            let (w, h): (u32, u32) = swapchain.size();
+
+            self.disable_scissor_test();
 
             self.gl.BlitNamedFramebuffer(
                 tmpfb,
@@ -315,7 +305,10 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
         }
 
         // swap buffers
-        swapchain.inner.present()
+        swapchain
+            .window
+            .swap_buffers()
+            .expect("failed to swap buffers")
     }
 
     fn cmd_set_graphics_pipeline(&mut self, pipeline: &'rcx GlGraphicsPipeline) {

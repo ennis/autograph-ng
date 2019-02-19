@@ -9,7 +9,7 @@ use autograph_render::descriptor::Descriptor;
 use autograph_render::descriptor::DescriptorType;
 use autograph_render::framebuffer::RenderTargetDescriptor;
 use autograph_render::pipeline::BareArgumentBlock;
-use autograph_render::pipeline::ScissorRect;
+use autograph_render::pipeline::Scissor;
 use autograph_render::pipeline::SignatureDescription;
 use autograph_render::pipeline::Viewport;
 use autograph_render::vertex::IndexBufferDescriptor;
@@ -32,6 +32,8 @@ pub struct GlSignature {
     pub(crate) num_shader_storage_buffers: usize,
     pub(crate) num_textures: usize,
     pub(crate) num_images: usize,
+    pub(crate) num_viewports: usize,
+    pub(crate) num_scissors: usize,
     pub(crate) num_render_targets: usize,
     pub(crate) has_index_buffer: bool,
     pub(crate) has_depth_render_target: bool,
@@ -131,6 +133,8 @@ impl GlSignature {
             num_textures,
             num_images,
             num_render_targets,
+            num_viewports: description.num_viewports,
+            num_scissors: description.num_scissors,
             is_root_fragment_output_signature: description.is_root_fragment_output_signature,
             is_root_vertex_input_signature: description.is_root_vertex_input_signature,
         })
@@ -209,7 +213,7 @@ impl GlArgumentBlock {
         render_targets: impl IntoIterator<Item = RenderTargetDescriptor<'a, OpenGlBackend>>,
         depth_stencil_render_target: Option<RenderTargetDescriptor<'a, OpenGlBackend>>,
         viewports: impl IntoIterator<Item = Viewport>,
-        scissors: impl IntoIterator<Item = ScissorRect>,
+        scissors: impl IntoIterator<Item = Scissor>,
     ) -> &'a GlArgumentBlock {
         // TODO This function is a bit hard to digest: refactor
         // TODO Gratuitous usage of unsafety here; blame the lack of ATCs
@@ -469,13 +473,17 @@ impl GlArgumentBlock {
         }
 
         let viewports = arena.other.alloc_extend(viewports);
+        let scissors = arena.other.alloc_extend(scissors);
+
+        assert_eq!(viewports.len(), signature.num_viewports);
+        assert_eq!(scissors.len(), signature.num_scissors);
+
         if viewports.len() > 0 {
-            push_state_block(StateBlock::Viewports(viewports.len(), viewports.as_ptr()));
+            push_state_block(StateBlock::Viewports(viewports.as_ptr()));
         }
 
-        let scissors = arena.other.alloc_extend(scissors);
         if scissors.len() > 0 {
-            push_state_block(StateBlock::Scissors(scissors.len(), scissors.as_ptr()));
+            push_state_block(StateBlock::Scissors(scissors.as_ptr()));
         }
 
         let args = GlArgumentBlock {
@@ -516,7 +524,7 @@ pub(crate) enum StateBlock {
     RenderTarget(*const *const GlImage),
     DepthStencilRenderTarget(*const GlImage),
     Framebuffer(GLuint),
-    Viewports(usize, *const Viewport),
-    Scissors(usize, *const ScissorRect),
+    Viewports(*const Viewport),
+    Scissors(*const Scissor),
     Empty,
 }

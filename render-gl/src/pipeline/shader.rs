@@ -141,7 +141,7 @@ pub(crate) fn create_specialized_spirv_shader(
 pub(crate) enum BindingSpace {
     UniformBuffer,
     ShaderStorageBuffer,
-    AtomicCounterBuffer,
+    _AtomicCounterBuffer,
     Texture,
     Image,
     Empty,
@@ -211,7 +211,7 @@ impl DescriptorMapBuilder {
             let next = match space {
                 BindingSpace::UniformBuffer => &mut self.next_ubo,
                 BindingSpace::ShaderStorageBuffer => &mut self.next_ssbo,
-                BindingSpace::AtomicCounterBuffer => unimplemented!(),
+                BindingSpace::_AtomicCounterBuffer => unimplemented!(),
                 BindingSpace::Texture => &mut self.next_tex,
                 BindingSpace::Image => &mut self.next_img,
                 _ => panic!("invalid binding space"),

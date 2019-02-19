@@ -20,7 +20,6 @@ mod window;
 
 pub use self::backend::OpenGlBackend;
 pub use self::backend::OpenGlInstance;
-pub use self::swapchain::SwapchainInner;
 pub use self::window::create_instance_and_window;
 
 use crate::api as gl;

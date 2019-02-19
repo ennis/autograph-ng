@@ -1874,3 +1874,19 @@ GraphicsPipeline trait
         - also, some "compiled" arg block if backend needs it (no-op otherwise)
     - store a dyn pointer an impl of PipelineInterface<B>
         
+#### Viewports and scissors in argblocks
+- the number of scissors must be equal to the number of specified viewports
+- the number of viewports should be specified in the create info
+    - but: redundancy (viewports in create info VS num viewports in signature)
+- issue: num viewports is specified either:
+    - in create_info
+    - in signature
+- imposed limitation: viewports can't be split across multiple argblocks
+- the number of viewports in a signature MUST be known
+    - no arrays or slices
+    
+#### Should the backend own the window?
+- no, take a ref to the window
+- this breaks the current boilerplate 
+- actually impossible: Instance is an ATC
+    - Rc<Window> or Arc<Window>

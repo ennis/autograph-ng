@@ -13,7 +13,6 @@ use autograph_render::pipeline::ColorBlendAttachmentState;
 use autograph_render::pipeline::ColorBlendAttachments;
 use autograph_render::pipeline::ColorBlendState;
 use autograph_render::pipeline::DepthStencilState;
-use autograph_render::pipeline::DynamicStateFlags;
 use autograph_render::pipeline::GraphicsPipelineCreateInfo;
 use autograph_render::pipeline::GraphicsShaderStages;
 use autograph_render::pipeline::InputAssemblyState;
@@ -21,7 +20,6 @@ use autograph_render::pipeline::MultisampleState;
 use autograph_render::pipeline::PrimitiveTopology;
 use autograph_render::pipeline::RasterisationState;
 use autograph_render::pipeline::Scissors;
-use autograph_render::pipeline::ShaderStageFlags;
 use autograph_render::pipeline::Viewport;
 use autograph_render::pipeline::ViewportState;
 use autograph_render::pipeline::Viewports;
@@ -160,61 +158,25 @@ struct Pipelines<'a> {
 
 fn create_pipelines<'a>(arena: &'a Arena) -> Pipelines<'a> {
     let background = GraphicsPipelineCreateInfo {
-        //root_signature: &(),
-        //root_signature_description: &SignatureDescription {},
-        shader_stages: &GraphicsShaderStages {
-            vertex: arena.create_shader_module(BACKGROUND_VERT, ShaderStageFlags::VERTEX),
-            geometry: None,
-            fragment: Some(arena.create_shader_module(BACKGROUND_FRAG, ShaderStageFlags::FRAGMENT)),
-            tess_eval: None,
-            tess_control: None,
-        },
-        viewport_state: &ViewportState {
-            viewports: Viewports::Dynamic,
-            scissors: Scissors::Dynamic,
-        },
-        rasterization_state: &RasterisationState::DEFAULT,
-        multisample_state: &MultisampleState::default(),
-        depth_stencil_state: &DepthStencilState::default(),
-        input_assembly_state: &InputAssemblyState {
-            topology: PrimitiveTopology::TriangleList,
-            primitive_restart_enable: false,
-        },
-        color_blend_state: &ColorBlendState {
-            attachments: ColorBlendAttachments::All(&ColorBlendAttachmentState::DISABLED),
-            blend_constants: [0.0.into(); 4],
-            logic_op: None,
-        },
-        dynamic_state: DynamicStateFlags::empty(),
+        shader_stages: arena.create_vertex_fragment_shader_stages(BACKGROUND_VERT, BACKGROUND_FRAG),
+        viewport_state: ViewportState::default(),
+        rasterization_state: RasterisationState::default(),
+        multisample_state: MultisampleState::default(),
+        depth_stencil_state: DepthStencilState::default(),
+        input_assembly_state: InputAssemblyState::default(),
+        color_blend_state: ColorBlendState::DISABLED,
     };
 
     let background = arena.create_graphics_pipeline(&background);
 
     let path = GraphicsPipelineCreateInfo {
-        shader_stages: &GraphicsShaderStages {
-            vertex: arena.create_shader_module(PATH_VERT, ShaderStageFlags::VERTEX),
-            geometry: None,
-            fragment: Some(arena.create_shader_module(PATH_FRAG, ShaderStageFlags::FRAGMENT)),
-            tess_eval: None,
-            tess_control: None,
-        },
-        viewport_state: &ViewportState {
-            viewports: Viewports::Dynamic,
-            scissors: Scissors::Dynamic,
-        },
-        rasterization_state: &RasterisationState::DEFAULT,
-        multisample_state: &MultisampleState::default(),
-        depth_stencil_state: &DepthStencilState::default(),
-        input_assembly_state: &InputAssemblyState {
-            topology: PrimitiveTopology::TriangleList,
-            primitive_restart_enable: false,
-        },
-        color_blend_state: &ColorBlendState {
-            attachments: ColorBlendAttachments::All(&ColorBlendAttachmentState::DISABLED),
-            blend_constants: [0.0.into(); 4],
-            logic_op: None,
-        },
-        dynamic_state: DynamicStateFlags::empty(),
+        shader_stages: arena.create_vertex_fragment_shader_stages(PATH_VERT, PATH_FRAG),
+        viewport_state: ViewportState::default(),
+        rasterization_state: RasterisationState::default(),
+        multisample_state: MultisampleState::default(),
+        depth_stencil_state: DepthStencilState::default(),
+        input_assembly_state: InputAssemblyState::default(),
+        color_blend_state: ColorBlendState::DISABLED,
     };
 
     let path = arena.create_graphics_pipeline(&path);
@@ -321,15 +283,8 @@ fn test_simple() {
         let default_swapchain = r.default_swapchain().unwrap();
         let (w, h) = default_swapchain.size();
         let arena_1 = r.create_arena();
-
-        let color_buffer = arena_1.create_image(
-            AliasScope::no_alias(),
-            Format::R16G16B16A16_SFLOAT,
-            (w, h).into(),
-            MipmapsCount::One,
-            8, // multisampling
-            ImageUsageFlags::COLOR_ATTACHMENT,
-        );
+        let color_buffer =
+            arena_1.create_unaliasable_render_target(Format::R16G16B16A16_SFLOAT, (w, h), 8);
 
         let render_targets = arena_1.create_typed_argument_block(RenderTargets {
             color_target: color_buffer,
@@ -338,7 +293,7 @@ fn test_simple() {
 
         let (left, top, right, bottom) = (-1.0, 1.0, 1.0, -1.0);
 
-        let vertex_buffer = arena_0.upload_slice(&[
+        let vertex_buffer = arena_1.upload_slice(&[
             Vertex2D::new([left, top]),
             Vertex2D::new([right, top]),
             Vertex2D::new([left, bottom]),

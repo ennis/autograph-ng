@@ -206,6 +206,16 @@ bitflags! {
     }
 }
 
+impl Default for ImageUsageFlags {
+    fn default() -> Self {
+        ImageUsageFlags::COLOR_ATTACHMENT
+            | ImageUsageFlags::DEPTH_ATTACHMENT
+            | ImageUsageFlags::INPUT_ATTACHMENT
+            | ImageUsageFlags::STORAGE
+            | ImageUsageFlags::SAMPLED
+    }
+}
+
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub enum SamplerAddressMode {
     Clamp,

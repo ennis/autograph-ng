@@ -72,7 +72,6 @@ impl IArchive {
     }
 }
 
-
 //--------------------------------------------------------------------------------------------------
 // TYPES
 #[repr(i32)]
@@ -254,9 +253,6 @@ impl<Element: PropertyElementType> TypedArraySample<Element> {
     }
 }
 
-
-
-
 //--------------------------------------------------------------------------------------------------
 // PROPERTIES
 
@@ -306,7 +302,6 @@ pub struct IPropertyBase(
 );
 
 impl IPropertyBase {
-
     /// Properties are created with a collection of metadata that is stored
     /// in a lightweight structure called PropertyHeader.
     /// This returns a constant reference to the PropertyHeader which
@@ -336,7 +331,8 @@ impl IPropertyBase {
     pub fn into_array(self) -> Option<IArrayProperty> {
         unsafe {
             let mut sharedptr = mem::uninitialized();
-            let ptr = Alembic_AbcCoreAbstract_v11_BasePropertyReader_asArrayPtr(self.0, &mut sharedptr);
+            let ptr =
+                Alembic_AbcCoreAbstract_v11_BasePropertyReader_asArrayPtr(self.0, &mut sharedptr);
             if ptr != ptr::null_mut() {
                 Some(IArrayProperty(ptr, sharedptr))
             } else {
@@ -348,7 +344,8 @@ impl IPropertyBase {
     pub fn into_scalar(self) -> Option<IScalarProperty> {
         unsafe {
             let mut sharedptr = mem::uninitialized();
-            let ptr = Alembic_AbcCoreAbstract_v11_BasePropertyReader_asScalarPtr(self.0, &mut sharedptr);
+            let ptr =
+                Alembic_AbcCoreAbstract_v11_BasePropertyReader_asScalarPtr(self.0, &mut sharedptr);
             if ptr != ptr::null_mut() {
                 Some(IScalarProperty(ptr, sharedptr))
             } else {
@@ -360,7 +357,10 @@ impl IPropertyBase {
     pub fn into_compound(self) -> Option<ICompoundProperty> {
         unsafe {
             let mut sharedptr = mem::uninitialized();
-            let ptr = Alembic_AbcCoreAbstract_v11_BasePropertyReader_asCompoundPtr(self.0, &mut sharedptr);
+            let ptr = Alembic_AbcCoreAbstract_v11_BasePropertyReader_asCompoundPtr(
+                self.0,
+                &mut sharedptr,
+            );
             if ptr != ptr::null_mut() {
                 Some(ICompoundProperty(ptr, sharedptr))
             } else {
@@ -428,8 +428,6 @@ impl ICompoundProperty {
     }
 }
 
-
-
 //--------------------------------------------------------------------------------------------------
 // OBJECTS
 
@@ -496,21 +494,17 @@ impl IObject {
 //--------------------------------------------------------------------------------------------------
 pub struct IPolyMesh {
     object: IObject,
-    positions: ITypedArrayProperty<[f32;3]>,
-    velocities: ITypedArrayProperty<[f32;3]>,
+    positions: ITypedArrayProperty<[f32; 3]>,
+    velocities: ITypedArrayProperty<[f32; 3]>,
     indices: ITypedArrayProperty<i32>,
     counts: ITypedArrayProperty<i32>,
 }
 
-impl IPolyMesh
-{
-    pub fn new(parent: IObject) {
-
-    }
+impl IPolyMesh {
+    pub fn new(parent: IObject) {}
 }
 
-pub struct IFaceSet
-{
+pub struct IFaceSet {
     object: IObject,
 }
 

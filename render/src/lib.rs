@@ -23,7 +23,7 @@
 
 // necessary for const NotNaN
 #![feature(const_transmute)]
-#![feature(const_type_id)]
+//#![feature(const_type_id)]
 extern crate log;
 
 // Reexport nalgebra_glm types if requested
@@ -101,7 +101,7 @@ use crate::framebuffer::RenderTargetDescriptor;
 use crate::pipeline::Arguments;
 use crate::pipeline::GraphicsPipeline;
 use crate::pipeline::GraphicsPipelineCreateInfo;
-use crate::pipeline::ScissorRect;
+use crate::pipeline::Scissor;
 use crate::pipeline::ShaderModule;
 use crate::pipeline::ShaderStageFlags;
 use crate::pipeline::Viewport;
@@ -116,6 +116,7 @@ use std::mem;
 use crate::pipeline::validate::validate_spirv_graphics_pipeline;
 use crate::pipeline::ArgumentBlock;
 use crate::pipeline::BareArgumentBlock;
+use crate::pipeline::GraphicsShaderStages;
 use crate::pipeline::Signature;
 use crate::pipeline::SignatureDescription;
 use crate::pipeline::TypedSignature;
@@ -261,7 +262,7 @@ pub trait Instance<B: Backend> {
         render_targets: impl IntoIterator<Item = RenderTargetDescriptor<'a, B>>,
         depth_stencil_render_target: Option<RenderTargetDescriptor<'a, B>>,
         viewports: impl IntoIterator<Item = Viewport>,
-        scissors: impl IntoIterator<Item = ScissorRect>,
+        scissors: impl IntoIterator<Item = Scissor>,
     ) -> &'a B::ArgumentBlock;
 
     unsafe fn create_host_reference<'a>(
@@ -362,6 +363,69 @@ impl<'r, B: Backend> Arena<'r, B> {
         )
     }
 
+    /// Equivalent to `create_shader_module(data, ShaderStageFlags::VERTEX)`
+    #[inline]
+    pub fn create_vertex_shader_module<'a, 'spv>(
+        &'a self,
+        data: &'spv [u8],
+    ) -> ShaderModule<'a, 'spv, B> {
+        self.create_shader_module(data, ShaderStageFlags::VERTEX)
+    }
+
+    /// Equivalent to `create_shader_module(data, ShaderStageFlags::FRAGMENT)`
+    #[inline]
+    pub fn create_fragment_shader_module<'a, 'spv>(
+        &'a self,
+        data: &'spv [u8],
+    ) -> ShaderModule<'a, 'spv, B> {
+        self.create_shader_module(data, ShaderStageFlags::FRAGMENT)
+    }
+
+    /// Equivalent to `create_shader_module(data, ShaderStageFlags::GEOMETRY)`
+    #[inline]
+    pub fn create_geometry_shader_module<'a, 'spv>(
+        &'a self,
+        data: &'spv [u8],
+    ) -> ShaderModule<'a, 'spv, B> {
+        self.create_shader_module(data, ShaderStageFlags::GEOMETRY)
+    }
+
+    /// Equivalent to `create_shader_module(data, ShaderStageFlags::TESS_CONTROL)`
+    #[inline]
+    pub fn create_tess_control_shader_module<'a, 'spv>(
+        &'a self,
+        data: &'spv [u8],
+    ) -> ShaderModule<'a, 'spv, B> {
+        self.create_shader_module(data, ShaderStageFlags::TESS_CONTROL)
+    }
+
+    /// Equivalent to `create_shader_module(data, ShaderStageFlags::TESS_EVAL)`
+    #[inline]
+    pub fn create_tess_eval_shader_module<'a, 'spv>(
+        &'a self,
+        data: &'spv [u8],
+    ) -> ShaderModule<'a, 'spv, B> {
+        self.create_shader_module(data, ShaderStageFlags::TESS_EVAL)
+    }
+
+    /// Shorthand to create a `GraphicsShaderStages` object with a vertex and a fragment shader.
+    #[inline]
+    pub fn create_vertex_fragment_shader_stages<'a, 'spv>(
+        &'a self,
+        vertex_shader: &'spv [u8],
+        fragment_shader: &'spv [u8],
+    ) -> GraphicsShaderStages<'a, 'spv, B> {
+        let vert = self.create_vertex_shader_module(vertex_shader);
+        let frag = self.create_fragment_shader_module(fragment_shader);
+        GraphicsShaderStages {
+            vertex: vert,
+            geometry: None,
+            fragment: frag.into(),
+            tess_eval: None,
+            tess_control: None,
+        }
+    }
+
     /// Creates a graphics pipeline given the pipeline description passed in create_info
     /// and information derived from the pipeline interface type.
     pub fn create_graphics_pipeline<'a, P: Arguments<'a, B>>(
@@ -373,8 +437,11 @@ impl<'r, B: Backend> Arena<'r, B> {
         // validate the pipeline
         let validation_result =
             validate_spirv_graphics_pipeline(root_signature.description(), &create_info);
-        if let Err(e) = validation_result {
-            panic!("graphics pipeline validation failed: {}", e);
+        if let Err(es) = validation_result {
+            for e in es {
+                log::error!("validation error: {}", e);
+            }
+            panic!("graphics pipeline validation failed");
         }
 
         GraphicsPipeline {
@@ -451,6 +518,36 @@ impl<'r, B: Backend> Arena<'r, B> {
             )
         })
     }
+
+    /// Creates an image suitable for use exclusively as a render target (color attachment image),
+    /// and usable in the whole command stream (unaliasable).
+    ///
+    /// The created image has one mip level, and cannot be used as a sampled image.
+    ///
+    /// Equivalent to `create_image(AliasScope::no_alias(), format, dimensions.into(), MipmapsCount::One, samples, ImageUsageFlags::COLOR_ATTACHMENT)`
+    #[inline]
+    pub fn create_unaliasable_render_target(
+        &self,
+        format: Format,
+        dimensions: (u32, u32),
+        samples: u32,
+    ) -> Image<B> {
+        self.create_image(
+            AliasScope::no_alias(),
+            format,
+            dimensions.into(),
+            MipmapsCount::One,
+            samples,
+            ImageUsageFlags::COLOR_ATTACHMENT,
+        )
+    }
+
+    /*/// Creates an image suitable (but not optimal) for every use.
+    #[inline]
+    pub fn create_default_image_2d(&self, format: Format, dimensions: (u32, u32), mip_levels: MipmapsCount, samples: u32) -> Image<B>
+    {
+
+    }*/
 
     /// Creates a GPU (device local) buffer.
     #[inline]
@@ -534,7 +631,7 @@ impl<'r, B: Backend> Arena<'r, B> {
         render_targets: impl IntoIterator<Item = RenderTargetDescriptor<'a, B>>,
         depth_stencil_render_target: Option<RenderTargetDescriptor<'a, B>>,
         viewports: impl IntoIterator<Item = Viewport>,
-        scissors: impl IntoIterator<Item = ScissorRect>,
+        scissors: impl IntoIterator<Item = Scissor>,
     ) -> ArgumentBlock<'a, B, S> {
         ArgumentBlock {
             arguments: unsafe {

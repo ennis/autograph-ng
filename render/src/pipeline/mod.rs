@@ -59,6 +59,21 @@ pub struct GraphicsShaderStages<'a, 'spv, B: Backend> {
     pub tess_control: Option<ShaderModule<'a, 'spv, B>>,
 }
 
+impl<'a, 'spv, B: Backend> GraphicsShaderStages<'a, 'spv, B> {
+    pub fn new_vertex_fragment(
+        vertex: ShaderModule<'a, 'spv, B>,
+        fragment: ShaderModule<'a, 'spv, B>,
+    ) -> GraphicsShaderStages<'a, 'spv, B> {
+        GraphicsShaderStages {
+            vertex,
+            fragment: fragment.into(),
+            geometry: None,
+            tess_control: None,
+            tess_eval: None,
+        }
+    }
+}
+
 bitflags! {
     #[derive(Default)]
     pub struct CullModeFlags: u32 {
@@ -136,6 +151,7 @@ impl Default for RasterisationState {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[repr(C)]
 pub struct Viewport {
     pub x: NotNan<f32>,
     pub y: NotNan<f32>,
@@ -159,6 +175,7 @@ impl From<(u32, u32)> for Viewport {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[repr(C)]
 pub struct ScissorRect {
     pub x: i32,
     pub y: i32,
@@ -167,14 +184,50 @@ pub struct ScissorRect {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum Scissor {
+    Enabled(ScissorRect),
+    Disabled,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Viewports<'a> {
-    Static { viewports: &'a [Viewport] },
+    Static(&'a [Viewport]),
+    Dynamic,
+}
+
+impl<'a> From<Viewports<'a>> for ViewportsOwned {
+    fn from(v: Viewports) -> Self {
+        match v {
+            Viewports::Static(v) => ViewportsOwned::Static(v.to_vec()),
+            Viewports::Dynamic => ViewportsOwned::Dynamic,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum ViewportsOwned {
+    Static(Vec<Viewport>),
     Dynamic,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Scissors<'a> {
-    Static { scissor_rects: &'a [ScissorRect] },
+    Static(&'a [Scissor]),
+    Dynamic,
+}
+
+impl<'a> From<Scissors<'a>> for ScissorsOwned {
+    fn from(s: Scissors) -> Self {
+        match s {
+            Scissors::Static(s) => ScissorsOwned::Static(s.to_vec()),
+            Scissors::Dynamic => ScissorsOwned::Dynamic,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum ScissorsOwned {
+    Static(Vec<Scissor>),
     Dynamic,
 }
 
@@ -187,16 +240,32 @@ pub struct ViewportState<'a> {
 impl<'a> Default for ViewportState<'a> {
     fn default() -> Self {
         ViewportState {
-            scissors: Scissors::Dynamic,
+            scissors: Scissors::Static(&[Scissor::Disabled]),
             viewports: Viewports::Dynamic,
         }
     }
+}
+
+impl<'a> ViewportState<'a> {
+    pub const DYNAMIC_VIEWPORT_SCISSOR: ViewportState<'static> = ViewportState {
+        viewports: Viewports::Dynamic,
+        scissors: Scissors::Dynamic,
+    };
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct InputAssemblyState {
     pub topology: PrimitiveTopology,
     pub primitive_restart_enable: bool,
+}
+
+impl Default for InputAssemblyState {
+    fn default() -> Self {
+        InputAssemblyState {
+            topology: PrimitiveTopology::TriangleList,
+            primitive_restart_enable: false,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -209,7 +278,6 @@ pub enum SampleShading {
 pub struct MultisampleState {
     pub rasterization_samples: u32,
     pub sample_shading: SampleShading,
-    //pub sample_mask: ???
     pub alpha_to_coverage_enable: bool,
     pub alpha_to_one_enable: bool,
 }
@@ -416,8 +484,8 @@ impl ColorBlendAttachmentState {
         src_color_blend_factor: BlendFactor::SrcAlpha,
         dst_color_blend_factor: BlendFactor::OneMinusSrcAlpha,
         alpha_blend_op: BlendOp::Add,
-        src_alpha_blend_factor: BlendFactor::SrcAlpha,
-        dst_alpha_blend_factor: BlendFactor::OneMinusSrcAlpha,
+        src_alpha_blend_factor: BlendFactor::One,
+        dst_alpha_blend_factor: BlendFactor::Zero,
         color_write_mask: ColorComponentFlags::ALL,
     };
 }
@@ -441,18 +509,32 @@ pub struct ColorBlendState<'a> {
     pub blend_constants: [NotNan<f32>; 4],
 }
 
+impl<'a> ColorBlendState<'a> {
+    pub const DISABLED: ColorBlendState<'static> = ColorBlendState {
+        attachments: ColorBlendAttachments::All(&ColorBlendAttachmentState::Disabled),
+        blend_constants: [unsafe { mem::transmute(0.0f32) }; 4],
+        logic_op: None,
+    };
+
+    pub const ALPHA_BLENDING: ColorBlendState<'static> = ColorBlendState {
+        attachments: ColorBlendAttachments::All(&ColorBlendAttachmentState::ALPHA_BLENDING),
+        blend_constants: [unsafe { mem::transmute(0.0f32) }; 4],
+        logic_op: None,
+    };
+}
+
 #[derive(Copy, Clone)]
 pub struct GraphicsPipelineCreateInfo<'a, 'b, B: Backend> {
     /// Shaders
-    pub shader_stages: &'b GraphicsShaderStages<'a, 'b, B>,
+    pub shader_stages: GraphicsShaderStages<'a, 'b, B>,
     //pub vertex_input_state: &'b VertexInputState<'b>,
-    pub viewport_state: &'b ViewportState<'b>,
-    pub rasterization_state: &'b RasterisationState,
-    pub multisample_state: &'b MultisampleState,
-    pub depth_stencil_state: &'b DepthStencilState,
-    pub input_assembly_state: &'b InputAssemblyState,
-    pub color_blend_state: &'b ColorBlendState<'b>,
-    pub dynamic_state: DynamicStateFlags,
+    pub viewport_state: ViewportState<'b>,
+    pub rasterization_state: RasterisationState,
+    pub multisample_state: MultisampleState,
+    pub depth_stencil_state: DepthStencilState,
+    pub input_assembly_state: InputAssemblyState,
+    pub color_blend_state: ColorBlendState<'b>,
+    //pub dynamic_state: DynamicStateFlags,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -494,18 +576,89 @@ impl<'a, B: Backend, T: PipelineInterface<'a, B>> From<GraphicsPipeline<'a, B, T
     }
 }*/
 
-/// Complete description of a pipeline signature, including the description of sub-signatures.
-/// Contrary to PipelineSignatureCreateInfo, this doesn't hold any backend signature object.
+/// Describes the contents (all arguments) of an argument block.
+///
+/// This can be seen as the 'layout' or 'format' of an argument block.
 #[derive(Copy, Clone, Debug)]
 pub struct SignatureDescription<'a> {
+    /// Signatures of inherited argument blocks.
+    ///
+    /// The length of this slice defines the number of _inherited argument blocks_.
     pub inherited: &'a [&'a SignatureDescription<'a>],
+
+    /// Descriptors in the block.
+    ///
+    /// The length of this slice defines the number of _descriptors_ in a block.
     pub descriptors: &'a [DescriptorBinding<'a>],
+
+    /// Layouts of all vertex buffers in the block.
+    ///
+    /// The length of this slice defines the number of _vertex buffers_ in a block.
     pub vertex_layouts: &'a [VertexLayout<'a>],
+
+    /// (Color) outputs of the fragment shader. The block contains one _render target_ image for
+    /// each entry.
+    ///
+    /// The length of this slice defines the number of _render targets_ in a block.
     pub fragment_outputs: &'a [FragmentOutputDescription],
+
+    /// Depth-stencil output of the fragment shader. If not `None` then the block contains a
+    /// depth-stencil render target image.
     pub depth_stencil_fragment_output: Option<FragmentOutputDescription>,
+
+    /// The format of the index buffer. If not `None`, then the block contains an index buffer.
     pub index_format: Option<IndexFormat>,
+
+    /// The number of viewports defined in the block.
+    ///
+    /// At most one signature in a signature tree can have a non-zero number of viewports.
+    /// Equivalently, you cannot split the definition of viewports across several argument blocks,
+    /// and when an argument block defines viewports, it must define all of them at once.
+    ///
+    /// FIXME: actually check that
+    pub num_viewports: usize,
+
+    /// The number of scissors defined in the block.
+    ///
+    /// This follows the same rule as `num_viewports`.
+    pub num_scissors: usize,
+
+    /// Indicates that this block and its inherited blocks fully define the outputs of a fragment shader.
+    ///
+    /// An inheriting block must not define additional fragment outputs in the `fragment_outputs`
+    /// and `depth_stencil_fragment_output` members.
+    ///
+    /// The purpose of this flag is to allow backends that need _framebuffer objects_ (e.g. OpenGL or Vulkan)
+    /// to create them in advance and store them inside long-lived argument blocks
+    /// instead of creating them on-the-fly.
     pub is_root_fragment_output_signature: bool,
+
+    /// Indicates that this block and its inherited blocks fully define the inputs of a vertex shader.
+    ///
+    /// An inheriting block must not define additional vertex inputs in `vertex_layouts`.
     pub is_root_vertex_input_signature: bool,
+}
+
+impl<'a> SignatureDescription<'a> {
+    /// Count the total number of viewport entries.
+    pub fn count_viewports(&self) -> usize {
+        self.num_viewports
+            + self
+                .inherited
+                .iter()
+                .map(|&s| s.count_viewports())
+                .sum::<usize>()
+    }
+
+    /// Count the total number of scissor entries.
+    pub fn count_scissors(&self) -> usize {
+        self.num_scissors
+            + self
+                .inherited
+                .iter()
+                .map(|&s| s.count_scissors())
+                .sum::<usize>()
+    }
 }
 
 pub trait Signature<'a, B: Backend>: Copy + Clone + Debug {
@@ -536,6 +689,8 @@ impl<'a, B: Backend, T: Arguments<'a, B>> Signature<'a, B> for TypedSignature<'a
 /// They are typically created from an object implementing the [Arguments] trait, but can be created
 /// manually if necessary (e.g. when the interface to a shader is not known until runtime).
 ///
+/// The contents of an argument block is described by a [Signature].
+/// See also [SignatureDescription].
 #[derive(derivative::Derivative)]
 #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
 pub struct ArgumentBlock<'a, B: Backend, S: Signature<'a, B>> {

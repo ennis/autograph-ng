@@ -133,8 +133,8 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     let mut i_desc = Vec::new();
     let mut ib_format = None;
     let mut seen_dst = false;
-    let mut _n_viewports = 0usize;
-    let mut _n_scissors = 0usize;
+    let mut n_viewports = 0usize;
+    let mut n_scissors = 0usize;
 
     for f in fields.iter() {
         let ty = &f.ty;
@@ -328,7 +328,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                         std::iter::once(self.#name.clone().into())
                     });
 
-                    _n_viewports += 1;
+                    n_viewports += 1;
                 }
                 // scissor --------------------------------------------
                 else if pitem.scissor.is_some() {
@@ -336,7 +336,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                         std::iter::once(self.#name.clone().into())
                     });
 
-                    _n_scissors += 1;
+                    n_scissors += 1;
                 } else if pitem.viewport_array.is_some() {
                     unimplemented!()
                 } else if pitem.scissor_array.is_some() {
@@ -374,8 +374,9 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
         Span::call_site(),
     );
 
-    let ty_params = s.generics.type_params();
-    let ty_params2 = s.generics.type_params();
+    let ty_params = s.generics.type_params().map(|ty| &ty.ident);
+    let ty_params2 = s.generics.type_params().map(|ty| &ty.ident);
+    let ty_params3 = s.generics.type_params().map(|ty| &ty.ident);
 
     let q = quote! {
 
@@ -383,7 +384,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
         mod #privmod {
             // IMPORTANT must be generic if interface struct is generic
             // but the generic parameters must also be 'static...
-            pub struct Dummy<#(#ty_params,)*>;
+            pub struct Dummy<#(#ty_params,)*>(std::marker::PhantomData<(#(#ty_params3),*)>);
         }
 
         impl #impl_generics #gfx::pipeline::Arguments<#lt_arena, #ty_backend> for #struct_name #ty_generics #where_clause {
@@ -400,7 +401,8 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                 fragment_outputs                  : &[#(#i_fragout,)*],
                 depth_stencil_fragment_output     : #depth_stencil_fragment_output,
                 index_format                      : #ib_format,
-                //typeid                            : Some(std::any::TypeId::of::<Self::UniqueType>()),
+                num_viewports                     : #n_viewports,
+                num_scissors                      : #n_scissors,
             };
 
             fn get_inherited_signatures(renderer: &#lt_arena #gfx::Renderer<#ty_backend>) -> Vec<&#lt_arena <#ty_backend as #gfx::Backend>::Signature> {
@@ -416,7 +418,6 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                     arena: &#lt_arena #gfx::Arena <#ty_backend>) ->
                     #gfx::pipeline::ArgumentBlock<#lt_arena,  #ty_backend, #gfx::pipeline::TypedSignature<#lt_arena, #ty_backend, Self::IntoInterface>>
             {
-                //use #gfx::pipeline::ArgumentBlock;
                 use #gfx::pipeline::Arguments;
 
                 let mut index_buffer = None;

@@ -2,6 +2,7 @@ use crate::aliaspool::AliasPool;
 use crate::api as gl;
 use crate::api::types::*;
 use crate::api::Gl;
+use crate::buffer::create_buffer;
 use crate::buffer::GlBuffer;
 use crate::buffer::MappedBuffer;
 use crate::buffer::RawBuffer;
@@ -21,7 +22,6 @@ use crate::pipeline::GlShaderModule;
 use crate::pipeline::GlSignature;
 use crate::sampler::SamplerCache;
 use crate::swapchain::GlSwapchain;
-use crate::swapchain::SwapchainInner;
 use crate::sync::GpuSyncObject;
 use crate::sync::Timeline;
 use crate::util::DroplessArena;
@@ -36,7 +36,7 @@ use autograph_render::image::ImageUsageFlags;
 use autograph_render::image::MipmapsCount;
 use autograph_render::pipeline::BareArgumentBlock;
 use autograph_render::pipeline::GraphicsPipelineCreateInfo;
-use autograph_render::pipeline::ScissorRect;
+use autograph_render::pipeline::Scissor;
 use autograph_render::pipeline::ShaderStageFlags;
 use autograph_render::pipeline::SignatureDescription;
 use autograph_render::pipeline::Viewport;
@@ -46,6 +46,8 @@ use autograph_render::AliasScope;
 use autograph_render::Backend;
 use autograph_render::Instance;
 use config::Config;
+use glutin::GlContext;
+use glutin::GlWindow;
 use std::cell::Cell;
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -55,6 +57,7 @@ use std::os::raw::c_char;
 use std::ptr;
 use std::slice;
 use std::str;
+use std::sync::Arc;
 use std::time::Duration;
 use typed_arena::Arena;
 
@@ -265,18 +268,30 @@ pub struct OpenGlInstance {
     //pipeline_signature_cache: PipelineSignatureCache,
     //desc_set_layout_cache: SyncArenaHashMap<TypeId, GlDescriptorSetLayout>,
     limits: ImplementationParameters,
-    //window: GlWindow,
-    def_swapchain: GlSwapchain,
+    window: Option<Arc<GlWindow>>,
+    def_swapchain: Option<GlSwapchain>,
     max_frames_in_flight: u32,
     gl: gl::Gl,
 }
 
 impl OpenGlInstance {
-    pub fn with_gl(
-        cfg: &Config,
-        gl: gl::Gl,
-        default_swapchain: Box<dyn SwapchainInner>,
-    ) -> OpenGlInstance {
+    /// Returns the associated [glutin::GlWindow] if there is one.
+    pub fn window(&self) -> Option<&Arc<GlWindow>> {
+        self.window.as_ref()
+    }
+
+    pub fn from_gl_window(cfg: &Config, window: Arc<GlWindow>) -> OpenGlInstance {
+        let gl = unsafe {
+            // Make current the OpenGL context associated to the window
+            // and load function pointers
+            window.make_current().unwrap();
+
+            crate::api::Gl::load_with(|symbol| {
+                let ptr = window.get_proc_address(symbol) as *const _;
+                ptr
+            })
+        };
+
         unsafe {
             gl.Enable(gl::DEBUG_OUTPUT_SYNCHRONOUS);
             gl.DebugMessageCallback(debug_callback as GLDEBUGPROC, ptr::null());
@@ -318,9 +333,10 @@ impl OpenGlInstance {
             rsrc: RefCell::new(Resources::new(upload_buffer_size as usize)),
             timeline: RefCell::new(timeline),
             frame_num: Cell::new(1),
-            def_swapchain: GlSwapchain {
-                inner: default_swapchain,
-            },
+            window: Some(window.clone()),
+            def_swapchain: Some(GlSwapchain {
+                window: window.clone(),
+            }),
             gl,
             max_frames_in_flight,
             limits,
@@ -360,7 +376,7 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
     }
 
     unsafe fn default_swapchain<'rcx>(&'rcx self) -> Option<&'rcx GlSwapchain> {
-        Some((&self.def_swapchain).into())
+        self.def_swapchain.as_ref()
     }
 
     //----------------------------------------------------------------------------------------------
@@ -434,8 +450,16 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
                 should_destroy: false,
             })
         } else {
-            // TODO
-            unimplemented!()
+            // otherwise, allocate a dedicated buffer
+            arena.buffers.alloc(GlBuffer {
+                raw: RawBuffer {
+                    obj: create_buffer(&self.gl, size as usize, 0, Some(data)),
+                    size: size as usize,
+                },
+                offset: 0,
+                should_destroy: true,
+                alias_info: None,
+            })
         }
     }
 
@@ -503,7 +527,7 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
         render_targets: impl IntoIterator<Item = RenderTargetDescriptor<'a, OpenGlBackend>>,
         depth_stencil_render_target: Option<RenderTargetDescriptor<'a, OpenGlBackend>>,
         viewports: impl IntoIterator<Item = Viewport>,
-        scissors: impl IntoIterator<Item = ScissorRect>,
+        scissors: impl IntoIterator<Item = Scissor>,
     ) -> &'a GlArgumentBlock {
         let mut sampler_cache = self.sampler_cache.borrow_mut();
         GlArgumentBlock::new(

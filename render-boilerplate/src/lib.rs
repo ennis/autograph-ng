@@ -12,6 +12,8 @@ use std::fmt;
 use std::path::Path;
 use winit;
 
+use glutin::GlWindow;
+use std::sync::Arc;
 pub use winit::EventsLoop;
 pub use winit::Window;
 pub use winit::WindowBuilder;
@@ -78,6 +80,7 @@ pub struct App {
     pub cfg: config::Config,
     pub events_loop: RefCell<winit::EventsLoop>,
     pub renderer: Renderer<OpenGlBackend>,
+    pub window: Arc<GlWindow>,
 }
 
 impl Default for App {
@@ -106,13 +109,14 @@ impl App {
             .with_title(window_title.clone())
             .with_dimensions((window_width, window_height).into());
 
-        let backend = create_instance_and_window(&cfg, &events_loop, window_builder);
-        let renderer = Renderer::new(backend);
+        let (instance, window) = create_instance_and_window(&cfg, &events_loop, window_builder);
+        let renderer = Renderer::new(instance);
 
         App {
             events_loop: RefCell::new(events_loop),
             cfg,
             renderer,
+            window,
         }
     }
 
@@ -138,6 +142,10 @@ impl App {
 
     pub fn renderer(&self) -> &Renderer<OpenGlBackend> {
         &self.renderer
+    }
+
+    pub fn window(&self) -> &Arc<GlWindow> {
+        &self.window
     }
 }
 

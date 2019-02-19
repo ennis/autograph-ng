@@ -6,16 +6,14 @@ extern crate proc_macro2;
 use lazy_static::lazy_static;
 use proc_macro2::Span;
 use quote::quote;
-use quote::quote_spanned;
 use regex::Regex;
 use shaderc;
+use shaderc::ResolvedInclude;
+use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use syn;
-use shaderc::ResolvedInclude;
-use std::cell::RefCell;
-use std::time;
 
 lazy_static! {
     static ref RE_COMPILE_ERROR: Regex =
@@ -158,8 +156,7 @@ fn compile_glsl_shader<'a, 'b, 'c>(
     file: &'c str,
     file_span: Option<&Span>,
     stage: shaderc::ShaderKind,
-) -> proc_macro2::TokenStream
-{
+) -> proc_macro2::TokenStream {
     // the doc says that we should preferably create one instance of the compiler
     // and reuse it, but I don't see a way to reuse a compiler instance
     // between macro invocations. Notably, it cannot be put into a lazy_static block wrapped

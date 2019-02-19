@@ -28,9 +28,11 @@ pub(crate) use self::arguments::StateBlock;
 pub(crate) use self::shader::DescriptorMap;
 pub(crate) use self::shader::GlShaderModule;
 use autograph_render::pipeline::GraphicsPipelineCreateInfo;
+use autograph_render::pipeline::ScissorsOwned;
 use autograph_render::pipeline::SignatureDescription;
 use autograph_render::pipeline::VertexInputAttributeDescription;
 use autograph_render::pipeline::VertexInputRate;
+use autograph_render::pipeline::ViewportsOwned;
 use autograph_render::vertex::VertexLayout;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -62,6 +64,8 @@ pub struct GlGraphicsPipeline {
     pub(crate) vertex_input_bindings: Vec<VertexInputBindingDescription>,
     pub(crate) color_blend_state: PipelineColorBlendStateOwned,
     pub(crate) descriptor_map: DescriptorMap,
+    pub(crate) viewports: ViewportsOwned,
+    pub(crate) scissors: ScissorsOwned,
     pub(crate) program: GLuint,
     pub(crate) vao: GLuint,
 }
@@ -147,6 +151,15 @@ pub(crate) unsafe fn create_graphics_pipeline_internal<'a>(
         build_vertex_input_interface(&vertex_layouts);
     let vao = create_vertex_array_object(gl, &vertex_input_attribs);
 
+    /*    // count number of viewports
+    let num_viewports = match ci.viewport_state.viewports {
+        Viewports::Dynamic => root_signature_description.count_viewports(),
+        Viewports::Static(viewports) => {
+            //unimplemented!(); // TODO static viewports
+            viewports.len()
+        }
+    };*/
+
     let color_blend_state = PipelineColorBlendStateOwned {
         logic_op: ci.color_blend_state.logic_op,
         attachments: match ci.color_blend_state.attachments {
@@ -159,15 +172,17 @@ pub(crate) unsafe fn create_graphics_pipeline_internal<'a>(
     };
 
     let g = GlGraphicsPipeline {
-        rasterization_state: *ci.rasterization_state,
-        depth_stencil_state: *ci.depth_stencil_state,
-        multisample_state: *ci.multisample_state,
-        input_assembly_state: *ci.input_assembly_state,
+        rasterization_state: ci.rasterization_state,
+        depth_stencil_state: ci.depth_stencil_state,
+        multisample_state: ci.multisample_state,
+        input_assembly_state: ci.input_assembly_state,
         vertex_input_bindings,
         program,
         vao,
         descriptor_map,
         color_blend_state,
+        viewports: ci.viewport_state.viewports.into(),
+        scissors: ci.viewport_state.scissors.into(),
     };
 
     arena.graphics_pipelines.alloc(g)
@@ -192,6 +207,13 @@ impl GlGraphicsPipeline {
                     state_cache.set_blend_separate(gl, i as u32, s);
                 }
             }
+        }
+        // static viewports & scissors
+        if let ViewportsOwned::Static(ref vp) = &self.viewports {
+            state_cache.set_viewports(gl, vp);
+        }
+        if let ScissorsOwned::Static(ref sc) = &self.scissors {
+            state_cache.set_scissors(gl, sc);
         }
     }
 }

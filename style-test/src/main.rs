@@ -12,15 +12,12 @@ use autograph_render::pipeline::ColorBlendAttachmentState;
 use autograph_render::pipeline::ColorBlendAttachments;
 use autograph_render::pipeline::ColorBlendState;
 use autograph_render::pipeline::DepthStencilState;
-use autograph_render::pipeline::DynamicStateFlags;
 use autograph_render::pipeline::GraphicsPipelineCreateInfo;
 use autograph_render::pipeline::GraphicsShaderStages;
 use autograph_render::pipeline::InputAssemblyState;
 use autograph_render::pipeline::MultisampleState;
 use autograph_render::pipeline::PrimitiveTopology;
 use autograph_render::pipeline::RasterisationState;
-use autograph_render::pipeline::Scissors;
-use autograph_render::pipeline::ShaderStageFlags;
 use autograph_render::pipeline::Viewport;
 use autograph_render::pipeline::ViewportState;
 use autograph_render::pipeline::Viewports;
@@ -254,70 +251,36 @@ struct Pipelines<'a> {
 }
 
 impl<'a> Pipelines<'a> {
-    pub fn create(a: &'a Arena) -> Pipelines<'a> {
+    pub fn create(arena: &'a Arena) -> Pipelines<'a> {
         let edge_detection_dog_rgbd = GraphicsPipelineCreateInfo {
-            shader_stages: &GraphicsShaderStages {
-                vertex: a.create_shader_module(QUAD_SAMPLER_VERT, ShaderStageFlags::VERTEX),
-                geometry: None,
-                fragment: Some(a.create_shader_module(
-                    EDGE_DETECTION_DOG_RGBD_FRAG,
-                    ShaderStageFlags::FRAGMENT,
-                )),
-                tess_eval: None,
-                tess_control: None,
-            },
-            viewport_state: &ViewportState {
-                viewports: Viewports::Dynamic,
-                scissors: Scissors::Dynamic,
-            },
-            rasterization_state: &RasterisationState::DEFAULT,
-            multisample_state: &MultisampleState::default(),
-            depth_stencil_state: &DepthStencilState::default(),
-            input_assembly_state: &InputAssemblyState {
-                topology: PrimitiveTopology::TriangleList,
-                primitive_restart_enable: false,
-            },
-            color_blend_state: &ColorBlendState {
-                attachments: ColorBlendAttachments::All(&ColorBlendAttachmentState::DISABLED),
-                blend_constants: [0.0.into(); 4],
-                logic_op: None,
-            },
-            dynamic_state: DynamicStateFlags::empty(),
+            shader_stages: arena.create_vertex_fragment_shader_stages(
+                QUAD_SAMPLER_VERT,
+                EDGE_DETECTION_DOG_RGBD_FRAG,
+            ),
+            viewport_state: ViewportState::default(),
+            rasterization_state: RasterisationState::default(),
+            multisample_state: MultisampleState::default(),
+            depth_stencil_state: DepthStencilState::default(),
+            input_assembly_state: InputAssemblyState::default(),
+            color_blend_state: ColorBlendState::DISABLED,
         };
 
         let edge_detection_sobel_rgbd = GraphicsPipelineCreateInfo {
-            shader_stages: &GraphicsShaderStages {
-                vertex: a.create_shader_module(QUAD_SAMPLER_VERT, ShaderStageFlags::VERTEX),
-                geometry: None,
-                fragment: Some(a.create_shader_module(
-                    EDGE_DETECTION_SOBEL_RGBD_FRAG,
-                    ShaderStageFlags::FRAGMENT,
-                )),
-                tess_eval: None,
-                tess_control: None,
-            },
-            viewport_state: &ViewportState {
-                viewports: Viewports::Dynamic,
-                scissors: Scissors::Dynamic,
-            },
-            rasterization_state: &RasterisationState::DEFAULT,
-            multisample_state: &MultisampleState::default(),
-            depth_stencil_state: &DepthStencilState::default(),
-            input_assembly_state: &InputAssemblyState {
-                topology: PrimitiveTopology::TriangleList,
-                primitive_restart_enable: false,
-            },
-            color_blend_state: &ColorBlendState {
-                attachments: ColorBlendAttachments::All(&ColorBlendAttachmentState::DISABLED),
-                blend_constants: [0.0.into(); 4],
-                logic_op: None,
-            },
-            dynamic_state: DynamicStateFlags::empty(),
+            shader_stages: arena.create_vertex_fragment_shader_stages(
+                QUAD_SAMPLER_VERT,
+                EDGE_DETECTION_SOBEL_RGBD_FRAG,
+            ),
+            viewport_state: ViewportState::default(),
+            rasterization_state: RasterisationState::default(),
+            multisample_state: MultisampleState::default(),
+            depth_stencil_state: DepthStencilState::default(),
+            input_assembly_state: InputAssemblyState::default(),
+            color_blend_state: ColorBlendState::DISABLED,
         };
 
         Pipelines {
-            edge_detection_dog_rgbd: a.create_graphics_pipeline(&edge_detection_dog_rgbd),
-            edge_detection_sobel_rgbd: a.create_graphics_pipeline(&edge_detection_sobel_rgbd),
+            edge_detection_dog_rgbd: arena.create_graphics_pipeline(&edge_detection_dog_rgbd),
+            edge_detection_sobel_rgbd: arena.create_graphics_pipeline(&edge_detection_sobel_rgbd),
         }
     }
 }
@@ -335,17 +298,9 @@ fn main() {
     'outer: loop {
         let default_swapchain = r.default_swapchain().unwrap();
         let (w, h) = default_swapchain.size();
-
         let arena_1 = r.create_arena();
-
-        let color_buffer = arena_1.create_image(
-            AliasScope::no_alias(),
-            Format::R16G16B16A16_SFLOAT,
-            (w, h).into(),
-            MipmapsCount::One,
-            8, // multisampling
-            ImageUsageFlags::COLOR_ATTACHMENT,
-        );
+        let color_buffer =
+            arena_1.create_unaliasable_render_target(Format::R16G16B16A16_SFLOAT, (w, h), 8);
 
         let (left, top, right, bottom) = (-1.0, 1.0, 1.0, -1.0);
 
@@ -419,7 +374,7 @@ fn main() {
                 (w, h).into(),
                 MipmapsCount::One,
                 1,
-                ImageUsageFlags::DEPTH_ATTACHMENT | ImageUsageFlags::SAMPLED,
+                ImageUsageFlags::SAMPLED,
                 depth_data.as_bytes(),
             );
 
@@ -428,7 +383,7 @@ fn main() {
                 (w, h).into(),
                 MipmapsCount::One,
                 1,
-                ImageUsageFlags::DEPTH_ATTACHMENT | ImageUsageFlags::SAMPLED,
+                ImageUsageFlags::SAMPLED,
                 color_data.as_bytes(),
             );
 

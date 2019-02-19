@@ -212,3 +212,10 @@ impl_vertex_attrib_type!(
     TypeDesc::Vector(PrimitiveType::Float, 4),
     R32G32B32A32_SFLOAT
 );
+
+#[cfg(feature = "glm-types")]
+impl_vertex_attrib_type!(
+    nalgebra_glm::U8Vec4,
+    TypeDesc::Vector(PrimitiveType::Float, 4),
+    R8G8B8A8_UNORM
+);

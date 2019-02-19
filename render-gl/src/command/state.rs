@@ -9,6 +9,7 @@ use autograph_render::pipeline::CompareOp;
 use autograph_render::pipeline::CullModeFlags;
 use autograph_render::pipeline::PolygonMode;
 use autograph_render::pipeline::PrimitiveTopology;
+use autograph_render::pipeline::Scissor;
 use autograph_render::pipeline::StencilOp;
 use autograph_render::pipeline::StencilOpState;
 use autograph_render::pipeline::StencilTest;
@@ -22,9 +23,9 @@ pub struct ColorBlendCache {
 }
 
 pub struct StateCache {
-    max_draw_buffers: u32,
-    _max_color_attachments: u32,
-    max_viewports: u32,
+    max_draw_buffers: usize,
+    _max_color_attachments: usize,
+    max_viewports: usize,
 
     cull_enable: Option<bool>,
     cull_mode: Option<CullModeFlags>,
@@ -43,7 +44,9 @@ pub struct StateCache {
     depth_compare_op: Option<CompareOp>,
     //depth_bounds_test: Option<DepthBoundTest>,
     blend: Option<ColorBlendCache>,
-    viewports: Option<(Vec<ViewportEntry>, Vec<DepthRangeEntry>)>,
+    viewports: Option<Vec<Viewport>>,
+    scissors: Option<Vec<Scissor>>,
+    //viewports: Option<(Vec<ViewportEntry>, Vec<DepthRangeEntry>)>,
     index_buffer: Option<GLuint>,
     index_buffer_offset: Option<usize>,
     index_buffer_type: Option<GLenum>,
@@ -152,16 +155,41 @@ struct ViewportEntry {
 #[derive(Copy, Clone)]
 #[repr(C)]
 struct DepthRangeEntry {
-    min: NotNan<f64>,
-    max: NotNan<f64>,
+    min: f64,
+    max: f64,
+}
+
+fn update_cached_slice<T: Copy + Eq>(
+    cached: &mut Option<Vec<T>>,
+    first: usize,
+    new: &[T],
+    max: usize,
+    default: T,
+) -> bool {
+    let len = new.len();
+    assert!(first + len <= max);
+    if let Some(cur) = cached.as_mut() {
+        let len = new.len();
+        if new != &cur[first..len] {
+            (&mut cur[first..len]).copy_from_slice(new);
+            true
+        } else {
+            false
+        }
+    } else {
+        let mut v = vec![default; max];
+        (&mut v[first..len]).copy_from_slice(new);
+        *cached = Some(v);
+        true
+    }
 }
 
 impl StateCache {
     pub fn new(params: &ImplementationParameters) -> StateCache {
         StateCache {
-            max_draw_buffers: params.max_draw_buffers,
-            _max_color_attachments: params.max_color_attachments,
-            max_viewports: params.max_viewports,
+            max_draw_buffers: params.max_draw_buffers as usize,
+            _max_color_attachments: params.max_color_attachments as usize,
+            max_viewports: params.max_viewports as usize,
             cull_enable: None,
             cull_mode: None,
             polygon_mode: None,
@@ -178,6 +206,7 @@ impl StateCache {
             //depth_bounds_test: None,
             blend: None,
             viewports: None,
+            scissors: None,
             index_buffer: None,
             index_buffer_offset: None,
             index_buffer_type: None,
@@ -214,6 +243,7 @@ impl StateCache {
             //depth_bounds_test: None,
             blend: None,
             viewports: None,
+            scissors: None,
             index_buffer: None,
             index_buffer_offset: None,
             index_buffer_type: None,
@@ -334,83 +364,138 @@ impl StateCache {
     }
 
     pub fn set_viewports(&mut self, gl: &Gl, viewports: &[Viewport]) {
-        let mut should_update_viewports = false;
-        let mut should_update_depth_ranges = false;
+        let do_update = update_cached_slice(
+            &mut self.viewports,
+            0,
+            viewports,
+            self.max_viewports as usize,
+            Viewport {
+                x: 0.0.into(),
+                y: 0.0.into(),
+                width: 0.0.into(),
+                height: 0.0.into(),
+                min_depth: 0.0.into(),
+                max_depth: 0.0.into(),
+            },
+        );
 
-        if let Some((ref mut cur_viewports, ref mut cur_depth_ranges)) = self.viewports {
-            for (i, &vp) in viewports.iter().enumerate() {
-                if cur_viewports[i].x != vp.x
-                    || cur_viewports[i].y != vp.y
-                    || cur_viewports[i].width != vp.width
-                    || cur_viewports[i].height != vp.height
-                {
-                    should_update_viewports = true;
-                    cur_viewports[i].x = vp.x;
-                    cur_viewports[i].y = vp.y;
-                    cur_viewports[i].width = vp.width;
-                    cur_viewports[i].height = vp.height;
-                }
+        if do_update {
+            let mut gl_viewports: Vec<ViewportEntry> = Vec::with_capacity(self.max_viewports);
+            let mut gl_depth_ranges: Vec<DepthRangeEntry> = Vec::with_capacity(self.max_viewports);
 
-                if cur_depth_ranges[i].min
-                    != unsafe { NotNan::unchecked_new(vp.min_depth.into_inner() as f64) }
-                    || cur_depth_ranges[i].max
-                        != unsafe { NotNan::unchecked_new(vp.max_depth.into_inner() as f64) }
-                {
-                    should_update_depth_ranges = true;
-                    cur_depth_ranges[i].min =
-                        unsafe { NotNan::unchecked_new(vp.min_depth.into_inner() as f64) };
-                    cur_depth_ranges[i].max =
-                        unsafe { NotNan::unchecked_new(vp.max_depth.into_inner() as f64) };
-                }
-            }
-        } else {
-            let mut new_viewports = vec![
-                ViewportEntry {
-                    x: 0.0.into(),
-                    y: 0.0.into(),
-                    width: 0.0.into(),
-                    height: 0.0.into()
-                };
-                self.max_viewports as usize
-            ];
-            let mut new_depth_ranges = vec![
-                DepthRangeEntry {
-                    min: 0.0.into(),
-                    max: 1.0.into()
-                };
-                self.max_viewports as usize
-            ];
-            for (i, &vp) in viewports.iter().enumerate() {
-                new_viewports[i] = ViewportEntry {
-                    x: vp.x.into(),
-                    y: vp.y.into(),
-                    width: vp.width.into(),
-                    height: vp.height.into(),
-                };
-                new_depth_ranges[i] = DepthRangeEntry {
-                    min: unsafe { NotNan::unchecked_new(vp.min_depth.into_inner() as f64) },
-                    max: unsafe { NotNan::unchecked_new(vp.max_depth.into_inner() as f64) },
-                };
-            }
-            self.viewports = Some((new_viewports, new_depth_ranges));
-            should_update_viewports = true;
-            should_update_depth_ranges = true;
-        }
-
-        // viewports cannot be None by then
-        let &(ref viewports, ref depth_ranges) = &self.viewports.as_ref().unwrap();
-
-        unsafe {
-            if should_update_viewports {
-                gl.ViewportArrayv(0, self.max_viewports as i32, viewports.as_ptr() as *const _);
+            for vp in self
+                .viewports
+                .as_ref()
+                .unwrap()
+                .iter()
+                .take(viewports.len())
+            {
+                gl_viewports.push(ViewportEntry {
+                    x: vp.x,
+                    y: vp.y,
+                    width: vp.width,
+                    height: vp.height,
+                });
+                gl_depth_ranges.push(DepthRangeEntry {
+                    min: vp.min_depth.into_inner() as f64,
+                    max: vp.max_depth.into_inner() as f64,
+                });
             }
 
-            if should_update_depth_ranges {
+            unsafe {
+                gl.ViewportArrayv(0, viewports.len() as i32, gl_viewports.as_ptr() as *const _);
                 gl.DepthRangeArrayv(
                     0,
-                    self.max_viewports as i32,
-                    depth_ranges.as_ptr() as *const f64,
+                    viewports.len() as i32,
+                    gl_depth_ranges.as_ptr() as *const f64,
                 );
+            }
+        }
+    }
+
+    pub fn set_scissors(&mut self, gl: &Gl, scissors: &[Scissor]) {
+        let do_update = update_cached_slice(
+            &mut self.scissors,
+            0,
+            scissors,
+            self.max_viewports,
+            Scissor::Disabled,
+        );
+
+        if do_update {
+            #[repr(C)]
+            #[derive(Copy, Clone)]
+            struct GlScissor {
+                x: i32,
+                y: i32,
+                width: i32,
+                height: i32,
+            }
+
+            let mut gl_scissors: Vec<GlScissor> = Vec::with_capacity(self.max_viewports);
+
+            let mut all_disabled = true;
+            let mut all_enabled = true;
+
+            for s in self.scissors.as_ref().unwrap().iter().take(scissors.len()) {
+                let s = match s {
+                    Scissor::Disabled => {
+                        all_enabled = false;
+                        GlScissor {
+                            x: 0,
+                            y: 0,
+                            width: 0,
+                            height: 0,
+                        }
+                    }
+                    Scissor::Enabled(rect) => {
+                        all_disabled = false;
+                        GlScissor {
+                            x: rect.x,
+                            y: rect.y,
+                            width: rect.width as i32,
+                            height: rect.height as i32,
+                        }
+                    }
+                };
+                gl_scissors.push(s);
+            }
+
+            unsafe {
+                match (all_disabled, all_enabled) {
+                    (true, false) => {
+                        gl.Disable(gl::SCISSOR_TEST);
+                    }
+                    (false, true) => {
+                        gl.Enable(gl::SCISSOR_TEST);
+                        gl.ScissorArrayv(0, scissors.len() as i32, gl_scissors.as_ptr() as *const _)
+                    }
+                    (false, false) => {
+                        // mixed
+                        for (i, s) in self
+                            .scissors
+                            .as_ref()
+                            .unwrap()
+                            .iter()
+                            .take(scissors.len())
+                            .enumerate()
+                        {
+                            match s {
+                                Scissor::Disabled => {
+                                    gl.Disablei(gl::SCISSOR_TEST, i as u32);
+                                }
+                                Scissor::Enabled(_) => {
+                                    gl.Enablei(gl::SCISSOR_TEST, i as u32);
+                                    gl.ScissorIndexedv(
+                                        i as u32,
+                                        gl_scissors.as_ptr().add(i) as *const _,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    (true, true) => unreachable!(),
+                }
             }
         }
     }
