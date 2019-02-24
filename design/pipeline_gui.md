@@ -48,5 +48,13 @@ Idea: GUI for graphics pipeline configuration
         - piet?
         - issues with interop
     - ideally: 
-        - backend gets a list of vertices
-        - some way to cache glyphs
+        - draw stuff using the native 2D API
+            - Direct2D / GDI on windows
+            - whatever on macOS
+            - whatever on linux
+        - draw text using the native text rendering API
+            - DirectWrite on windows
+            - whatever on macOS
+            - freetype (?) on linux
+        - somehow blend that on top of the scene (how?)
+        - interop somehow 

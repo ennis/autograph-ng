@@ -285,6 +285,21 @@ impl<'a> Pipelines<'a> {
     }
 }
 
+const COLOR_CHANNEL_NAMES: &[&str] = &[
+    "RenderLayer.Combined.R",
+    "RenderLayer.Combined.G",
+    "RenderLayer.Combined.B",
+    "RenderLayer.Combined.A",
+];
+
+const NORMAL_CHANNEL_NAMES: &[&str] = &[
+    "RenderLayer.Normal.X",
+    "RenderLayer.Normal.Y",
+    "RenderLayer.Normal.Z",
+];
+
+const DEPTH_CHANNEL_NAME: &[&str] = &["RenderLayer.Depth.Z"];
+
 fn main() {
     env::set_current_dir(env!("CARGO_MANIFEST_DIR")).unwrap();
 
@@ -354,20 +369,29 @@ fn main() {
 
             let mut img =
                 oiio::ImageInput::open("../openimageio-rs/test_images/output0013.exr").unwrap();
-            let subimage_0 = img.subimage_0();
-            let (w, h) = (subimage_0.width(), subimage_0.height());
 
-            let color_data: oiio::ImageBuffer<f32> =
-                subimage_0.read(r"RenderLayer\.Combined\.[RGBA]").unwrap();
-            assert_eq!(color_data.num_channels(), 4);
+            let (w, h) = (img.width(), img.height());
 
-            let normal_data: oiio::ImageBuffer<f32> =
-                subimage_0.read(r"RenderLayer\.Normal\.[XYZ]").unwrap();
-            assert_eq!(normal_data.num_channels(), 3);
+            let color_data: oiio::ImageBuffer<f32> = img
+                .channels_by_name(COLOR_CHANNEL_NAMES)
+                .unwrap()
+                .read()
+                .unwrap();
+            //assert_eq!(color_data.num_channels(), 4);
 
-            let depth_data: oiio::ImageBuffer<f32> =
-                subimage_0.read(r"RenderLayer\.Depth\.Z").unwrap();
-            assert_eq!(depth_data.num_channels(), 1);
+            let normal_data: oiio::ImageBuffer<f32> = img
+                .channels_by_name(NORMAL_CHANNEL_NAMES)
+                .unwrap()
+                .read()
+                .unwrap();
+            //assert_eq!(normal_data.num_channels(), 3);
+
+            let depth_data: oiio::ImageBuffer<f32> = img
+                .channels_by_name(DEPTH_CHANNEL_NAME)
+                .unwrap()
+                .read()
+                .unwrap();
+            //assert_eq!(depth_data.num_channels(), 1);
 
             let depth = arena_frame.create_immutable_image(
                 Format::R32_SFLOAT,

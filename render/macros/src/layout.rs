@@ -34,7 +34,7 @@ fn generate_struct_layout(fields: &syn::Fields) -> StructLayout {
     let fields = match *fields {
         syn::Fields::Named(ref fields_named) => &fields_named.named,
         syn::Fields::Unnamed(ref fields_unnamed) => &fields_unnamed.unnamed,
-        syn::Fields::Unit => panic!("Cannot generate struct layout of unit structs"),
+        syn::Fields::Unit => panic!("cannot generate struct layout of unit structs"),
     };
 
     let mut offsets = Vec::new();
@@ -100,7 +100,7 @@ pub fn generate_structured_buffer_data(
     let fields = match *fields {
         syn::Fields::Named(ref fields_named) => &fields_named.named,
         syn::Fields::Unnamed(ref fields_unnamed) => &fields_unnamed.unnamed,
-        syn::Fields::Unit => panic!("Cannot generate struct layout of unit structs"),
+        syn::Fields::Unit => panic!("cannot generate struct layout of unit structs"),
     };
 
     let mut field_descs = Vec::new();
@@ -155,7 +155,7 @@ pub fn generate_vertex_data(ast: &syn::DeriveInput, fields: &syn::Fields) -> Tok
     let fields = match *fields {
         syn::Fields::Named(ref fields_named) => &fields_named.named,
         syn::Fields::Unnamed(ref fields_unnamed) => &fields_unnamed.unnamed,
-        syn::Fields::Unit => panic!("Cannot generate struct layout of unit structs"),
+        syn::Fields::Unit => panic!("cannot generate struct layout of unit structs"),
     };
 
     let mut attribs = Vec::new();

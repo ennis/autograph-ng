@@ -13,6 +13,11 @@ OIIO_ImageSpec *OIIO_ImageSpec_new(OIIO_TypeDesc fmt) {
     return (OIIO_ImageSpec *) new OIIO::ImageSpec(unwrapTypeDesc(fmt));
 }
 
+OIIO_ImageSpec *OIIO_ImageSpec_clone(OIIO_ImageSpec *from)
+{
+    return (OIIO_ImageSpec *) new OIIO::ImageSpec(*OIIO_CAST(ImageSpec, from));
+}
+
 OIIO_ImageSpec *
 OIIO_ImageSpec_new_2d(int xres, int yres, int nchans, bool separateformats, const OIIO_TypeDesc *channelformats,
                       const OIIO_StringRef *channelnames) {
@@ -33,23 +38,23 @@ OIIO_ImageSpec *OIIO_ImageSpec_new_size(int xres, int yres, int nchans, OIIO_Typ
 }
 
 void OIIO_ImageSpec_default_channel_names(OIIO_ImageSpec *spec) {
-    OIIO_CAST(ImageSpec ,spec)->default_channel_names();
+    OIIO_CAST(ImageSpec,spec)->default_channel_names();
 }
 
 size_t OIIO_ImageSpec_channel_bytes(const OIIO_ImageSpec *spec) {
-    return OIIO_CAST_CONST(ImageSpec ,spec)->channel_bytes();
+    return OIIO_CAST_CONST(ImageSpec,spec)->channel_bytes();
 }
 
 size_t OIIO_ImageSpec_channel_bytes_chan(const OIIO_ImageSpec *spec, int chan, bool native) {
-    return OIIO_CAST_CONST(ImageSpec ,spec)->channel_bytes(chan, native);
+    return OIIO_CAST_CONST(ImageSpec,spec)->channel_bytes(chan, native);
 }
 
 size_t OIIO_ImageSpec_pixel_bytes(const OIIO_ImageSpec *spec, bool native) {
-    return OIIO_CAST_CONST(ImageSpec ,spec)->pixel_bytes(native);
+    return OIIO_CAST_CONST(ImageSpec,spec)->pixel_bytes(native);
 }
 
 size_t OIIO_ImageSpec_pixel_bytes_chans(const OIIO_ImageSpec *spec, int chbegin, int chend, bool native) {
-    return OIIO_CAST_CONST(ImageSpec ,spec)->pixel_bytes(chbegin, chend, native);
+    return OIIO_CAST_CONST(ImageSpec,spec)->pixel_bytes(chbegin, chend, native);
 }
 
 imagesize_t OIIO_ImageSpec_scanline_bytes(const OIIO_ImageSpec *spec, bool native) {
@@ -57,7 +62,7 @@ imagesize_t OIIO_ImageSpec_scanline_bytes(const OIIO_ImageSpec *spec, bool nativ
 }
 
 imagesize_t OIIO_ImageSpec_tile_pixels(const OIIO_ImageSpec *spec) {
-    return OIIO_CAST_CONST(ImageSpec ,spec)->tile_pixels();
+    return OIIO_CAST_CONST(ImageSpec,spec)->tile_pixels();
 }
 
 imagesize_t OIIO_ImageSpec_tile_bytes(const OIIO_ImageSpec *spec, bool native) {

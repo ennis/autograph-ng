@@ -158,6 +158,7 @@ bool OIIO_ImageOutput_write_image(OIIO_ImageOutput *out,
 void OIIO_ImageSpec_delete(OIIO_ImageSpec *spec);
 
 OIIO_ImageSpec *OIIO_ImageSpec_new(OIIO_TypeDesc fmt);
+OIIO_ImageSpec *OIIO_ImageSpec_clone(OIIO_ImageSpec *from);
 OIIO_ImageSpec *
 OIIO_ImageSpec_new_2d(int xres, int yres, int nchans, bool separateformats, const OIIO_TypeDesc *channelformats,
                       const OIIO_StringRef *channelnames);
@@ -397,14 +398,14 @@ OIIO_ImageCache_ImageHandle *OIIO_ImageCache_get_image_handle(OIIO_ImageCache *x
 bool OIIO_ImageCache_good(OIIO_ImageCache *x, OIIO_ImageCache_ImageHandle *file);
 bool OIIO_ImageCache_get_image_info(OIIO_ImageCache *x, OIIO_StringRef filename, int subimage, int miplevel,
                                     OIIO_StringRef dataname, OIIO_TypeDesc datatype, void *data);
-bool OIIO_ImageCache_get_image_info2(OIIO_ImageCache *x, OIIO_ImageCache_ImageHandle *file,
-                                     OIIO_ImageCache_Perthread *thread_info, int subimage, int miplevel,
-                                     OIIO_StringRef dataname, OIIO_TypeDesc datatype, void *data);
+bool OIIO_ImageCache_get_image_info_by_handle(OIIO_ImageCache *x, OIIO_ImageCache_ImageHandle *file,
+                                              OIIO_ImageCache_Perthread *thread_info, int subimage, int miplevel,
+                                              OIIO_StringRef dataname, OIIO_TypeDesc datatype, void *data);
 bool OIIO_ImageCache_get_imagespec(OIIO_ImageCache *x, OIIO_StringRef filename, OIIO_ImageSpec *spec,
                                    int subimage, int miplevel, bool native);
-bool OIIO_ImageCache_get_imagespec2(OIIO_ImageCache *x, OIIO_ImageCache_ImageHandle *file,
-                                    OIIO_ImageCache_Perthread *thread_info,
-                                    OIIO_ImageSpec *spec, int subimage, int miplevel, bool native);
+bool OIIO_ImageCache_get_imagespec_by_handle(OIIO_ImageCache *x, OIIO_ImageCache_ImageHandle *file,
+                                             OIIO_ImageCache_Perthread *thread_info,
+                                             OIIO_ImageSpec *spec, int subimage, int miplevel, bool native);
 const char *OIIO_ImageCache_resolve_filename(OIIO_ImageCache *x, OIIO_StringRef filename);
 bool OIIO_ImageCache_get_pixels(OIIO_ImageCache *x,
                                 OIIO_StringRef filename,
@@ -413,7 +414,7 @@ bool OIIO_ImageCache_get_pixels(OIIO_ImageCache *x,
                                 int ybegin, int yend,
                                 int zbegin, int zend,
                                 OIIO_TypeDesc format, void *result);
-bool OIIO_ImageCache_get_pixels2(OIIO_ImageCache *x,
+bool OIIO_ImageCache_get_pixels_by_handle(OIIO_ImageCache *x,
                                  OIIO_ImageCache_ImageHandle *file,
                                  OIIO_ImageCache_Perthread *thread_info,
                                  int subimage, int miplevel,
@@ -421,14 +422,14 @@ bool OIIO_ImageCache_get_pixels2(OIIO_ImageCache *x,
                                  int ybegin, int yend,
                                  int zbegin, int zend,
                                  OIIO_TypeDesc format, void *result);
-bool OIIO_ImageCache_get_pixels3(OIIO_ImageCache *x,
+bool OIIO_ImageCache_get_pixels_stride(OIIO_ImageCache *x,
                                  OIIO_StringRef filename, int subimage, int miplevel,
                                  int xbegin, int xend, int ybegin, int yend,
                                  int zbegin, int zend, int chbegin, int chend,
                                  OIIO_TypeDesc format, void *result,
                                  stride_t xstride, stride_t ystride, stride_t zstride,
                                  int cache_chbegin, int cache_chend);
-bool OIIO_ImageCache_get_pixels4(OIIO_ImageCache *x, OIIO_ImageCache_ImageHandle *file,
+bool OIIO_ImageCache_get_pixels_stride_by_handle(OIIO_ImageCache *x, OIIO_ImageCache_ImageHandle *file,
                                  OIIO_ImageCache_Perthread *thread_info,
                                  int subimage, int miplevel,
                                  int xbegin, int xend, int ybegin, int yend,

@@ -6,23 +6,39 @@
 ### Outstanding
 - (spirv) Unit-tests for layout calculation
 - (spirv) Parse constant values for array sizes (panic on specialization for now)
+    - provide specialization constants when parsing AST
 - (render/backend) backend calls: return Result<> instead of panicking
-- (render/pipeline/validation) Check vertex input interfaces
-- (render/pipeline/validation) Precise errors
 - (render) add an (unsafe) API to create a pipeline and skip validation
 - (render/macros) error msg instead of panic on non-repr(C) structs
+    - no need for error msg since we should abandon immediately on encountering a non-repr(C)
 - (render-gl/util) unit tests for dropless arena
+- (render/pipeline/validation) validate fragment outputs
 - (shader/macros) investigate slow quoting of large bytecodes
     - possibly not our fault
         - report bug
     - try alternate solution: write bytecode to file, then include binary, or write a byte string
-    
+- (render/pipeline/validation) Precise errors
+    - the current output is the debug formatted TypeDesc, which is readable enough
+    - maybe pinpoint the error instead of dumping the whole typedesc? 
+        - not a priority: it's easy enough to compare two TypeDesc dumps visually
+- (openimageio) next_subimage(), next_mipmap(), subimage() consumes imageinput/imageoutput
+    - why consuming imageinput?
+        - avoid unnecessary temporaries
+            - can return a subimage+mipmap without needing a temporary
+        - can use into_subimages()
+    - or, iterators over subimages?
+        - iterators don't work, because due to how they work, it's possible to have multiple subimages alive at the same time
+            - must provide an ad-hoc API
+    - OIIO 2.0 seems to be going more and more stateless
+        - no need for seek_subimage
+        - select 
     
 ### Enhancements
 - (render/validation) accept structs with single member in place of just the member
 - (render/pipeline/args) support reuse of Arguments struct without ArgumentBlock indirection (paste copy of Arguments)
 
 ### Archived
+- DONE (render/pipeline/validation) Check vertex input interfaces
 - DONE (shader/macros) Cleanup autograph_shader_macros (keep only include_shader, nuke the preprocessor)
 - DONE (shader/macros) include_str all includes so that shader is recompiled even if a header changed
 - DONE (render) convenience methods `create_{vertex,fragment,...}_shader(_module)`

@@ -79,6 +79,14 @@ impl TypeDesc {
         arraylen: 0,
     });
 
+    pub const DOUBLE: TypeDesc = TypeDesc(sys::OIIO_TypeDesc {
+        basetype: BaseType::Double as u8,
+        aggregate: Aggregate::Scalar as u8,
+        vecsemantics: VecSemantics::NoSemantics as u8,
+        reserved: 0,
+        arraylen: 0,
+    });
+
     pub const COLOR: TypeDesc = TypeDesc(sys::OIIO_TypeDesc {
         basetype: BaseType::Float as u8,
         aggregate: Aggregate::Vec3 as u8,
@@ -172,7 +180,7 @@ impl TypeDesc {
         aggregate: Aggregate::Scalar as u8,
         vecsemantics: VecSemantics::Timecode as u8,
         reserved: 0,
-        arraylen: 0,
+        arraylen: 2,
     });
 
     pub const KEYCODE: TypeDesc = TypeDesc(sys::OIIO_TypeDesc {
@@ -180,7 +188,7 @@ impl TypeDesc {
         aggregate: Aggregate::Scalar as u8,
         vecsemantics: VecSemantics::Keycode as u8,
         reserved: 0,
-        arraylen: 0,
+        arraylen: 7,
     });
 
     pub const FLOAT4: TypeDesc = TypeDesc(sys::OIIO_TypeDesc {

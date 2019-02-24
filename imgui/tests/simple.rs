@@ -1,9 +1,6 @@
 #![feature(proc_macro_hygiene)]
 use autograph_imgui::ImGuiRenderer;
 use autograph_render::format::Format;
-use autograph_render::image::ImageUsageFlags;
-use autograph_render::image::MipmapsCount;
-use autograph_render::AliasScope;
 use autograph_render_boilerplate::App;
 use autograph_render_boilerplate::Event;
 use autograph_render_boilerplate::KeyboardInput;
@@ -11,13 +8,14 @@ use autograph_render_boilerplate::WindowEvent;
 use imgui;
 use imgui::FontGlyphRange;
 use imgui::ImGui;
-use log::{debug, info, warn};
+use log::info;
 use std::env;
 use std::time;
 
 // Change the default font because why not
-const FONT: &[u8] = include_bytes!("nokiafc22.ttf");
-const FONT_SIZE: f32 = 10.0;
+//const FONT: &[u8] = include_bytes!("nokiafc22.ttf");
+const FONT: &[u8] = include_bytes!("ChiKareGo2.ttf");
+const FONT_SIZE: f32 = 15.0;
 
 pub struct ImGuiContext {
     app_hidpi_factor: f64,

@@ -8,6 +8,7 @@ use proc_macro2::Span;
 use quote::quote;
 use regex::Regex;
 use shaderc;
+use shaderc::IncludeType;
 use shaderc::ResolvedInclude;
 use std::cell::RefCell;
 use std::fs;
@@ -81,23 +82,16 @@ fn compile_embedded_shader(
     stage: shaderc::ShaderKind,
 ) -> proc_macro::TokenStream {
     // parse a string literal
-    let litstr = syn::parse_macro_input!(src as syn::LitStr);
-    compile_glsl_shader(
-        &litstr.value(),
-        &litstr.span(),
-        "<embedded GLSL>",
-        Some(&litstr.span()),
-        stage,
-    )
-    .into()
+    let litstr: syn::LitStr = syn::parse_macro_input!(src);
+    compile_glsl_shader(&litstr.value(), None, &litstr.span(), stage).into()
 }
 
 #[proc_macro]
 pub fn include_shader(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let pathlit: syn::LitStr = syn::parse_macro_input!(input as syn::LitStr);
-    let filename = PathBuf::from(pathlit.value());
+    let rel_path_lit: syn::LitStr = syn::parse_macro_input!(input);
+    let rel_path = PathBuf::from(rel_path_lit.value());
 
-    let stage = match filename.extension() {
+    let stage = match rel_path.extension() {
         Some(ext) if ext == "vert" => shaderc::ShaderKind::Vertex,
         Some(ext) if ext == "frag" => shaderc::ShaderKind::Fragment,
         Some(ext) if ext == "geom" => shaderc::ShaderKind::Geometry,
@@ -105,56 +99,70 @@ pub fn include_shader(input: proc_macro::TokenStream) -> proc_macro::TokenStream
         Some(ext) if ext == "tesc" => shaderc::ShaderKind::TessControl,
         Some(ext) if ext == "comp" => shaderc::ShaderKind::Compute,
         _ => {
-            return syn::Error::new(pathlit.span(), "cannot deduce shader stage from extension")
-                .to_compile_error()
-                .into();
+            panic!("cannot deduce shader stage from extension")
+            /*return syn::Error::new(pathlit.span(), "cannot deduce shader stage from extension")
+            .to_compile_error()
+            .into();*/
         }
     };
 
     // look in the same directory as the source file
-    let mut path = pathlit.span().unstable().source_file().path();
-    path.set_file_name(&filename);
-
-    let src = fs::read_to_string(&path);
-    let src = if let Ok(src) = src {
+    let rust_src_path = rel_path_lit.span().unstable().source_file().path();
+    let path = rust_src_path.with_file_name(rel_path);
+    let src = if let Ok(src) = fs::read_to_string(&path) {
         src
     } else {
-        return syn::Error::new(pathlit.span(), "failed to open GLSL shader source")
-            .to_compile_error()
-            .into();
+        panic!("failed to open GLSL shader source")
+        /*return syn::Error::new(pathlit.span(), "")
+        .to_compile_error()
+        .into();*/
     };
 
-    let bytecode = compile_glsl_shader(
-        &src,
-        &pathlit.span(),
-        path.as_os_str().to_str().unwrap(),
-        None,
-        stage,
-    );
+    let bytecode = compile_glsl_shader(&src, Some(&path), &rel_path_lit.span(), stage);
 
     // include_str so that it is considered when tracking dirty files
-    let q = quote! { (#bytecode, include_str!(#pathlit)).0 };
+    let q = quote! { (#bytecode, include_str!(#rel_path_lit)).0 };
 
     q.into()
-
-    /*let words = vec![0u8; 10000];
-    let words = &words;
-    let time_begin = time::Instant::now();
-    let q = quote!(&[ #(#words,)*]);
-    let elapsed = time_begin.elapsed();
-    let sec = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1_000_000_000.0);
-    pathlit.span().unstable().warning(format!("compile_into_spirv took {}s", sec))
-        .note(format!("bytecode size: {} bytes", words.len()))
-        .emit();
-
-    q.into()*/
 }
 
-fn compile_glsl_shader<'a, 'b, 'c>(
-    src: &'a str,
-    span: &'b Span,
-    file: &'c str,
-    file_span: Option<&Span>,
+fn resolve_include(
+    current_path: &Path,
+    include_rel_path: &str,
+    include_type: IncludeType,
+    _source_name: &str,
+    _include_depth: usize,
+    all_includes: &mut Vec<String>,
+) -> Result<ResolvedInclude, String> {
+    // we only handle relative includes for now
+    if include_type != IncludeType::Relative {
+        panic!("`#include <...>` is not yet supported: use relative include directives (`#include \"...\"`");
+    }
+
+    let include_path = current_path.with_file_name(include_rel_path);
+
+    match fs::read_to_string(&include_path) {
+        Ok(content) => {
+            let resolved_name = include_path
+                .canonicalize()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_owned();
+            all_includes.push(resolved_name.clone());
+            Ok(ResolvedInclude {
+                resolved_name,
+                content,
+            })
+        }
+        Err(e) => Err(format!("error reading include file: {}", e)),
+    }
+}
+
+fn compile_glsl_shader(
+    src: &str,
+    file_path: Option<&Path>,
+    span: &Span,
     stage: shaderc::ShaderKind,
 ) -> proc_macro2::TokenStream {
     // the doc says that we should preferably create one instance of the compiler
@@ -166,28 +174,31 @@ fn compile_glsl_shader<'a, 'b, 'c>(
     let mut opt = shaderc::CompileOptions::new().unwrap();
     opt.set_target_env(shaderc::TargetEnv::Vulkan, 0);
     opt.set_optimization_level(shaderc::OptimizationLevel::Zero);
-    opt.set_include_callback(|name, _include_type, _source_name, _depth| {
-        let path = Path::new(file);
-        let mut inc = path.parent().unwrap().to_owned();
-        inc.push(name);
-
-        match fs::read_to_string(&inc) {
-            Ok(content) => {
-                let resolved_name = inc.canonicalize().unwrap().to_str().unwrap().to_owned();
-                all_includes.borrow_mut().push(resolved_name.clone());
-                Ok(ResolvedInclude {
-                    resolved_name,
-                    content,
-                })
-            }
-            Err(e) => Err(format!("error reading include file: {}", e)),
+    opt.set_include_callback(|name, include_type, source_name, depth| {
+        if let Some(file_path) = file_path {
+            let mut all_includes = all_includes.borrow_mut();
+            resolve_include(
+                file_path,
+                name,
+                include_type,
+                source_name,
+                depth,
+                &mut all_includes,
+            )
+        } else {
+            panic!("`#include` is not supported on embedded shaders")
         }
     });
 
-    // compile GLSL (and output time)
-    let ca = compiler.compile_into_spirv(&src, stage, file, "main", Some(&opt));
+    // compile GLSL
+    let compilation_artifact = if let Some(file_path) = file_path {
+        let file_path_str = file_path.to_str().unwrap();
+        compiler.compile_into_spirv(src, stage, file_path_str, "main", Some(&opt))
+    } else {
+        compiler.compile_into_spirv(src, stage, "embedded GLSL", "main", Some(&opt))
+    };
 
-    match ca {
+    match compilation_artifact {
         // Failed to compile
         Err(ref e) => {
             let mut diag = span
@@ -205,13 +216,16 @@ fn compile_glsl_shader<'a, 'b, 'c>(
                     let parsed = ShaderCompilationError::from_log(log);
                     // fixup line
                     for err in parsed.iter() {
-                        let (path, fixup_line) = if let Some(s) = file_span {
+                        let (path, fixup_line) = if let Some(file_path) = file_path {
+                            // external
+                            (file_path.to_owned(), err.line as usize)
+                        } else {
+                            // embedded, span is the span of the string literal
+                            // FIXME this is totally wrong (line within string literal does not correspond to the line in the rust source)
                             (
-                                s.unstable().source_file().path(),
+                                span.unstable().source_file().path(),
                                 span.unstable().start().line + err.line as usize - 1,
                             )
-                        } else {
-                            (PathBuf::from(file.to_string()), err.line as usize)
                         };
                         // mimic the format of rustc diagnostics so that my IDE can pick them up...
                         diag = diag.note(format!(

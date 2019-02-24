@@ -25,6 +25,7 @@ pub enum ParsedDecoration {
     Other(Decoration),
 }
 
+/// TODO replace this with a dropless arena
 pub struct Arenas<'tcx, 'm> {
     tydesc: Arena<TypeDesc<'tcx>>,
     members: Arena<(usize, &'tcx TypeDesc<'tcx>)>,
@@ -52,6 +53,20 @@ pub struct Variable<'tcx, 'm> {
 }
 
 impl<'tcx, 'm> Variable<'tcx, 'm> {
+    pub fn decorations(&self) -> impl Iterator<Item = &(IPtr<'m>, ParsedDecoration)> {
+        self.deco.iter()
+    }
+
+    pub fn location_decoration(&self) -> Option<(IPtr<'m>, u32)> {
+        self.deco
+            .iter()
+            .filter_map(|(iptr, d)| match d {
+                ParsedDecoration::Location(loc) => Some((*iptr, *loc)),
+                _ => None,
+            })
+            .next()
+    }
+
     pub fn has_block_decoration(&self) -> Option<IPtr<'m>> {
         self.deco
             .iter()

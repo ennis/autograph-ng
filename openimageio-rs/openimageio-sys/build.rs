@@ -97,6 +97,7 @@ fn main() {
     build.file("src/glue/imageinput.cpp");
     build.file("src/glue/imageoutput.cpp");
     build.file("src/glue/imagespec.cpp");
+    build.file("src/glue/imagecache.cpp");
     build.file("src/glue/oiio.cpp");
     //build.file("src/glue/roi.cpp");
     build.include("src/glue");

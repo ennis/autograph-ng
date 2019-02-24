@@ -5,34 +5,24 @@ use autograph_render::command::DrawIndexedParams;
 use autograph_render::command::DrawParams;
 use autograph_render::format::Format;
 use autograph_render::glm;
-use autograph_render::image::ImageUsageFlags;
-use autograph_render::image::MipmapsCount;
 use autograph_render::include_shader;
 use autograph_render::pipeline::Arguments;
-use autograph_render::pipeline::ColorBlendAttachmentState;
-use autograph_render::pipeline::ColorBlendAttachments;
 use autograph_render::pipeline::ColorBlendState;
 use autograph_render::pipeline::DepthStencilState;
 use autograph_render::pipeline::GraphicsPipelineCreateInfo;
-use autograph_render::pipeline::GraphicsShaderStages;
 use autograph_render::pipeline::InputAssemblyState;
 use autograph_render::pipeline::MultisampleState;
-use autograph_render::pipeline::PrimitiveTopology;
 use autograph_render::pipeline::RasterisationState;
-use autograph_render::pipeline::Scissors;
 use autograph_render::pipeline::Viewport;
 use autograph_render::pipeline::ViewportState;
-use autograph_render::pipeline::Viewports;
 use autograph_render::vertex::VertexData;
-use autograph_render::AliasScope;
 use autograph_render_boilerplate::*;
-use log::{debug, info, warn};
+use log::info;
 use lyon::extra::rust_logo::build_logo_path;
 use lyon::path::builder::SvgPathBuilder;
 use lyon::path::builder::*;
 use lyon::path::default::Path;
 use lyon::tessellation::geometry_builder::vertex_builder;
-use lyon::tessellation::geometry_builder::BuffersBuilder;
 use lyon::tessellation::geometry_builder::VertexBuffers;
 use lyon::tessellation::geometry_builder::VertexConstructor;
 use lyon::tessellation::FillOptions;
@@ -187,7 +177,7 @@ fn create_pipelines<'a>(arena: &'a Arena) -> Pipelines<'a> {
 //--------------------------------------------------------------------------------------------------
 // Lyon test
 struct TessPath<'a> {
-    num_vertices: usize,
+    _num_vertices: usize,
     num_indices: usize,
     vertex_buffer: Buffer<'a, [VertexPath]>,
     index_buffer: Buffer<'a, [u16]>,
@@ -235,7 +225,7 @@ fn tesselate_path<'a>(arena: &'a Arena) -> (TessPath<'a>, TessPath<'a>) {
         let ib = arena.upload_slice(&buffers.indices);
 
         TessPath {
-            num_vertices: buffers.vertices.len(),
+            _num_vertices: buffers.vertices.len(),
             num_indices: buffers.indices.len(),
             vertex_buffer: vb,
             index_buffer: ib,
@@ -246,17 +236,19 @@ fn tesselate_path<'a>(arena: &'a Arena) -> (TessPath<'a>, TessPath<'a>) {
         let mut buffers: VertexBuffers<VertexPath, u16> = VertexBuffers::new();
         let mut buffers_builder = vertex_builder(&mut buffers, VertexCtor);
 
-        FillTessellator::new().tessellate_path(
-            path.path_iter(),
-            &FillOptions::tolerance(tolerance),
-            &mut buffers_builder,
-        );
+        FillTessellator::new()
+            .tessellate_path(
+                path.path_iter(),
+                &FillOptions::tolerance(tolerance),
+                &mut buffers_builder,
+            )
+            .unwrap();
 
         let vb = arena.upload_slice(&buffers.vertices);
         let ib = arena.upload_slice(&buffers.indices);
 
         TessPath {
-            num_vertices: buffers.vertices.len(),
+            _num_vertices: buffers.vertices.len(),
             num_indices: buffers.indices.len(),
             vertex_buffer: vb,
             index_buffer: ib,

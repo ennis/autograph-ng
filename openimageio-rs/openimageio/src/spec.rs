@@ -1,11 +1,14 @@
 //! ImageSpec
+use crate::Error;
 use crate::TypeDesc;
 use itertools::Itertools;
 use openimageio_sys as sys;
 use openimageio_sys::AsStringRef;
 use std::ffi::CStr;
+use std::ops::Bound;
 use std::ops::Deref;
 use std::ops::Range;
+use std::ops::RangeBounds;
 use std::os::raw::c_int;
 
 /// Describes a color channel of an image.
@@ -204,10 +207,10 @@ impl ImageSpec {
     }
 
     /// Returns the description of the channel at index `index`.
-    pub fn channel_by_index(&self, index: usize) -> Option<Channel> {
+    pub fn channel_by_index(&self, index: usize) -> Result<Channel, Error> {
         let nch = self.num_channels();
         if index >= nch {
-            return None;
+            return Err(Error::InvalidChannelIndex);
         }
         let i = index as i32;
 
@@ -219,25 +222,107 @@ impl ImageSpec {
 
         let format = unsafe { TypeDesc(sys::OIIO_ImageSpec_channelformat(&self.0, i)) };
 
-        Some(Channel {
+        Ok(Channel {
             format,
             name,
             //pixel_bytes,
         })
     }
 
+    pub fn channel_by_name(&self, name: &str) -> Result<(usize, Channel), Error> {
+        self.channels()
+            .enumerate()
+            .find(move |(_, ch)| ch.name == name)
+            .ok_or(Error::ChannelNotFound)
+    }
+
+    pub fn channels_by_name(&self, channel_names: &[&str]) -> Result<ChannelRanges, Error> {
+        let mut indices = Vec::new();
+        for name in channel_names.iter() {
+            let (index, _) = self.channel_by_name(name)?;
+            indices.push(index);
+        }
+        Ok(coalesce_channels(indices.into_iter()))
+    }
+
+    pub fn channels_by_index(&self, channels: &[usize]) -> Result<ChannelRanges, Error> {
+        for &ch in channels {
+            self.channel_by_index(ch)?;
+        }
+        Ok(coalesce_channels(channels.iter().cloned()))
+    }
+
+    pub fn all_channels(&self) -> ChannelRanges {
+        ChannelRanges {
+            count: self.num_channels(),
+            ranges: vec![0..self.num_channels()],
+        }
+    }
+
     /// Finds every channel whose name match the specified regular expression.
-    pub fn find_channels<'a>(&'a self, re: &str) -> impl Iterator<Item = usize> + 'a {
+    pub fn find_channels<'a>(&'a self, re: &str) -> impl Iterator<Item = (usize, Channel)> + 'a {
         let re = regex::Regex::new(re).expect("invalid regular expression");
         self.channels()
             .enumerate()
             .filter(move |(_, ch)| re.is_match(ch.name))
-            .map(|(i, _)| i)
+    }
+
+    pub fn calculate_bounds(
+        &self,
+        xs: impl RangeBounds<i32>,
+        ys: impl RangeBounds<i32>,
+        zs: impl RangeBounds<i32>,
+    ) -> (Range<i32>, Range<i32>, Range<i32>) {
+        let (width, height, depth) = self.size();
+        let (xmax, ymax, zmax) = (width as i32, height as i32, depth as i32);
+        // X
+        let xstart = match xs.start_bound() {
+            Bound::Included(&xstart) => xstart,
+            Bound::Excluded(&xstart) => xstart + 1,
+            Bound::Unbounded => 0,
+        };
+        let xend = match xs.end_bound() {
+            Bound::Included(&xend) => xend,
+            Bound::Excluded(&xend) => xend - 1,
+            Bound::Unbounded => xmax,
+        };
+        // Y
+        let ystart = match ys.start_bound() {
+            Bound::Included(&ystart) => ystart,
+            Bound::Excluded(&ystart) => ystart + 1,
+            Bound::Unbounded => 0,
+        };
+        let yend = match ys.end_bound() {
+            Bound::Included(&yend) => yend,
+            Bound::Excluded(&yend) => yend - 1,
+            Bound::Unbounded => ymax,
+        };
+        // Z
+        let zstart = match zs.start_bound() {
+            Bound::Included(&zstart) => zstart,
+            Bound::Excluded(&zstart) => zstart + 1,
+            Bound::Unbounded => 0,
+        };
+        let zend = match zs.end_bound() {
+            Bound::Included(&zend) => zend,
+            Bound::Excluded(&zend) => zend - 1,
+            Bound::Unbounded => zmax,
+        };
+
+        (xstart..xend, ystart..yend, zstart..zend)
     }
 }
 
 /// Version of [ImageSpec] that owns its data.
 pub struct ImageSpecOwned(pub(crate) *mut sys::OIIO_ImageSpec);
+
+impl Clone for ImageSpecOwned {
+    fn clone(&self) -> Self {
+        unsafe {
+            ImageSpecOwned(sys::OIIO_ImageSpec_clone(self.0))
+        }
+    }
+}
 
 impl ImageSpecOwned {
     /// Creates the metadata of a zero-sized image with unknown format.
@@ -316,13 +401,26 @@ impl Deref for ImageSpecOwned {
     }
 }
 
+pub(crate) fn channel_descs_from_index_ranges(
+    spec: &ImageSpec,
+    ranges: &[Range<usize>],
+) -> Vec<ChannelDesc> {
+    let mut channel_descs = Vec::new();
+    for r in ranges.iter() {
+        for ich in r.clone() {
+            channel_descs.push(spec.channel_by_index(ich).unwrap().to_channel_desc());
+        }
+    }
+    channel_descs
+}
+
 /// Helper function to turn a sequence of channel indices into contiguous ranges of indices.
 ///
 /// This is done to optimize the number of reads necessary to load a set of channels in memory.
-fn coalesce_channels(channels: impl Iterator<Item = usize>) -> (usize, Vec<Range<usize>>) {
+pub(crate) fn coalesce_channels(channels: impl Iterator<Item = usize>) -> ChannelRanges {
     let mut count = 0;
     // optimize this
-    let r = channels
+    let ranges: Vec<_> = channels
         .map(|i| {
             count += 1;
             i..i + 1
@@ -334,38 +432,59 @@ fn coalesce_channels(channels: impl Iterator<Item = usize>) -> (usize, Vec<Range
                 Err((a, b))
             }
         })
-        .collect::<Vec<_>>();
-    (count, r)
+        .collect();
+    ChannelRanges { count, ranges }
+}
+
+pub struct ChannelRanges {
+    pub count: usize,
+    pub ranges: Vec<Range<usize>>,
 }
 
 /// Objects that describe a set of channels in an image.
 pub trait ChannelSelect {
     /// Turns this object into a set of contiguous channel ranges.
-    fn into_channel_ranges(self, spec: &ImageSpec) -> (usize, Vec<Range<usize>>);
+    fn into_channel_ranges(self, spec: &ImageSpec) -> Result<ChannelRanges, Error>;
 }
 
 /// Single-channel selection via index.
 impl ChannelSelect for usize {
-    fn into_channel_ranges(self, _spec: &ImageSpec) -> (usize, Vec<Range<usize>>) {
-        (1, vec![self..self])
+    fn into_channel_ranges(self, spec: &ImageSpec) -> Result<ChannelRanges, Error> {
+        Ok(ChannelRanges {
+            count: 1,
+            ranges: vec![self..self],
+        })
     }
 }
 
-/// Multi-channel selection via regular expression.
-impl<'a> ChannelSelect for &'a str {
-    fn into_channel_ranges(self, spec: &ImageSpec) -> (usize, Vec<Range<usize>>) {
-        coalesce_channels(spec.find_channels(self))
+/// Multi-channel selection via channel names.
+impl<'a> ChannelSelect for &'a [&'a str] {
+    fn into_channel_ranges(self, spec: &ImageSpec) -> Result<ChannelRanges, Error> {
+        let mut indices = Vec::new();
+        for name in self.iter() {
+            let (index, _) = spec.channel_by_name(name)?;
+            indices.push(index);
+        }
+        Ok(coalesce_channels(indices.into_iter()))
     }
 }
 
-//pub struct ChannelRange<T: IntoIterator<Item = usize>>(pub T);
-
-/*/// select by range
+/// Multi-channel selection via channel indices.
 impl<'a> ChannelSelect for &'a [usize] {
-    fn into_channel_ranges(self, _spec: &ImageSpec) -> (usize, Vec<Range<usize>>) {
-        coalesce_channels(self.iter().cloned())
+    fn into_channel_ranges(self, spec: &ImageSpec) -> Result<ChannelRanges, Error> {
+        for &ch in self {
+            spec.channel_by_index(ch)?;
+        }
+        Ok(coalesce_channels(self.iter().cloned()))
     }
-}*/
+}
+
+/// Select R,G,B,A channels.
+pub struct ChannelRGBA;
+/// Select R,G,B channels.
+pub struct ChannelRGB;
+/// Select alpha channel.
+pub struct ChannelAlpha;
 
 /// A dummy type implementing `ChannelSelect` that means "select all channels of the image".
 ///
@@ -376,7 +495,10 @@ impl<'a> ChannelSelect for &'a [usize] {
 pub struct AllChannels;
 
 impl ChannelSelect for AllChannels {
-    fn into_channel_ranges(self, spec: &ImageSpec) -> (usize, Vec<Range<usize>>) {
-        (spec.num_channels(), vec![0..spec.num_channels()])
+    fn into_channel_ranges(self, spec: &ImageSpec) -> Result<ChannelRanges, Error> {
+        Ok(ChannelRanges {
+            count: spec.num_channels(),
+            ranges: vec![0..spec.num_channels()],
+        })
     }
 }

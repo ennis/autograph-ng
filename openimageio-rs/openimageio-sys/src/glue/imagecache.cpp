@@ -65,8 +65,10 @@ void OIIO_ImageCache_destroy_perthread_info(OIIO_ImageCache *x, OIIO_ImageCache_
 }
 
 OIIO_ImageCache_ImageHandle *OIIO_ImageCache_get_image_handle(OIIO_ImageCache *x, OIIO_StringRef name) {
+    // Temporary fix for OIIO bug if Perthread is NULL
+    auto thread_info = OIIO_CAST(ImageCache, x)->get_perthread_info();
     return (OIIO_ImageCache_ImageHandle *) OIIO_CAST(ImageCache, x)->get_image_handle(OIIO::ustring{name.ptr, name.len},
-                                                                                      nullptr);
+                                                                                      thread_info);
 }
 
 bool OIIO_ImageCache_good(OIIO_ImageCache *x, OIIO_ImageCache_ImageHandle *file) {
@@ -84,9 +86,9 @@ bool OIIO_ImageCache_get_image_info(OIIO_ImageCache *x, OIIO_StringRef filename,
 }
 
 
-bool OIIO_ImageCache_get_image_info2(OIIO_ImageCache *x, OIIO_ImageCache_ImageHandle *file,
-                                     OIIO_ImageCache_Perthread *thread_info, int subimage, int miplevel,
-                                     OIIO_StringRef dataname, OIIO_TypeDesc datatype, void *data) {
+bool OIIO_ImageCache_get_image_info_by_handle(OIIO_ImageCache *x, OIIO_ImageCache_ImageHandle *file,
+                                              OIIO_ImageCache_Perthread *thread_info, int subimage, int miplevel,
+                                              OIIO_StringRef dataname, OIIO_TypeDesc datatype, void *data) {
     return OIIO_CAST(ImageCache, x)->get_image_info(
             OIIO_CAST(ImageCache::ImageHandle, file),
             OIIO_CAST(ImageCache::Perthread, thread_info),
@@ -105,9 +107,14 @@ bool OIIO_ImageCache_get_imagespec(OIIO_ImageCache *x, OIIO_StringRef filename, 
             native);
 }
 
-bool OIIO_ImageCache_get_imagespec2(OIIO_ImageCache *x, OIIO_ImageCache_ImageHandle *file,
-                                    OIIO_ImageCache_Perthread *thread_info,
-                                    OIIO_ImageSpec *spec, int subimage, int miplevel, bool native) {
+bool OIIO_ImageCache_get_imagespec_by_handle(OIIO_ImageCache *x, OIIO_ImageCache_ImageHandle *file,
+                                             OIIO_ImageCache_Perthread *thread_info,
+                                             OIIO_ImageSpec *spec, int subimage, int miplevel, bool native) {
+    // Temporary fix for OIIO bug if Perthread is NULL
+    if (!thread_info) {
+        thread_info = (OIIO_ImageCache_Perthread*)OIIO_CAST(ImageCache, x)->get_perthread_info();
+    }
+
     return OIIO_CAST(ImageCache, x)->get_imagespec(
             OIIO_CAST(ImageCache::ImageHandle, file),
             OIIO_CAST(ImageCache::Perthread, thread_info),
@@ -132,7 +139,7 @@ bool OIIO_ImageCache_get_pixels(OIIO_ImageCache *x,
                                                 xend, ybegin, yend, zbegin, zend, unwrapTypeDesc(format), result);
 }
 
-bool OIIO_ImageCache_get_pixels2(OIIO_ImageCache *x,
+bool OIIO_ImageCache_get_pixels_by_handle(OIIO_ImageCache *x,
                                  OIIO_ImageCache_ImageHandle *file,
                                  OIIO_ImageCache_Perthread *thread_info,
                                  int subimage, int miplevel,
@@ -140,13 +147,14 @@ bool OIIO_ImageCache_get_pixels2(OIIO_ImageCache *x,
                                  int ybegin, int yend,
                                  int zbegin, int zend,
                                  OIIO_TypeDesc format, void *result) {
+
     return OIIO_CAST(ImageCache, x)->get_pixels(OIIO_CAST(ImageCache::ImageHandle, file),
                                                 OIIO_CAST(ImageCache::Perthread, thread_info), subimage, miplevel,
                                                 xbegin, xend, ybegin, yend, zbegin, zend, unwrapTypeDesc(format),
                                                 result);
 }
 
-bool OIIO_ImageCache_get_pixels3(OIIO_ImageCache *x,
+bool OIIO_ImageCache_get_pixels_stride(OIIO_ImageCache *x,
                                          OIIO_StringRef filename, int subimage, int miplevel,
                                          int xbegin, int xend, int ybegin, int yend,
                                          int zbegin, int zend, int chbegin, int chend,
@@ -162,7 +170,7 @@ bool OIIO_ImageCache_get_pixels3(OIIO_ImageCache *x,
                                                 cache_chbegin, cache_chend);
 }
 
-bool OIIO_ImageCache_get_pixels4(OIIO_ImageCache *x, OIIO_ImageCache_ImageHandle *file,
+bool OIIO_ImageCache_get_pixels_stride_by_handle(OIIO_ImageCache *x, OIIO_ImageCache_ImageHandle *file,
                                           OIIO_ImageCache_Perthread *thread_info,
                                           int subimage, int miplevel,
                                           int xbegin, int xend, int ybegin, int yend,
@@ -179,15 +187,8 @@ bool OIIO_ImageCache_get_pixels4(OIIO_ImageCache *x, OIIO_ImageCache_ImageHandle
                                                 cache_chbegin, cache_chend);
 }
 
-/*
-bool get_pixels (ImageHandle *file, Perthread *thread info,
-int subimage, int miplevel,
-int xbegin, int xend, int ybegin, int yend,
-int zbegin, int zend,
-        TypeDesc format, void *result)*/
 
 }
 
-// extern "C"
 
 
