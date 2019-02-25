@@ -1,36 +1,29 @@
 #![feature(const_type_id)]
 #![feature(proc_macro_hygiene)]
-use autograph_render::buffer::StructuredBufferData;
-use autograph_render::command::DrawIndexedParams;
-use autograph_render::command::DrawParams;
-use autograph_render::format::Format;
-use autograph_render::glm;
-use autograph_render::include_shader;
-use autograph_render::pipeline::Arguments;
-use autograph_render::pipeline::ColorBlendState;
-use autograph_render::pipeline::DepthStencilState;
-use autograph_render::pipeline::GraphicsPipelineCreateInfo;
-use autograph_render::pipeline::InputAssemblyState;
-use autograph_render::pipeline::MultisampleState;
-use autograph_render::pipeline::RasterisationState;
-use autograph_render::pipeline::Viewport;
-use autograph_render::pipeline::ViewportState;
-use autograph_render::vertex::VertexData;
+use autograph_render::{
+    buffer::StructuredBufferData,
+    command::{DrawIndexedParams, DrawParams},
+    format::Format,
+    glm, include_shader,
+    pipeline::{
+        Arguments, ColorBlendState, DepthStencilState, GraphicsPipelineCreateInfo,
+        InputAssemblyState, MultisampleState, RasterisationState, Viewport, ViewportState,
+    },
+    vertex::VertexData,
+};
 use autograph_render_boilerplate::*;
 use log::info;
-use lyon::extra::rust_logo::build_logo_path;
-use lyon::path::builder::SvgPathBuilder;
-use lyon::path::builder::*;
-use lyon::path::default::Path;
-use lyon::tessellation::geometry_builder::vertex_builder;
-use lyon::tessellation::geometry_builder::VertexBuffers;
-use lyon::tessellation::geometry_builder::VertexConstructor;
-use lyon::tessellation::FillOptions;
-use lyon::tessellation::FillTessellator;
-use lyon::tessellation::FillVertex;
-use lyon::tessellation::StrokeOptions;
-use lyon::tessellation::StrokeTessellator;
-use lyon::tessellation::StrokeVertex;
+use lyon::{
+    extra::rust_logo::build_logo_path,
+    path::{
+        builder::{SvgPathBuilder, *},
+        default::Path,
+    },
+    tessellation::{
+        geometry_builder::{vertex_builder, VertexBuffers, VertexConstructor},
+        FillOptions, FillTessellator, FillVertex, StrokeOptions, StrokeTessellator, StrokeVertex,
+    },
+};
 use std::env;
 
 static BACKGROUND_VERT: &[u8] = include_shader!("background.vert");

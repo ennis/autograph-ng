@@ -1,5 +1,4 @@
-use crate::image::Image;
-use crate::Backend;
+use crate::{image::Image, Backend};
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Copy, Clone, Debug)]

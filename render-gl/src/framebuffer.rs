@@ -1,7 +1,8 @@
-use crate::api as gl;
-use crate::api::types::*;
-use crate::api::Gl;
-use crate::image::GlImage;
+use crate::{
+    api as gl,
+    api::{types::*, Gl},
+    image::GlImage,
+};
 
 /// Wrapper around OpenGL framebuffers.
 #[derive(Debug)]

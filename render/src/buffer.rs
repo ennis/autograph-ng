@@ -1,9 +1,9 @@
-use crate::typedesc::PrimitiveType;
-use crate::typedesc::TypeDesc;
-use crate::Backend;
+use crate::{
+    typedesc::{PrimitiveType, TypeDesc},
+    Backend,
+};
 pub use autograph_render_macros::StructuredBufferData;
-use std::marker::PhantomData;
-use std::mem;
+use std::{marker::PhantomData, mem};
 
 //--------------------------------------------------------------------------------------------------
 

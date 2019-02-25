@@ -1,6 +1,7 @@
-use crate::api::types::*;
-use crate::api::Gl;
-use crate::format::GlFormatInfo;
+use crate::{
+    api::{types::*, Gl},
+    format::GlFormatInfo,
+};
 use autograph_render::pipeline::VertexInputAttributeDescription;
 
 pub fn create_vertex_array_object(gl: &Gl, attribs: &[VertexInputAttributeDescription]) -> GLuint {

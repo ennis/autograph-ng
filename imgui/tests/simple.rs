@@ -1,16 +1,10 @@
 #![feature(proc_macro_hygiene)]
 use autograph_imgui::ImGuiRenderer;
 use autograph_render::format::Format;
-use autograph_render_boilerplate::App;
-use autograph_render_boilerplate::Event;
-use autograph_render_boilerplate::KeyboardInput;
-use autograph_render_boilerplate::WindowEvent;
-use imgui;
-use imgui::FontGlyphRange;
-use imgui::ImGui;
+use autograph_render_boilerplate::{App, Event, KeyboardInput, WindowEvent};
+use imgui::{self, FontGlyphRange, ImGui};
 use log::info;
-use std::env;
-use std::time;
+use std::{env, time};
 
 // Change the default font because why not
 //const FONT: &[u8] = include_bytes!("nokiafc22.ttf");

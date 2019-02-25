@@ -1,22 +1,18 @@
-use crate::api::types::*;
-use crate::api::Gl;
-use crate::backend::GlArena;
-use crate::framebuffer::GlFramebuffer;
-use crate::image::GlImage;
-use crate::sampler::SamplerCache;
-use crate::OpenGlBackend;
-use autograph_render::descriptor::Descriptor;
-use autograph_render::descriptor::DescriptorType;
-use autograph_render::framebuffer::RenderTargetDescriptor;
-use autograph_render::pipeline::BareArgumentBlock;
-use autograph_render::pipeline::Scissor;
-use autograph_render::pipeline::SignatureDescription;
-use autograph_render::pipeline::Viewport;
-use autograph_render::vertex::IndexBufferDescriptor;
-use autograph_render::vertex::IndexFormat;
-use autograph_render::vertex::VertexBufferDescriptor;
-use std::iter;
-use std::slice;
+use crate::{
+    api::{types::*, Gl},
+    backend::GlArena,
+    framebuffer::GlFramebuffer,
+    image::GlImage,
+    sampler::SamplerCache,
+    OpenGlBackend,
+};
+use autograph_render::{
+    descriptor::{Descriptor, DescriptorType},
+    framebuffer::RenderTargetDescriptor,
+    pipeline::{BareArgumentBlock, Scissor, SignatureDescription, Viewport},
+    vertex::{IndexBufferDescriptor, IndexFormat, VertexBufferDescriptor},
+};
+use std::{iter, slice};
 
 /// Proposal: flatten signature?
 /// At least, no need to store inherited (only the length matters)

@@ -1,20 +1,18 @@
 use crate::api as gl;
 //use crate::api::types::*;
-use crate::api::Gl;
-use crate::image::GlImage;
-use crate::pipeline::GlGraphicsPipeline;
-use crate::swapchain::GlSwapchain;
-use crate::ImplementationParameters;
-use autograph_render::command::Command;
-use autograph_render::command::CommandInner;
+use crate::{
+    api::Gl, image::GlImage, pipeline::GlGraphicsPipeline, swapchain::GlSwapchain,
+    ImplementationParameters,
+};
+use autograph_render::command::{Command, CommandInner};
 
 mod state;
 pub use self::state::StateCache;
-use crate::backend::OpenGlBackend;
-use crate::pipeline::GlArgumentBlock;
-use crate::pipeline::StateBlock;
-use autograph_render::pipeline::Scissor;
-use autograph_render::traits::Swapchain;
+use crate::{
+    backend::OpenGlBackend,
+    pipeline::{GlArgumentBlock, StateBlock},
+};
+use autograph_render::{pipeline::Scissor, traits::Swapchain};
 use std::slice;
 
 pub struct SubmissionContext<'a, 'rcx> {

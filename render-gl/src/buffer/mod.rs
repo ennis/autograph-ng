@@ -1,13 +1,13 @@
-use crate::api::types::*;
-use crate::api::Gl;
-use crate::AliasInfo;
+use crate::{
+    api::{types::*, Gl},
+    AliasInfo,
+};
 use slotmap::new_key_type;
 use std::ptr;
 
 mod upload;
 
-pub(crate) use self::upload::MappedBuffer;
-pub(crate) use self::upload::UploadBuffer;
+pub(crate) use self::upload::{MappedBuffer, UploadBuffer};
 
 //--------------------------------------------------------------------------------------------------
 

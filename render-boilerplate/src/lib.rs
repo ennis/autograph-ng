@@ -2,25 +2,19 @@
 extern crate image as img;
 use self::img::GenericImageView;
 use autograph_render::*;
-use autograph_render_gl::create_instance_and_window;
-use autograph_render_gl::OpenGlBackend;
+use autograph_render_gl::{create_instance_and_window, OpenGlBackend};
 use config;
 use pretty_env_logger;
-use std::cell::RefCell;
-use std::error;
-use std::fmt;
-use std::path::Path;
+use std::{cell::RefCell, error, fmt, path::Path};
 use winit;
 
 use glutin::GlWindow;
 use std::sync::Arc;
-pub use winit::EventsLoop;
-pub use winit::Window;
-pub use winit::WindowBuilder;
 pub use winit::{
     dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize},
-    AxisId, ButtonId, DeviceId, ElementState, Event, KeyboardInput, ModifiersState, MouseButton,
-    MouseScrollDelta, Touch, TouchPhase, VirtualKeyCode, WindowEvent,
+    AxisId, ButtonId, DeviceId, ElementState, Event, EventsLoop, KeyboardInput, ModifiersState,
+    MouseButton, MouseScrollDelta, Touch, TouchPhase, VirtualKeyCode, Window, WindowBuilder,
+    WindowEvent,
 };
 
 #[derive(Debug)]

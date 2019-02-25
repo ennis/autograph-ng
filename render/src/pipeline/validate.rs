@@ -1,20 +1,14 @@
-use crate::descriptor::DescriptorBinding;
-use crate::descriptor::DescriptorType;
-use crate::framebuffer::FragmentOutputDescription;
-use crate::pipeline::GraphicsPipelineCreateInfo;
-use crate::pipeline::Scissors;
-use crate::pipeline::SignatureDescription;
-use crate::pipeline::Viewports;
-use crate::vertex::IndexFormat;
-use crate::vertex::TypedVertexInputAttributeDescription;
-use crate::vertex::VertexLayout;
-use crate::Backend;
+use crate::{
+    descriptor::{DescriptorBinding, DescriptorType},
+    framebuffer::FragmentOutputDescription,
+    pipeline::{GraphicsPipelineCreateInfo, Scissors, SignatureDescription, Viewports},
+    vertex::{IndexFormat, TypedVertexInputAttributeDescription, VertexLayout},
+    Backend,
+};
 use autograph_spirv as spirv;
-use autograph_spirv::headers::StorageClass;
-use autograph_spirv::TypeDesc;
+use autograph_spirv::{headers::StorageClass, TypeDesc};
 use log::warn;
-use std::error;
-use std::fmt;
+use std::{error, fmt};
 
 #[derive(Copy, Clone, Debug)]
 pub enum Interface {

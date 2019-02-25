@@ -1,11 +1,11 @@
 //! Upload buffers
-use crate::api as gl;
-use crate::api::types::*;
-use crate::api::Gl;
-use crate::buffer::create_buffer;
+use crate::{
+    api as gl,
+    api::{types::*, Gl},
+    buffer::create_buffer,
+};
 use autograph_render::align_offset;
-use std::ptr::copy_nonoverlapping;
-use std::sync::Mutex;
+use std::{ptr::copy_nonoverlapping, sync::Mutex};
 
 pub(crate) struct MappedBuffer {
     buffer: GLuint,

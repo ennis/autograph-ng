@@ -7,7 +7,6 @@ mod api;
 mod backend;
 mod buffer;
 mod command;
-mod descriptor;
 mod format;
 mod framebuffer;
 mod image;
@@ -18,9 +17,10 @@ mod sync;
 mod util;
 mod window;
 
-pub use self::backend::OpenGlBackend;
-pub use self::backend::OpenGlInstance;
-pub use self::window::create_instance_and_window;
+pub use self::{
+    backend::{OpenGlBackend, OpenGlInstance},
+    window::create_instance_and_window,
+};
 
 use crate::api as gl;
 use autograph_render::AliasScope;

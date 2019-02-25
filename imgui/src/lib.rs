@@ -1,36 +1,22 @@
 //! Renderer for dear imgui (https://github.com/ocornut/imgui) using autograph-render as a backend.
 #![feature(proc_macro_hygiene)]
-use autograph_render::buffer::Buffer;
-use autograph_render::buffer::StructuredBufferData;
-use autograph_render::command::CommandBuffer;
-use autograph_render::command::DrawIndexedParams;
-use autograph_render::format::Format;
-use autograph_render::glm;
-use autograph_render::image::ImageUsageFlags;
-use autograph_render::image::MipmapsCount;
-use autograph_render::image::SampledImage;
-use autograph_render::image::SamplerDescription;
-use autograph_render::include_shader;
-use autograph_render::pipeline::Arguments;
-use autograph_render::pipeline::ColorBlendState;
-use autograph_render::pipeline::DepthStencilState;
-use autograph_render::pipeline::GraphicsPipelineCreateInfo;
-use autograph_render::pipeline::InputAssemblyState;
-use autograph_render::pipeline::MultisampleState;
-use autograph_render::pipeline::RasterisationState;
-use autograph_render::pipeline::Scissor;
-use autograph_render::pipeline::ScissorRect;
-use autograph_render::pipeline::TypedArgumentBlock;
-use autograph_render::pipeline::TypedGraphicsPipeline;
-use autograph_render::pipeline::Viewport;
-use autograph_render::pipeline::ViewportState;
-use autograph_render::vertex::VertexData;
-use autograph_render::Arena;
-use autograph_render::Backend;
-use autograph_render::Image;
+use autograph_render::{
+    buffer::{Buffer, StructuredBufferData},
+    command::{CommandBuffer, DrawIndexedParams},
+    format::Format,
+    glm,
+    image::{ImageUsageFlags, MipmapsCount, SampledImage, SamplerDescription},
+    include_shader,
+    pipeline::{
+        Arguments, ColorBlendState, DepthStencilState, GraphicsPipelineCreateInfo,
+        InputAssemblyState, MultisampleState, RasterisationState, Scissor, ScissorRect,
+        TypedArgumentBlock, TypedGraphicsPipeline, Viewport, ViewportState,
+    },
+    vertex::VertexData,
+    Arena, Backend, Image,
+};
 use imgui::ImGui;
-use std::mem;
-use std::slice;
+use std::{mem, slice};
 
 /// ImGui vertex shader
 static IMGUI_VERT: &[u8] = include_shader!("imgui.vert");

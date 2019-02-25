@@ -1,10 +1,8 @@
-use std::cell::RefCell;
-use std::cmp;
-use std::cmp::max;
-use std::iter;
-use std::mem;
-use std::ptr;
-use std::slice;
+use std::{
+    cell::RefCell,
+    cmp::{self, max},
+    iter, mem, ptr, slice,
+};
 
 // Initial size in bytes.
 const INITIAL_SIZE: usize = 1024;

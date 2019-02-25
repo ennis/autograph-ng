@@ -1,0 +1,9 @@
+[package]
+name = "autograph-render-extra"
+version = "0.1.0"
+authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
+edition = '2018'
+
+[dependencies]
+autograph-render = { path = "../render" }
+

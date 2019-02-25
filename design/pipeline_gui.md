@@ -58,3 +58,11 @@ Idea: GUI for graphics pipeline configuration
             - freetype (?) on linux
         - somehow blend that on top of the scene (how?)
         - interop somehow 
+
+#### Separation of concerns
+- UI tree update, input handling, geometry and rendering are in separate places
+    - input: needs geometry + ui tree
+    - rendering: needs geom + ui tree
+    - update: needs ui tree
+- focus on incremental UI tree updates (no geometry, etc.) from an IMGUI-like (or React-like) interface
+    - could use geometry for optimizations    

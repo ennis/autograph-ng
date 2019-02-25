@@ -1,13 +1,9 @@
 //use super::parse::SpirvModule;
-use crate::inst::*;
-use crate::layout::Std140AlignAndSize;
-use crate::layout::Std140LayoutBuilder;
-use crate::IPtr;
-use crate::ImageDataType;
-use crate::Module;
-use crate::PrimitiveType;
-use crate::StructLayout;
-use crate::TypeDesc;
+use crate::{
+    inst::*,
+    layout::{Std140AlignAndSize, Std140LayoutBuilder},
+    IPtr, ImageDataType, Module, PrimitiveType, StructLayout, TypeDesc,
+};
 use spirv_headers::*;
 use std::collections::HashMap;
 use typed_arena::Arena;

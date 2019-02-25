@@ -1,9 +1,7 @@
 extern crate gl_generator;
 
 use gl_generator::{Api, Fallbacks, Profile, Registry, StructGenerator};
-use std::env;
-use std::fs::File;
-use std::path::Path;
+use std::{env, fs::File, path::Path};
 
 fn main() {
     let dest = env::var("OUT_DIR").unwrap();

@@ -23,7 +23,6 @@
 
 // necessary for const NotNaN
 #![feature(const_transmute)]
-//#![feature(const_type_id)]
 extern crate log;
 
 // Reexport nalgebra_glm types if requested
@@ -44,82 +43,31 @@ pub mod typedesc;
 mod util;
 pub mod vertex;
 
-/*
-pub use self::buffer::Buffer;
-pub use self::buffer::BufferData;
-pub use self::buffer::BufferTypeless;
-pub use self::buffer::BufferSlice;
-pub use self::buffer::StructuredBufferData;
+pub use crate::{buffer::*, command::*, descriptor::*, format::*, image::*, util::*};
 
-pub use self::image::Dimensions;
-pub use self::image::Image;
-pub use self::image::SampledImage;
-pub use self::image::SamplerDescription;
-pub use self::image::SamplerMipmapMode;
-pub use self::image::SamplerAddressMode;
-pub use self::image::MipmapsCount;
-pub use self::image::Filter;
-pub use self::image::get_texture_mip_map_count;
 
-pub use self::pipeline::PipelineInterface;
-pub use self::pipeline::Viewport;
-pub use self::pipeline::ScissorRect;
-pub use self::pipeline::Scissors;
-pub use self::pipeline::Viewports;
-pub use self::pipeline::ViewportState;
-pub use self::pipeline::GraphicsPipelineCreateInfo;
-pub use self::pipeline::GraphicsPipeline;
-pub use self::pipeline::ShaderModule;
-pub use self::pipeline::VertexInputAttributeDescription;
-pub use self::pipeline::VertexInputBindingDescription;
-pub use self::pipeline::PrimitiveTopology;
-
-pub use self::format::Format;
-pub use self::format::FormatInfo;
-pub use self::format::NumericFormat;
-pub use self::format::ComponentLayout;
-*/
-
-use self::swapchain::Swapchain;
-
-pub use self::buffer::*;
-pub use self::command::*;
-pub use self::descriptor::*;
-pub use self::format::*;
-pub use self::image::*;
-pub use self::util::*;
 // re-export macros
 pub use autograph_shader_macros::{
     glsl_compute, glsl_fragment, glsl_geometry, glsl_tess_control, glsl_tess_eval, glsl_vertex,
     include_shader,
 };
-use std::marker::PhantomData;
 
-//use crate::pipeline::build_vertex_input_interface;
-//use crate::pipeline::validate::validate_graphics;
-use crate::framebuffer::RenderTargetDescriptor;
-use crate::pipeline::Arguments;
-use crate::pipeline::GraphicsPipeline;
-use crate::pipeline::GraphicsPipelineCreateInfo;
-use crate::pipeline::Scissor;
-use crate::pipeline::ShaderModule;
-use crate::pipeline::ShaderStageFlags;
-use crate::pipeline::Viewport;
-use crate::vertex::IndexBufferDescriptor;
-use crate::vertex::VertexBufferDescriptor;
-use std::any::TypeId;
-use std::collections::HashMap;
-use std::fmt::Debug;
-use std::hash::Hash;
-use std::mem;
+use crate::swapchain::Swapchain;
+use std::marker::PhantomData;
+use crate::{
+    framebuffer::RenderTargetDescriptor,
+    pipeline::{
+        Arguments, GraphicsPipeline, GraphicsPipelineCreateInfo, Scissor, ShaderModule,
+        ShaderStageFlags, Viewport,
+    },
+    vertex::{IndexBufferDescriptor, VertexBufferDescriptor},
+};
+use std::{any::TypeId, collections::HashMap, fmt::Debug, hash::Hash, mem};
 //use crate::pipeline::validate::ValidationError;
-use crate::pipeline::validate::validate_spirv_graphics_pipeline;
-use crate::pipeline::ArgumentBlock;
-use crate::pipeline::BareArgumentBlock;
-use crate::pipeline::GraphicsShaderStages;
-use crate::pipeline::Signature;
-use crate::pipeline::SignatureDescription;
-use crate::pipeline::TypedSignature;
+use crate::pipeline::{
+    validate::validate_spirv_graphics_pipeline, ArgumentBlock, BareArgumentBlock,
+    GraphicsShaderStages, Signature, SignatureDescription, TypedSignature,
+};
 use std::sync::Mutex;
 
 //--------------------------------------------------------------------------------------------------

@@ -1,7 +1,6 @@
 use crate::backend::OpenGlInstance;
 use config::Config;
-use glutin;
-use glutin::GlWindow;
+use glutin::{self, GlWindow};
 use std::sync::Arc;
 use winit::{EventsLoop, WindowBuilder};
 

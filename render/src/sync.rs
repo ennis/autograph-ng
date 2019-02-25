@@ -1,6 +1,4 @@
-use crate::buffer::BufferTypeless;
-use crate::image::Image;
-use crate::Backend;
+use crate::{buffer::BufferTypeless, image::Image, Backend};
 use bitflags::bitflags;
 
 bitflags! {

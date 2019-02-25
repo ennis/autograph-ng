@@ -1,9 +1,8 @@
-use crate::buffer::Buffer;
-use crate::buffer::BufferData;
-use crate::buffer::BufferTypeless;
-use crate::format::Format;
-use crate::typedesc::PrimitiveType;
-use crate::typedesc::TypeDesc;
+use crate::{
+    buffer::{Buffer, BufferData, BufferTypeless},
+    format::Format,
+    typedesc::{PrimitiveType, TypeDesc},
+};
 
 use crate::Backend;
 pub use autograph_render_macros::VertexData;
@@ -44,6 +43,18 @@ pub struct VertexBufferDescriptor<'a, 'tcx, B: Backend> {
     pub layout: &'tcx VertexLayout<'tcx>,
     /// Offset to the start of vertex data in the buffer.
     pub offset: u64,
+}
+
+impl<'a, B: Backend, T: VertexData> From<Buffer<'a, B, T>>
+    for VertexBufferDescriptor<'a, 'static, B>
+{
+    fn from(buf: Buffer<'a, B, T>) -> Self {
+        VertexBufferDescriptor {
+            offset: 0,
+            buffer: buf.into_typeless(),
+            layout: &T::LAYOUT,
+        }
+    }
 }
 
 /// Trait implemented by types that represent vertex data in a vertex buffer.

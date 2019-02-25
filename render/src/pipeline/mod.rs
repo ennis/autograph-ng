@@ -1,17 +1,14 @@
-use crate::descriptor::DescriptorBinding;
-use crate::format::Format;
-use crate::framebuffer::FragmentOutputDescription;
-use crate::vertex::IndexFormat;
-use crate::vertex::VertexLayout;
-use crate::Arena;
-use crate::Backend;
-use crate::Renderer;
+use crate::{
+    descriptor::DescriptorBinding,
+    format::Format,
+    framebuffer::FragmentOutputDescription,
+    vertex::{IndexFormat, VertexLayout},
+    Arena, Backend, Renderer,
+};
 pub use autograph_render_macros::Arguments;
 use bitflags::bitflags;
 use ordered_float::NotNan;
-use std::fmt::Debug;
-use std::marker::PhantomData;
-use std::mem;
+use std::{fmt::Debug, marker::PhantomData, mem};
 
 pub mod validate;
 
@@ -640,6 +637,23 @@ pub struct SignatureDescription<'a> {
 }
 
 impl<'a> SignatureDescription<'a> {
+    pub const EMPTY: SignatureDescription<'static> = SignatureDescription {
+        inherited: &[],
+        descriptors: &[],
+        vertex_layouts: &[],
+        fragment_outputs: &[],
+        depth_stencil_fragment_output: None,
+        index_format: None,
+        num_viewports: 0,
+        num_scissors: 0,
+        is_root_fragment_output_signature: false,
+        is_root_vertex_input_signature: false,
+    };
+
+    pub const fn empty() -> SignatureDescription<'static> {
+        Self::EMPTY
+    }
+
     /// Count the total number of viewport entries.
     pub fn count_viewports(&self) -> usize {
         self.num_viewports
@@ -812,7 +826,10 @@ pub trait Arguments<'a, B: Backend>: Sized {
     type UniqueType: 'static;
     type IntoInterface: Arguments<'a, B> + 'a;
 
-    fn get_inherited_signatures(renderer: &'a Renderer<B>) -> Vec<&'a B::Signature>;
+    fn get_inherited_signatures(_renderer: &'a Renderer<B>) -> Vec<&'a B::Signature> {
+        vec![]
+    }
+
     fn into_block(
         self,
         signature: TypedSignature<'a, B, Self::IntoInterface>,

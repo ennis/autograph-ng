@@ -1,64 +1,46 @@
-use crate::aliaspool::AliasPool;
-use crate::api as gl;
-use crate::api::types::*;
-use crate::api::Gl;
-use crate::buffer::create_buffer;
-use crate::buffer::GlBuffer;
-use crate::buffer::MappedBuffer;
-use crate::buffer::RawBuffer;
-use crate::buffer::UploadBuffer;
-use crate::command::StateCache;
-use crate::command::SubmissionContext;
-use crate::framebuffer::GlFramebuffer;
-use crate::image::upload_image_region;
-use crate::image::GlImage;
-use crate::image::ImageAliasKey;
-use crate::image::ImageDescription;
-use crate::image::RawImage;
-use crate::pipeline::create_graphics_pipeline_internal;
-use crate::pipeline::GlArgumentBlock;
-use crate::pipeline::GlGraphicsPipeline;
-use crate::pipeline::GlShaderModule;
-use crate::pipeline::GlSignature;
-use crate::sampler::SamplerCache;
-use crate::swapchain::GlSwapchain;
-use crate::sync::GpuSyncObject;
-use crate::sync::Timeline;
-use crate::util::DroplessArena;
-use crate::AliasInfo;
-use crate::ImplementationParameters;
-use autograph_render::command::Command;
-use autograph_render::descriptor::Descriptor;
-use autograph_render::format::Format;
-use autograph_render::framebuffer::RenderTargetDescriptor;
-use autograph_render::image::Dimensions;
-use autograph_render::image::ImageUsageFlags;
-use autograph_render::image::MipmapsCount;
-use autograph_render::pipeline::BareArgumentBlock;
-use autograph_render::pipeline::GraphicsPipelineCreateInfo;
-use autograph_render::pipeline::Scissor;
-use autograph_render::pipeline::ShaderStageFlags;
-use autograph_render::pipeline::SignatureDescription;
-use autograph_render::pipeline::Viewport;
-use autograph_render::vertex::IndexBufferDescriptor;
-use autograph_render::vertex::VertexBufferDescriptor;
-use autograph_render::AliasScope;
-use autograph_render::Backend;
-use autograph_render::Instance;
+use crate::{
+    aliaspool::AliasPool,
+    api as gl,
+    api::{types::*, Gl},
+    buffer::{create_buffer, GlBuffer, MappedBuffer, RawBuffer, UploadBuffer},
+    command::{StateCache, SubmissionContext},
+    framebuffer::GlFramebuffer,
+    image::{upload_image_region, GlImage, ImageAliasKey, ImageDescription, RawImage},
+    pipeline::{
+        create_graphics_pipeline_internal, GlArgumentBlock, GlGraphicsPipeline, GlShaderModule,
+        GlSignature,
+    },
+    sampler::SamplerCache,
+    swapchain::GlSwapchain,
+    sync::{GpuSyncObject, Timeline},
+    util::DroplessArena,
+    AliasInfo, ImplementationParameters,
+};
+use autograph_render::{
+    command::Command,
+    descriptor::Descriptor,
+    format::Format,
+    framebuffer::RenderTargetDescriptor,
+    image::{Dimensions, ImageUsageFlags, MipmapsCount},
+    pipeline::{
+        BareArgumentBlock, GraphicsPipelineCreateInfo, Scissor, ShaderStageFlags,
+        SignatureDescription, Viewport,
+    },
+    vertex::{IndexBufferDescriptor, VertexBufferDescriptor},
+    AliasScope, Backend, Instance,
+};
 use config::Config;
-use glutin::GlContext;
-use glutin::GlWindow;
-use std::cell::Cell;
-use std::cell::RefCell;
-use std::collections::VecDeque;
-use std::ffi::CStr;
-use std::mem;
-use std::os::raw::c_char;
-use std::ptr;
-use std::slice;
-use std::str;
-use std::sync::Arc;
-use std::time::Duration;
+use glutin::{GlContext, GlWindow};
+use std::{
+    cell::{Cell, RefCell},
+    collections::VecDeque,
+    ffi::CStr,
+    mem,
+    os::raw::c_char,
+    ptr, slice, str,
+    sync::Arc,
+    time::Duration,
+};
 use typed_arena::Arena;
 
 //--------------------------------------------------------------------------------------------------

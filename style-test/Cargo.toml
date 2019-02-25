@@ -10,4 +10,4 @@ log = "0.4.6"
 autograph-render-boilerplate = { path = "../render-boilerplate" }
 autograph-render = { path = "../render", features = ["glm-types"] }
 autograph-render-gl = { path = "../render-gl" }
-openimageio = { path = "../openimageio-rs/openimageio" }
+openimageio = { git = "https://github.com/ennis/openimageio-rs" }

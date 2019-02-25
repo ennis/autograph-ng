@@ -7,13 +7,12 @@ use lazy_static::lazy_static;
 use proc_macro2::Span;
 use quote::quote;
 use regex::Regex;
-use shaderc;
-use shaderc::IncludeType;
-use shaderc::ResolvedInclude;
-use std::cell::RefCell;
-use std::fs;
-use std::path::Path;
-use std::path::PathBuf;
+use shaderc::{self, IncludeType, ResolvedInclude};
+use std::{
+    cell::RefCell,
+    fs,
+    path::{Path, PathBuf},
+};
 use syn;
 
 lazy_static! {

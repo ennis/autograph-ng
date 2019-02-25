@@ -1,5 +1,4 @@
-use crate::PrimitiveType;
-use crate::TypeDesc;
+use crate::{PrimitiveType, TypeDesc};
 
 //--------------------------------------------------------------------------------------------------
 // yet another copy of the align offset function

@@ -1,14 +1,10 @@
-use crate::api as gl;
-use crate::api::types::*;
-use crate::api::Gl;
+use crate::{
+    api as gl,
+    api::{types::*, Gl},
+};
 use autograph_render::pipeline::ShaderStageFlags;
 use autograph_spirv::TypeDesc;
-use std::error::Error;
-use std::ffi::CString;
-use std::fmt;
-use std::mem;
-use std::os::raw::c_void;
-use std::ptr;
+use std::{error::Error, ffi::CString, fmt, mem, os::raw::c_void, ptr};
 
 //--------------------------------------------------------------------------------------------------
 #[derive(Debug)]
@@ -258,7 +254,7 @@ pub fn translate_spirv_to_gl_flavor(
     desc_map: &mut DescriptorMapBuilder,
 ) -> Vec<u32> {
     use autograph_spirv as spirv;
-    use spirv_headers::*;
+    use spirv::headers::*;
 
     let m = spirv::Module::from_words(spv).expect("failed to load SPIR-V module");
 

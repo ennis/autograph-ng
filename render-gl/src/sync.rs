@@ -1,8 +1,8 @@
-use crate::api as gl;
-use crate::api::types::*;
-use crate::api::Gl;
-use std::collections::vec_deque::VecDeque;
-use std::time::Duration;
+use crate::{
+    api as gl,
+    api::{types::*, Gl},
+};
+use std::{collections::vec_deque::VecDeque, time::Duration};
 
 /// A synchronization primitive for objects used by the GPU.
 ///

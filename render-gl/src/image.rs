@@ -1,13 +1,12 @@
-use crate::api as gl;
-use crate::api::types::*;
-use crate::api::Gl;
-use crate::format::GlFormatInfo;
-use crate::AliasInfo;
-use autograph_render::get_texture_mip_map_count;
-use autograph_render::Dimensions;
-use autograph_render::Format;
-use autograph_render::ImageUsageFlags;
-use autograph_render::MipmapsCount;
+use crate::{
+    api as gl,
+    api::{types::*, Gl},
+    format::GlFormatInfo,
+    AliasInfo,
+};
+use autograph_render::{
+    get_texture_mip_map_count, Dimensions, Format, ImageUsageFlags, MipmapsCount,
+};
 use slotmap::new_key_type;
 use std::cmp::max;
 

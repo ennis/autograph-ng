@@ -1,8 +1,7 @@
-use crate::decode::decode_raw_instruction;
-use crate::decode::DecodedInstruction;
-use crate::Edit;
-use crate::IPtr;
-use crate::Module;
+use crate::{
+    decode::{decode_raw_instruction, DecodedInstruction},
+    Edit, IPtr, Module,
+};
 
 impl Module {
     pub fn edit_remove_instruction(&self, iptr: IPtr) {

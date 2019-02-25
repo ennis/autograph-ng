@@ -1,7 +1,6 @@
 use autograph_render::traits;
 use glutin::GlWindow;
-use std::fmt;
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 /// Represents an OpenGL "swapchain".
 ///

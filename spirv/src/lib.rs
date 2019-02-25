@@ -9,14 +9,11 @@ pub mod inst;
 pub mod layout;
 
 use spirv_headers::ImageFormat;
-use std::cell::RefCell;
-use std::fmt;
-use std::marker::PhantomData;
+use std::{cell::RefCell, fmt, marker::PhantomData};
 
 //pub use self::inst::*;
 //pub use self::edit::*;
-pub use self::decode::DecodedInstruction;
-pub use self::layout::*;
+pub use self::{decode::DecodedInstruction, layout::*};
 pub use spirv_headers as headers;
 use std::error;
 

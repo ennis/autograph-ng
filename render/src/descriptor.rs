@@ -1,13 +1,11 @@
 //! Descriptors
-use crate::buffer::Buffer;
-use crate::buffer::BufferData;
-use crate::buffer::BufferTypeless;
-use crate::buffer::StructuredBufferData;
-use crate::image::SampledImage;
-use crate::image::SamplerDescription;
-use crate::pipeline::ShaderStageFlags;
-use crate::typedesc::TypeDesc;
-use crate::Backend;
+use crate::{
+    buffer::{Buffer, BufferData, BufferTypeless, StructuredBufferData},
+    image::{SampledImage, SamplerDescription},
+    pipeline::ShaderStageFlags,
+    typedesc::TypeDesc,
+    Backend,
+};
 use std::marker::PhantomData;
 
 #[derive(Copy, Clone, Debug)]

@@ -1,22 +1,15 @@
 [workspace]
 members = [
-    "plugin",
     "render",
     "render/macros",
+    "render-extra",
     "render-gl",
     "render-boilerplate",
     "shader/macros",
     "spirv",
-    "common_shaders",
     "style-test",
-    "alembic-rs/alembic",
-    "alembic-rs/alembic-sys",
     "imgui",
-    "openimageio-rs/openimageio-sys",
-    "openimageio-rs/openimageio",
     "xxgui",
-    # for testing
-    "plugin/tests/test_dylib"
 ]
 
 [profile.release]

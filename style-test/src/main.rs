@@ -1,37 +1,24 @@
 #![feature(proc_macro_hygiene)]
-use autograph_render::buffer::StructuredBufferData;
-use autograph_render::command::DrawParams;
-use autograph_render::format::Format;
-use autograph_render::glm;
-use autograph_render::image::ImageUsageFlags;
-use autograph_render::image::MipmapsCount;
-use autograph_render::image::SamplerDescription;
-use autograph_render::include_shader;
-use autograph_render::pipeline::Arguments;
-use autograph_render::pipeline::ColorBlendAttachmentState;
-use autograph_render::pipeline::ColorBlendAttachments;
-use autograph_render::pipeline::ColorBlendState;
-use autograph_render::pipeline::DepthStencilState;
-use autograph_render::pipeline::GraphicsPipelineCreateInfo;
-use autograph_render::pipeline::GraphicsShaderStages;
-use autograph_render::pipeline::InputAssemblyState;
-use autograph_render::pipeline::MultisampleState;
-use autograph_render::pipeline::PrimitiveTopology;
-use autograph_render::pipeline::RasterisationState;
-use autograph_render::pipeline::Viewport;
-use autograph_render::pipeline::ViewportState;
-use autograph_render::pipeline::Viewports;
-use autograph_render::vertex::VertexData;
-use autograph_render::AliasScope;
-use autograph_render_boilerplate::App;
-use autograph_render_boilerplate::Event;
-use autograph_render_boilerplate::KeyboardInput;
-use autograph_render_boilerplate::WindowEvent;
+use autograph_render::{
+    buffer::StructuredBufferData,
+    command::DrawParams,
+    format::Format,
+    glm,
+    image::{ImageUsageFlags, MipmapsCount, SamplerDescription},
+    include_shader,
+    pipeline::{
+        Arguments, ColorBlendAttachmentState, ColorBlendAttachments, ColorBlendState,
+        DepthStencilState, GraphicsPipelineCreateInfo, GraphicsShaderStages, InputAssemblyState,
+        MultisampleState, PrimitiveTopology, RasterisationState, Viewport, ViewportState,
+        Viewports,
+    },
+    vertex::VertexData,
+    AliasScope,
+};
+use autograph_render_boilerplate::{App, Event, KeyboardInput, WindowEvent};
 use log::{debug, info, warn};
 use openimageio as oiio;
-use std::env;
-use std::mem;
-use std::slice;
+use std::{env, mem, slice};
 
 type Backend = autograph_render_gl::OpenGlBackend;
 type Arena<'a> = autograph_render::Arena<'a, Backend>;
@@ -310,6 +297,55 @@ fn main() {
     let arena_0 = r.create_arena();
     let pipelines = Pipelines::create(&arena_0);
 
+    // load test image
+    let mut img = oiio::ImageInput::open("../openimageio-rs/test_images/output0013.exr").unwrap();
+    let (w, h, _) = img.spec().size();
+
+    let diffuse_data: oiio::ImageBuffer<u16> = img
+        .channels_by_name(COLOR_CHANNEL_NAMES)
+        .unwrap()
+        .read()
+        .unwrap();
+
+    let normal_data: oiio::ImageBuffer<f32> = img
+        .channels_by_name(NORMAL_CHANNEL_NAMES)
+        .unwrap()
+        .read()
+        .unwrap();
+
+    let depth_data: oiio::ImageBuffer<f32> = img
+        .channels_by_name(DEPTH_CHANNEL_NAME)
+        .unwrap()
+        .read()
+        .unwrap();
+
+    let depth = arena_0.create_immutable_image(
+        Format::R32_SFLOAT,
+        (w, h).into(),
+        MipmapsCount::One,
+        1,
+        ImageUsageFlags::SAMPLED,
+        depth_data.as_bytes(),
+    );
+
+    let diffuse = arena_0.create_immutable_image(
+        Format::R16G16B16A16_SNORM,
+        (w, h).into(),
+        MipmapsCount::One,
+        1,
+        ImageUsageFlags::SAMPLED,
+        diffuse_data.as_bytes(),
+    );
+
+    let normals = arena_0.create_immutable_image(
+        Format::R32G32B32_SFLOAT,
+        (w, h).into(),
+        MipmapsCount::One,
+        1,
+        ImageUsageFlags::SAMPLED,
+        normal_data.as_bytes(),
+    );
+
     'outer: loop {
         let default_swapchain = r.default_swapchain().unwrap();
         let (w, h) = default_swapchain.size();
@@ -357,59 +393,10 @@ fn main() {
             // Clear background
             cmdbuf.clear_image(0x0, color_buffer, &[0.0, 0.2, 0.8, 1.0]);
 
-            // load next frame of animation
-            let normals = arena_frame.create_image(
-                AliasScope::no_alias(),
-                Format::R16G16_SFLOAT,
-                (w, h).into(),
-                MipmapsCount::One,
-                1,
-                ImageUsageFlags::COLOR_ATTACHMENT | ImageUsageFlags::SAMPLED,
-            );
-
             let mut img =
                 oiio::ImageInput::open("../openimageio-rs/test_images/output0013.exr").unwrap();
 
             let (w, h) = (img.width(), img.height());
-
-            let color_data: oiio::ImageBuffer<f32> = img
-                .channels_by_name(COLOR_CHANNEL_NAMES)
-                .unwrap()
-                .read()
-                .unwrap();
-            //assert_eq!(color_data.num_channels(), 4);
-
-            let normal_data: oiio::ImageBuffer<f32> = img
-                .channels_by_name(NORMAL_CHANNEL_NAMES)
-                .unwrap()
-                .read()
-                .unwrap();
-            //assert_eq!(normal_data.num_channels(), 3);
-
-            let depth_data: oiio::ImageBuffer<f32> = img
-                .channels_by_name(DEPTH_CHANNEL_NAME)
-                .unwrap()
-                .read()
-                .unwrap();
-            //assert_eq!(depth_data.num_channels(), 1);
-
-            let depth = arena_frame.create_immutable_image(
-                Format::R32_SFLOAT,
-                (w, h).into(),
-                MipmapsCount::One,
-                1,
-                ImageUsageFlags::SAMPLED,
-                depth_data.as_bytes(),
-            );
-
-            let diffuse = arena_frame.create_immutable_image(
-                Format::R32G32B32A32_SFLOAT,
-                (w, h).into(),
-                MipmapsCount::One,
-                1,
-                ImageUsageFlags::SAMPLED,
-                color_data.as_bytes(),
-            );
 
             // TODO transfer normals, depth, base color from file
 
@@ -447,12 +434,7 @@ fn main() {
                     edge_out: edge_map,
                     depth_tex: depth.into_sampled(SamplerDescription::LINEAR_MIPMAP_LINEAR),
                 },
-                DrawParams {
-                    instance_count: 1,
-                    first_instance: 0,
-                    vertex_count: 6,
-                    first_vertex: 0,
-                },
+                DrawParams::quad(),
             );
 
             //----------------------------------------------------------------------------------

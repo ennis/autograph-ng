@@ -1,12 +1,9 @@
-use crate::api as gl;
-use crate::api::types::*;
-use crate::api::Gl;
-use autograph_render::image::Filter;
-use autograph_render::image::SamplerAddressMode;
-use autograph_render::image::SamplerDescription;
-use autograph_render::image::SamplerMipmapMode;
-use fxhash::FxBuildHasher;
-use fxhash::FxHashMap;
+use crate::{
+    api as gl,
+    api::{types::*, Gl},
+};
+use autograph_render::image::{Filter, SamplerAddressMode, SamplerDescription, SamplerMipmapMode};
+use fxhash::{FxBuildHasher, FxHashMap};
 
 pub struct SamplerCache {
     // samplers are never deleted

@@ -1890,3 +1890,53 @@ GraphicsPipeline trait
 - this breaks the current boilerplate 
 - actually impossible: Instance is an ATC
     - Rc<Window> or Arc<Window>
+    
+#### Arguments: the draw_quad issue
+- create an argblock without vertices, but pipeline interface contains vertices
+- QuadShader<P> where P is an Argument block without the vertices
+   
+    
+#### OpenImageIO: consider reading only contiguous ranges of channels
+- query channels by name, and fail with a new error (NonContiguousChannels) if they are not contiguous, or not in the 
+ correct order
+- on the other hand, it's useful for channels that are not in the correct order
+
+#### Typed pixel uploads
+- pixel uploads to images should be typed
+    - upload type = type of a single channel
+    - number of channels (components) taken from the format
+        - except for packed types
+- infer format from pixel type?
+    - e.g. `[f32;4] -> R32G32B32A32_SFLOAT`
+    - what about SNORM/SINT, UNORM/UINT and SRGB?
+- common pixel trait?
+    - Pixel
+        - number of channels
+        - channel interpretations (red, green, blue, depth, packed...)
+            - layouts (R,G,B,RG,GR,RGB,RGBA,BGRA,ARGB,...)
+        - bit width of components
+        -> basically, associate types to each vulkan format
+    - UnpackedPixel: Pixel
+        - Subpixel (i8,i16,i32,u8,u16,u32,f16,f32)
+        - create from slice of Subpixels
+        
+- should it support pixels with lots of channels?
+    - this is about types, so no
+    
+#### Remove/archive dead crates:
+- `common_shaders` is useless
+- `plugin` has serious shortcomings and should not be used
+- render examples don't work anymore: remove them
+- openimageio should be a submodule
+    
+#### Testing infrastructure
+- one line to create:
+    - a window
+    - a renderer
+    - an arena
+    - an event loop
+- crates to test:
+    - render
+    - render-extra
+    - render-gl
+    - macros

@@ -1,20 +1,15 @@
-use crate::api as gl;
-use crate::api::types::*;
-use crate::api::Gl;
-use crate::ImplementationParameters;
-use autograph_render::pipeline::BlendFactor;
-use autograph_render::pipeline::BlendOp;
-use autograph_render::pipeline::ColorBlendAttachmentState;
-use autograph_render::pipeline::CompareOp;
-use autograph_render::pipeline::CullModeFlags;
-use autograph_render::pipeline::PolygonMode;
-use autograph_render::pipeline::PrimitiveTopology;
-use autograph_render::pipeline::Scissor;
-use autograph_render::pipeline::StencilOp;
-use autograph_render::pipeline::StencilOpState;
-use autograph_render::pipeline::StencilTest;
-use autograph_render::pipeline::Viewport;
-use autograph_render::vertex::IndexFormat;
+use crate::{
+    api as gl,
+    api::{types::*, Gl},
+    ImplementationParameters,
+};
+use autograph_render::{
+    pipeline::{
+        BlendFactor, BlendOp, ColorBlendAttachmentState, CompareOp, CullModeFlags, PolygonMode,
+        PrimitiveTopology, Scissor, StencilOp, StencilOpState, StencilTest, Viewport,
+    },
+    vertex::IndexFormat,
+};
 use ordered_float::NotNan;
 
 pub struct ColorBlendCache {

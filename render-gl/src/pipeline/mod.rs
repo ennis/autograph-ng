@@ -1,17 +1,15 @@
-use crate::api::types::*;
-use crate::api::Gl;
-use crate::backend::GlArena;
-use crate::backend::OpenGlBackend;
-use crate::command::StateCache;
-use autograph_render::image::SamplerDescription;
-use autograph_render::pipeline::ColorBlendAttachmentState;
-use autograph_render::pipeline::ColorBlendAttachments;
-use autograph_render::pipeline::DepthStencilState;
-use autograph_render::pipeline::InputAssemblyState;
-use autograph_render::pipeline::LogicOp;
-use autograph_render::pipeline::MultisampleState;
-use autograph_render::pipeline::RasterisationState;
-use autograph_render::pipeline::VertexInputBindingDescription;
+use crate::{
+    api::{types::*, Gl},
+    backend::{GlArena, OpenGlBackend},
+    command::StateCache,
+};
+use autograph_render::{
+    image::SamplerDescription,
+    pipeline::{
+        ColorBlendAttachmentState, ColorBlendAttachments, DepthStencilState, InputAssemblyState,
+        LogicOp, MultisampleState, RasterisationState, VertexInputBindingDescription,
+    },
+};
 use ordered_float::NotNan;
 
 mod arguments;
@@ -19,21 +17,19 @@ mod program;
 mod shader;
 mod vao;
 
-use self::program::create_graphics_program;
-use self::vao::create_vertex_array_object;
+use self::{program::create_graphics_program, vao::create_vertex_array_object};
 
-pub(crate) use self::arguments::GlArgumentBlock;
-pub(crate) use self::arguments::GlSignature;
-pub(crate) use self::arguments::StateBlock;
-pub(crate) use self::shader::DescriptorMap;
-pub(crate) use self::shader::GlShaderModule;
-use autograph_render::pipeline::GraphicsPipelineCreateInfo;
-use autograph_render::pipeline::ScissorsOwned;
-use autograph_render::pipeline::SignatureDescription;
-use autograph_render::pipeline::VertexInputAttributeDescription;
-use autograph_render::pipeline::VertexInputRate;
-use autograph_render::pipeline::ViewportsOwned;
-use autograph_render::vertex::VertexLayout;
+pub(crate) use self::{
+    arguments::{GlArgumentBlock, GlSignature, StateBlock},
+    shader::{DescriptorMap, GlShaderModule},
+};
+use autograph_render::{
+    pipeline::{
+        GraphicsPipelineCreateInfo, ScissorsOwned, SignatureDescription,
+        VertexInputAttributeDescription, VertexInputRate, ViewportsOwned,
+    },
+    vertex::VertexLayout,
+};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct StaticSamplerEntry {

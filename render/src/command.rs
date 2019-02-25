@@ -1,13 +1,11 @@
-use crate::buffer::BufferTypeless;
-use crate::image::Image;
-use crate::pipeline::Arguments;
-use crate::pipeline::GraphicsPipeline;
-use crate::pipeline::TypedSignature;
-use crate::swapchain::Swapchain;
-use crate::sync::MemoryBarrier;
-use crate::sync::PipelineStageFlags;
-use crate::Arena;
-use crate::Backend;
+use crate::{
+    buffer::BufferTypeless,
+    image::Image,
+    pipeline::{Arguments, GraphicsPipeline, TypedSignature},
+    swapchain::Swapchain,
+    sync::{MemoryBarrier, PipelineStageFlags},
+    Arena, Backend,
+};
 use std::ops::Range;
 
 /// Represents a command to be executed by the renderer backend.
@@ -30,6 +28,18 @@ pub struct DrawParams {
     pub instance_count: u32,
     pub first_vertex: u32,
     pub first_instance: u32,
+}
+
+impl DrawParams {
+    /// Draw parameters for a quad (1 instance, 6 verts)
+    pub fn quad() -> DrawParams {
+        DrawParams {
+            instance_count: 1,
+            first_instance: 0,
+            vertex_count: 6,
+            first_vertex: 0,
+        }
+    }
 }
 
 /// Parameters for indexed draw commands.
