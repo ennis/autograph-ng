@@ -20,7 +20,6 @@ use autograph_render::{
     command::Command,
     descriptor::Descriptor,
     format::Format,
-    framebuffer::RenderTargetDescriptor,
     image::{Dimensions, ImageUsageFlags, MipmapsCount},
     pipeline::{
         BareArgumentBlock, GraphicsPipelineCreateInfo, Scissor, ShaderStageFlags,
@@ -42,6 +41,7 @@ use std::{
     time::Duration,
 };
 use typed_arena::Arena;
+use autograph_render::image::RenderTargetView;
 
 //--------------------------------------------------------------------------------------------------
 extern "system" fn debug_callback(
@@ -215,9 +215,7 @@ impl Resources {
                 "Allocating new scoped image {:?} ({:?}, {:?}, mips: {}, samples: {})",
                 d.dimensions, d.format, d.usage, d.mipcount, d.samples
             );
-            if d.usage
-                .intersects(ImageUsageFlags::STORAGE | ImageUsageFlags::SAMPLED)
-            {
+            if d.usage != ImageUsageFlags::COLOR_ATTACHMENT {
                 // will be used as storage or sampled image
                 RawImage::new_texture(
                     gl,
@@ -298,6 +296,7 @@ impl OpenGlInstance {
                 "OpenGL version {}.{} (vendor: {:?}, renderer: {:?})",
                 major_version, minor_version, vendor, renderer
             );
+
         }
 
         let upload_buffer_size = cfg
@@ -506,8 +505,8 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
         descriptors: impl IntoIterator<Item = Descriptor<'a, OpenGlBackend>>,
         vertex_buffers: impl IntoIterator<Item = VertexBufferDescriptor<'a, 'b, OpenGlBackend>>,
         index_buffer: Option<IndexBufferDescriptor<'a, OpenGlBackend>>,
-        render_targets: impl IntoIterator<Item = RenderTargetDescriptor<'a, OpenGlBackend>>,
-        depth_stencil_render_target: Option<RenderTargetDescriptor<'a, OpenGlBackend>>,
+        render_targets: impl IntoIterator<Item = RenderTargetView<'a, OpenGlBackend>>,
+        depth_stencil_render_target: Option<RenderTargetView<'a, OpenGlBackend>>,
         viewports: impl IntoIterator<Item = Viewport>,
         scissors: impl IntoIterator<Item = Scissor>,
     ) -> &'a GlArgumentBlock {
@@ -548,6 +547,7 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
     unsafe fn submit_frame<'a>(&self, frame: &[Command<'a, OpenGlBackend>]) {
         let mut scache = self.state_cache.borrow_mut();
 
+        //self.gl.ClipControl(gl::UPPER_LEFT, gl::NEGATIVE_ONE_TO_ONE);
         // invalidate the cache, because deletion of objects in arenas between two calls
         // to `submit_frame` may have automatically 'unbound' objects from the pipeline.
         scache.invalidate();

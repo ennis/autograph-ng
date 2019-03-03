@@ -576,7 +576,7 @@ impl<'a, B: Backend, T: PipelineInterface<'a, B>> From<GraphicsPipeline<'a, B, T
 /// Describes the contents (all arguments) of an argument block.
 ///
 /// This can be seen as the 'layout' or 'format' of an argument block.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct SignatureDescription<'a> {
     /// Signatures of inherited argument blocks.
     ///

@@ -1,10 +1,6 @@
-extern crate autograph_render;
-#[macro_use]
-extern crate autograph_render_macros;
-
 use autograph_render::{
-    interface::{PrimitiveType, StructuredBufferData, TypeDesc},
-    Backend, BufferTypeless,
+    typedesc::{PrimitiveType, StructLayout, TypeDesc},
+    StructuredBufferData,
 };
 
 #[repr(C)]
@@ -26,19 +22,19 @@ struct TestLayout2 {
 fn test_buffer_layout() {
     assert_eq!(
         <TestLayout1 as StructuredBufferData>::TYPE,
-        &TypeDesc::Struct(&[
+        &TypeDesc::Struct(StructLayout::new(&[
             (0, &TypeDesc::Primitive(PrimitiveType::Int)),
             (4, &TypeDesc::Primitive(PrimitiveType::Int)),
-        ])
+        ]))
     );
 
     assert_eq!(
         <TestLayout2 as StructuredBufferData>::TYPE,
-        &TypeDesc::Struct(&[
+        &TypeDesc::Struct(StructLayout::new(&[
             (0, &TypeDesc::Vector(PrimitiveType::Int, 3)),
             (12, &TypeDesc::Primitive(PrimitiveType::Float)),
             (16, &TypeDesc::Vector(PrimitiveType::Int, 3)),
-        ])
+        ]))
     );
 }
 
@@ -54,10 +50,10 @@ fn test_derive_in_function() {
 
     assert_eq!(
         <TestLayout3 as StructuredBufferData>::TYPE,
-        &TypeDesc::Struct(&[
+        &TypeDesc::Struct(StructLayout::new(&[
             (0, &TypeDesc::Vector(PrimitiveType::Int, 3)),
             (12, &TypeDesc::Primitive(PrimitiveType::Float)),
             (16, &TypeDesc::Vector(PrimitiveType::Int, 3)),
-        ])
+        ]))
     );
 }

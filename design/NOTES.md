@@ -1940,3 +1940,76 @@ GraphicsPipeline trait
     - render-extra
     - render-gl
     - macros
+- what to test:
+    - validation of argument blocks
+    - quad rendering
+ 
+#### Strongly-typed render targets
+- Image types:
+    - RenderTarget: image usable as a color attachment
+        - can be converted into image
+    - DepthRenderTarget: image usable as a depth attachment
+        - can be converted into image
+    - Image: generic image type
+        - pointer to image
+        - flags?
+        - can be downcasted to other types via TryFrom/TryInto
+    - Texture: can be sampled
+- Q: where to put the flags?
+    - alongside image ref?
+        - so that the backend doesn't need to worry about it
+        - but wasted space if it's statically known
+        - same as format, basically
+- Image
+    - ImageWithFormat
+        - TypedImage
+
+- RenderTarget(Image): guaranteed to be an image suitable for a color attachment
+- DepthRenderTarget(Image): guaranteed to be an image suitable for a depth attachment
+    - impl 
+- Texture(Image): suitable for sampling as a texture
+- Both?
+    Texture + RenderTarget?
+    Texture + RenderTarget + StaticFormat + DepthRenderTarget
+- if need both RenderTarget & Texture (for instance), then use two wrapper types
+- issue: copying image handles to argument structs incurs unnecessary copy of properties
+    - except if it's a one-way conversion only
+    
+- trait Image
+    - inner()
+    - flags()
+    - is_render_target()
+    - is_texture()
+    - format()
+- trait TypedImage<I: Pixel>: ImageWithFormat<...>
+    - blahblah
+- RenderTarget<I: Image>
+- Texture<I: Image>
+- GenericImage
+    - inner ref
+    - flags
+    - dimensions
+    
+- Distinction Image / ImageView?
+    - ImageView in arguments
+    - Image everywhere else
+    
+#### Investigate a D3D12 Backend as a proof of concept
+- why not vulkan? 
+    - D3D12 has nice tools 
+    
+#### Autograph-render-extra: "batteries included" rendering engine
+- frame graph library
+- image loading utilities 
+    - reexport OIIO
+    - load texture directly from file
+    - save texture to file
+- general render passes
+    - blitting
+    - downsampling
+    - adv. blending
+- mesh rendering utilities
+- 2D rendering utilities
+- reexport UI
+
+    

@@ -222,8 +222,9 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                 // depth stencil render target --------------------------------------------
                 else if pitem.depth_stencil_render_target.is_some() {
                     if !seen_dst {
-                        stmts
-                            .push(quote! { depth_stencil_render_target = Some(self.#name.into()) });
+                        stmts.push(
+                            quote! { depth_stencil_render_target = Some(self.#name.into()); },
+                        );
                         seen_dst = true;
                     } else {
                         stmts.push(

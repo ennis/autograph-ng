@@ -15,5 +15,5 @@ log = "0.4.6"
 lyon = { version = "0.11.0", features = ["extra"] }
 font-kit = "0.1.0"
 fxhash = "0.2.1"
-autograph-render = { path = "../render", features = ["glm-types"] }
+autograph-render = { path = "../render", features = ["glm"] }
 autograph-render-gl = { path = "../render-gl" }

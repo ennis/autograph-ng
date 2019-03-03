@@ -8,7 +8,7 @@ use crate::Backend;
 pub use autograph_render_macros::VertexData;
 
 /// Describes the type of indices contained in an index buffer.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum IndexFormat {
     /// 16-bit unsigned integer indices
     U16,
@@ -151,7 +151,7 @@ pub unsafe trait VertexAttributeType {
 }
 
 // Vertex attribute types --------------------------------------------------------------------------
-macro_rules! impl_vertex_attrib_type {
+macro_rules! impl_attrib_type {
     ($t:ty, $equiv:expr, $fmt:ident) => {
         unsafe impl VertexAttributeType for $t {
             const EQUIVALENT_TYPE: TypeDesc<'static> = $equiv;
@@ -160,38 +160,62 @@ macro_rules! impl_vertex_attrib_type {
     };
 }
 
-impl_vertex_attrib_type!(f32, TypeDesc::Primitive(PrimitiveType::Float), R32_SFLOAT);
-impl_vertex_attrib_type!(
-    [f32; 2],
-    TypeDesc::Vector(PrimitiveType::Float, 2),
-    R32G32_SFLOAT
-);
-impl_vertex_attrib_type!(
-    [f32; 3],
-    TypeDesc::Vector(PrimitiveType::Float, 3),
-    R32G32B32_SFLOAT
-);
-impl_vertex_attrib_type!(
-    [f32; 4],
-    TypeDesc::Vector(PrimitiveType::Float, 4),
-    R32G32B32A32_SFLOAT
-);
-impl_vertex_attrib_type!(i32, TypeDesc::Primitive(PrimitiveType::Int), R32_SINT);
-impl_vertex_attrib_type!(
-    [i32; 2],
-    TypeDesc::Vector(PrimitiveType::Int, 2),
-    R32G32_SINT
-);
-impl_vertex_attrib_type!(
-    [i32; 3],
-    TypeDesc::Vector(PrimitiveType::Int, 3),
-    R32G32B32_SINT
-);
-impl_vertex_attrib_type!(
-    [i32; 4],
-    TypeDesc::Vector(PrimitiveType::Int, 4),
-    R32G32B32A32_SINT
-);
+macro_rules! impl_attrib_prim_type {
+    ($t:ty, $prim:ident, $fmt:ident) => {
+        unsafe impl VertexAttributeType for $t {
+            const EQUIVALENT_TYPE: TypeDesc<'static> = TypeDesc::Primitive(PrimitiveType::$prim);
+            const FORMAT: Format = Format::$fmt;
+        }
+    };
+}
+
+macro_rules! impl_attrib_array_type {
+    ([$t:ty; $len:expr], $prim:ident, $fmt:ident) => {
+        unsafe impl VertexAttributeType for [$t; $len] {
+            const EQUIVALENT_TYPE: TypeDesc<'static> = TypeDesc::Vector(PrimitiveType::$prim, $len);
+            const FORMAT: Format = Format::$fmt;
+        }
+    };
+}
+
+// F32
+impl_attrib_prim_type!(f32, Float, R32_SFLOAT);
+impl_attrib_array_type!([f32; 2], Float, R32G32_SFLOAT);
+impl_attrib_array_type!([f32; 3], Float, R32G32B32_SFLOAT);
+impl_attrib_array_type!([f32; 4], Float, R32G32B32A32_SFLOAT);
+
+// U32
+impl_attrib_prim_type!(u32, UnsignedInt, R32_UINT);
+impl_attrib_array_type!([u32; 2], UnsignedInt, R32G32_UINT);
+impl_attrib_array_type!([u32; 3], UnsignedInt, R32G32B32_UINT);
+impl_attrib_array_type!([u32; 4], UnsignedInt, R32G32B32A32_UINT);
+
+impl_attrib_prim_type!(i32, Int, R32_SINT);
+impl_attrib_array_type!([i32; 2], Int, R32G32_SINT);
+impl_attrib_array_type!([i32; 3], Int, R32G32B32_SINT);
+impl_attrib_array_type!([i32; 4], Int, R32G32B32A32_SINT);
+
+// U8
+impl_attrib_prim_type!(u16, UnsignedInt, R16_UINT);
+impl_attrib_array_type!([u16; 2], UnsignedInt, R16G16_UINT);
+impl_attrib_array_type!([u16; 3], UnsignedInt, R16G16B16_UINT);
+impl_attrib_array_type!([u16; 4], UnsignedInt, R16G16B16A16_UINT);
+
+impl_attrib_prim_type!(i16, Int, R16_SINT);
+impl_attrib_array_type!([i16; 2], Int, R16G16_SINT);
+impl_attrib_array_type!([i16; 3], Int, R16G16B16_SINT);
+impl_attrib_array_type!([i16; 4], Int, R16G16B16A16_SINT);
+
+// U8
+impl_attrib_prim_type!(u8, UnsignedInt, R8_UINT);
+impl_attrib_array_type!([u8; 2], UnsignedInt, R8G8_UINT);
+impl_attrib_array_type!([u8; 3], UnsignedInt, R8G8B8_UINT);
+impl_attrib_array_type!([u8; 4], UnsignedInt, R8G8B8A8_UINT);
+
+impl_attrib_prim_type!(i8, Int, R8_SINT);
+impl_attrib_array_type!([i8; 2], Int, R8G8_SINT);
+impl_attrib_array_type!([i8; 3], Int, R8G8B8_SINT);
+impl_attrib_array_type!([i8; 4], Int, R8G8B8A8_SINT);
 
 // Index data types --------------------------------------------------------------------------------
 macro_rules! impl_index_data {
@@ -205,27 +229,27 @@ macro_rules! impl_index_data {
 impl_index_data!(u16, U16);
 impl_index_data!(u32, U32);
 
-#[cfg(feature = "glm-types")]
-impl_vertex_attrib_type!(
+#[cfg(feature = "glm")]
+impl_attrib_type!(
     nalgebra_glm::Vec2,
     TypeDesc::Vector(PrimitiveType::Float, 2),
     R32G32_SFLOAT
 );
-#[cfg(feature = "glm-types")]
-impl_vertex_attrib_type!(
+#[cfg(feature = "glm")]
+impl_attrib_type!(
     nalgebra_glm::Vec3,
     TypeDesc::Vector(PrimitiveType::Float, 3),
     R32G32B32_SFLOAT
 );
-#[cfg(feature = "glm-types")]
-impl_vertex_attrib_type!(
+#[cfg(feature = "glm")]
+impl_attrib_type!(
     nalgebra_glm::Vec4,
     TypeDesc::Vector(PrimitiveType::Float, 4),
     R32G32B32A32_SFLOAT
 );
 
-#[cfg(feature = "glm-types")]
-impl_vertex_attrib_type!(
+#[cfg(feature = "glm")]
+impl_attrib_type!(
     nalgebra_glm::U8Vec4,
     TypeDesc::Vector(PrimitiveType::Float, 4),
     R8G8B8A8_UNORM

@@ -7,7 +7,6 @@ edition = '2018'
 [dependencies]
 bitflags = "1.0.4"
 config = "0.9.1"
-#byteorder = "1.2.7"
 log = "0.4.6"
 time = "0.1.41"
 smallvec = "0.6.7"
@@ -20,5 +19,9 @@ autograph-spirv = { path = "../spirv" }
 autograph-render-macros = { path = "macros" }
 autograph-shader-macros = { path = "../shader/macros" }
 
+[dev-dependencies]
+autograph-render-test = { path = "../render-test" }
+lyon = { version = "0.11.0", features = ["extra"] }
+
 [features]
-glm-types = ["nalgebra-glm"]
+glm = ["nalgebra-glm"]

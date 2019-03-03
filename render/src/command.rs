@@ -257,12 +257,12 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
 
 /// TODO optimize (radix sort, dense command buffer layout, separate index map)
 pub fn sort_command_buffers<'a, B: Backend>(
-    cmdbufs: Vec<CommandBuffer<'a, B>>,
+    cmdbufs: impl IntoIterator<Item = CommandBuffer<'a, B>>,
 ) -> Vec<Command<'a, B>> {
     let mut fused = Vec::new();
     //let mut sortkeys = Vec::new();
     //let mut i: usize = 0;
-    for cmdbuf in cmdbufs.iter() {
+    for cmdbuf in cmdbufs.into_iter() {
         for cmd in cmdbuf.commands.iter() {
             fused.push(cmd.clone());
             //sortkeys.push(cmd.sortkey);

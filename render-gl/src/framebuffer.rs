@@ -100,7 +100,7 @@ impl GlFramebuffer {
         let status = unsafe { gl.CheckNamedFramebufferStatus(obj, gl::DRAW_FRAMEBUFFER) };
 
         if status == gl::FRAMEBUFFER_COMPLETE {
-            Ok(GlFramebuffer { obj: dbg!(obj) })
+            Ok(GlFramebuffer { obj: obj })
         } else {
             Err(status)
         }

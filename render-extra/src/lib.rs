@@ -1,2 +1,2 @@
-mod commandext;
-mod quad;
+pub mod commandext;
+pub mod quad;

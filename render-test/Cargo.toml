@@ -1,0 +1,11 @@
+[package]
+name = "autograph-render-test"
+version = "0.1.0"
+authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
+edition = '2018'
+
+[dependencies]
+autograph-render-gl = { path = "../render-gl" }
+autograph-render = { path = "../render" }
+glutin = "0.19.0"
+config = "0.9.2"

@@ -151,6 +151,12 @@ pub struct StructLayout<'tcx> {
     pub fields: &'tcx [(usize, &'tcx TypeDesc<'tcx>)],
 }
 
+impl<'tcx> StructLayout<'tcx> {
+    pub fn new(fields: &'tcx [(usize, &'tcx TypeDesc<'tcx>)]) -> StructLayout<'tcx> {
+        StructLayout { fields }
+    }
+}
+
 /// Describes a data type used inside a SPIR-V shader
 /// (e.g. the type of a uniform, or the type of vertex attributes as seen by the shader).
 ///

@@ -1,21 +1,177 @@
 use crate::Backend;
 use bitflags::bitflags;
 use std::fmt;
+use std::convert::TryFrom;
+use crate::error::Error;
+
+/// An image.
+#[derive(derivative::Derivative)]
+#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+pub struct GenericImage<'a, B: Backend> {
+    pub(crate) inner: &'a B::Image,
+    pub(crate) flags: ImageUsageFlags,
+}
+
+impl<'a, B: Backend> GenericImage<'a, B> {
+    pub fn inner(&self) -> &'a B::Image {
+        self.inner
+    }
+
+    pub fn flags(&self) -> ImageUsageFlags {
+        self.flags
+    }
+
+    pub fn is_render_target(&self) -> bool {
+        self.flags.intersects(ImageUsageFlags::COLOR_ATTACHMENT)
+    }
+
+    pub fn is_texture(&self) -> bool {
+        self.flags.intersects(ImageUsageFlags::SAMPLED)
+    }
+
+    pub fn is_storage(&self) -> bool {
+        self.flags.intersects(ImageUsageFlags::STORAGE)
+    }
+
+
+    pub fn try_into_texture_view(self, d: SamplerDescription) -> Result<TextureImageView<'a,B>, Error> {
+        if !self.is_texture() {
+            return Err(Error::InvalidSampledImage);
+        }
+        Ok(TextureImageView(self.inner, d))
+    }
+
+    pub fn try_into_texture_view_linear(self) -> Result<TextureImageView<'a, B>, Error> {
+        self.try_into_texture_view(SamplerDescription::LINEAR_MIPMAP_LINEAR)
+    }
+
+    pub fn try_into_texture_view_nearest(self) -> Result<TextureImageView<'a, B>, Error> {
+        self.try_into_texture_view(SamplerDescription::NEAREST_MIPMAP_NEAREST)
+    }
+
+    pub fn try_into_render_target_view(self) -> Result<RenderTargetView<'a,B>, Error> {
+        if !self.is_render_target() {
+            return Err(Error::InvalidRenderTarget);
+        }
+        Ok(RenderTargetView(self.inner))
+    }
+
+    pub fn try_into_image_view(self) -> Result<ImageView<'a,B>, Error> {
+        if !self.is_storage() {
+            return Err(Error::InvalidStorageImage);
+        }
+        Ok(ImageView(self.inner))
+    }
+}
+
+/// An image suitable for every use: render target, texture
+#[derive(derivative::Derivative)]
+#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+#[repr(transparent)]
+pub struct Image<'a, B: Backend>(pub(crate) &'a B::Image);
+
+impl<'a, B: Backend> Image<'a, B> {
+    pub fn inner(&self) -> &'a B::Image {
+        &self.0
+    }
+
+    pub fn into_texture_view(self, d: SamplerDescription) -> TextureImageView<'a, B> {
+        TextureImageView(self.0, d)
+    }
+
+    pub fn into_texture_view_linear(self) -> TextureImageView<'a, B> {
+        TextureImageView(self.0, SamplerDescription::LINEAR_MIPMAP_LINEAR)
+    }
+
+    pub fn into_texture_view_nearest(self) -> TextureImageView<'a, B> {
+        TextureImageView(self.0, SamplerDescription::NEAREST_MIPMAP_NEAREST)
+    }
+
+    pub fn into_render_target_view(self) -> RenderTargetView<'a, B> {
+        RenderTargetView(self.0)
+    }
+
+    pub fn into_image_view(self) -> ImageView<'a, B> {
+        ImageView(self.0)
+    }
+}
+
+
+/// An image only suitable for use as a color render target
+#[derive(derivative::Derivative)]
+#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+#[repr(transparent)]
+pub struct RenderTargetImage<'a, B: Backend>(pub(crate) &'a B::Image);
+
+impl<'a,B:Backend> RenderTargetImage<'a,B> {
+    pub fn inner(&self) -> &'a B::Image {
+        &self.0
+    }
+
+    pub fn into_render_target(self) -> RenderTargetView<'a,B> {
+        RenderTargetView(self.0)
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Image views
 
 #[derive(derivative::Derivative)]
 #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
 #[repr(transparent)]
-pub struct Image<'a, B: Backend>(pub &'a B::Image);
+pub struct ImageView<'a, B: Backend>(pub(crate) &'a B::Image);
 
-impl<'a, B: Backend> Image<'a, B> {
-    pub fn into_sampled(self, d: SamplerDescription) -> SampledImage<'a, B> {
-        SampledImage(self.0, d)
+impl<'a,B:Backend> From<Image<'a,B>> for ImageView<'a, B> {
+    fn from(img: Image<'a, B>) -> Self {
+        ImageView(img.0)
+    }
+}
+
+impl<'a,B:Backend> TryFrom<GenericImage<'a,B>> for ImageView<'a,B> {
+    type Error = crate::error::Error;
+
+    fn try_from(img: GenericImage<'a, B>) -> Result<Self, Self::Error> {
+        img.try_into_image_view()
+    }
+}
+
+
+#[derive(derivative::Derivative)]
+#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+pub struct TextureImageView<'a, B: Backend>(pub(crate) &'a B::Image, pub SamplerDescription);
+
+
+#[derive(derivative::Derivative)]
+#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+#[repr(transparent)]
+pub struct RenderTargetView<'a, B: Backend>(pub(crate) &'a B::Image);
+
+impl<'a, B: Backend> RenderTargetView<'a,B>
+{
+    pub fn inner(&self) -> &'a B::Image {
+        self.0
+    }
+}
+
+impl<'a,B:Backend> From<Image<'a,B>> for RenderTargetView<'a, B> {
+    fn from(img: Image<'a, B>) -> Self {
+        RenderTargetView(img.0)
+    }
+}
+
+impl<'a,B:Backend> TryFrom<GenericImage<'a,B>> for RenderTargetView<'a,B> {
+    type Error = crate::error::Error;
+
+    fn try_from(img: GenericImage<'a, B>) -> Result<Self, Self::Error> {
+        img.try_into_render_target_view()
     }
 }
 
 #[derive(derivative::Derivative)]
 #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
-pub struct SampledImage<'a, B: Backend>(pub &'a B::Image, pub SamplerDescription);
+#[repr(transparent)]
+pub struct DepthRenderTargetView<'a, B: Backend>(pub &'a B::Image);
+
 
 /// Dimensions of an image.
 ///
@@ -292,3 +448,39 @@ impl SamplerDescription {
         mipmap_mode: SamplerMipmapMode::Nearest,
     };
 }
+
+/*
+//--------------------------------------------------------------------------------------------------
+pub struct ImageBuilder<'a, B: Backend>
+{
+    arena: &'a Arena<'a, B>,
+    format: Format,
+    dimensions: Dimensions,
+    mips: MipmapsCount,
+    samples: u32,
+    usage: ImageUsageFlags,
+    aliasing: AliasScope,
+}
+
+impl<'a,B:Backend> ImageBuilder<'a, B>
+{
+    pub fn new(arena: &'a Arena<'a, B>) -> ImageBuilder<'a,B>
+    {
+        ImageBuilder {
+            arena,
+            format: Format::R8G8B8A8_SRGB,
+            dimensions: (512,512).into(),
+            mips: MipmapsCount::One,
+            samples: 1,
+            usage: Default::default(),
+            aliasing: AliasScope::no_alias()
+        }
+    }
+}*/
+
+// Strongly-typed render targets?
+// arena.create_render_target(...) -> RenderTarget
+// impl From<Image> for RenderTarget
+
+// arena.image(Format::R8G8B8A8_SRGB, (512,512)).build() -> Image
+// arena.image(Format::..., (512,512)).with_pixels(...) -> Image

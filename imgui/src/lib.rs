@@ -5,7 +5,7 @@ use autograph_render::{
     command::{CommandBuffer, DrawIndexedParams},
     format::Format,
     glm,
-    image::{ImageUsageFlags, MipmapsCount, SampledImage, SamplerDescription},
+    image::{ImageUsageFlags, MipmapsCount, TextureImageView, SamplerDescription},
     include_shader,
     pipeline::{
         Arguments, ColorBlendState, DepthStencilState, GraphicsPipelineCreateInfo,
@@ -55,7 +55,7 @@ struct ImArguments<'a, B: Backend> {
     #[argument(vertex_buffer)]
     vertices: Buffer<'a, B, [ImDrawVert]>,
     #[argument(sampled_image)]
-    tex: SampledImage<'a, B>,
+    tex: TextureImageView<'a, B>,
     #[argument(index_buffer)]
     indices: Buffer<'a, B, [u16]>,
     #[argument(scissor)]
@@ -82,7 +82,7 @@ fn create_pipeline<'a, B: Backend>(
 pub struct ImGuiRenderer<'a, B: Backend> {
     pipeline: TypedGraphicsPipeline<'a, B, ImArguments<'a, B>>,
     render_target: TypedArgumentBlock<'a, B, ImRenderTarget<'a, B>>,
-    font_tex: SampledImage<'a, B>,
+    font_tex: TextureImageView<'a, B>,
 }
 
 impl<'a, B: Backend> ImGuiRenderer<'a, B> {
@@ -123,7 +123,7 @@ impl<'a, B: Backend> ImGuiRenderer<'a, B> {
 
         ImGuiRenderer {
             pipeline,
-            font_tex: font_tex.into_sampled(SamplerDescription::NEAREST_MIPMAP_NEAREST),
+            font_tex: font_tex.into_texture_view(SamplerDescription::NEAREST_MIPMAP_NEAREST),
             render_target,
         }
     }
@@ -158,16 +158,19 @@ impl<'a, B: Backend> ImGuiRenderer<'a, B> {
             0.0,
             0.0,
             0.0,
+
             0.0,
-            2.0 / -(height as f32),
+            2.0 / height as f32,
             0.0,
             0.0,
+
             0.0,
             0.0,
             -1.0,
             0.0,
+
             -1.0,
-            1.0,
+            -1.0,
             0.0,
             1.0,
         ));
@@ -176,10 +179,10 @@ impl<'a, B: Backend> ImGuiRenderer<'a, B> {
 
         for cmd in draw_list.cmd_buffer.iter() {
             let scissor = ScissorRect {
+                x: (cmd.clip_rect.x * scale_width) as i32,
+                y: (cmd.clip_rect.y * scale_height) as i32,
                 width: ((cmd.clip_rect.z - cmd.clip_rect.x) * scale_width) as u32,
                 height: ((cmd.clip_rect.w - cmd.clip_rect.y) * scale_height) as u32,
-                x: (cmd.clip_rect.x * scale_width) as i32,
-                y: ((height - cmd.clip_rect.w) * scale_height) as i32,
             };
 
             let args = frame_arena.create_typed_argument_block(ImArguments {

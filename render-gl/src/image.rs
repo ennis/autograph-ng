@@ -291,6 +291,8 @@ pub unsafe fn upload_image_region(
     gl.GetIntegerv(gl::UNPACK_ALIGNMENT, &mut prev_unpack_alignment);
     gl.PixelStorei(gl::UNPACK_ALIGNMENT, 1);
 
+
+
     match target {
         gl::TEXTURE_1D => {
             gl.TextureSubImage1D(

@@ -15,7 +15,7 @@ pub trait CommandBufferExt<'a, B: Backend> {
     );
 }
 
-impl<'a, B: Backend> CommandBufferExt for CommandBuffer<'a, B> {
+impl<'a, B: Backend> CommandBufferExt<'a, B> for CommandBuffer<'a, B> {
     fn draw_quad<A: Arguments<'a, B>>(
         &mut self,
         sortkey: u64,

@@ -13,8 +13,8 @@ pub fn create_instance_and_window(
     let context_builder = glutin::ContextBuilder::new()
         .with_gl_profile(glutin::GlProfile::Core)
         .with_gl_debug_flag(true)
-        .with_vsync(true)
-        .with_srgb(true)
+        //.with_vsync(true)
+        //.with_srgb(true)
         .with_gl(glutin::GlRequest::Specific(glutin::Api::OpenGl, (4, 6)));
 
     let window = Arc::new(

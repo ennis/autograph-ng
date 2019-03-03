@@ -8,11 +8,11 @@ use crate::{
 };
 use autograph_render::{
     descriptor::{Descriptor, DescriptorType},
-    framebuffer::RenderTargetDescriptor,
     pipeline::{BareArgumentBlock, Scissor, SignatureDescription, Viewport},
     vertex::{IndexBufferDescriptor, IndexFormat, VertexBufferDescriptor},
 };
 use std::{iter, slice};
+use autograph_render::image::RenderTargetView;
 
 /// Proposal: flatten signature?
 /// At least, no need to store inherited (only the length matters)
@@ -206,8 +206,8 @@ impl GlArgumentBlock {
         descriptors: impl IntoIterator<Item = Descriptor<'a, OpenGlBackend>>,
         vertex_buffers: impl IntoIterator<Item = VertexBufferDescriptor<'a, 'b, OpenGlBackend>>,
         index_buffer: Option<IndexBufferDescriptor<'a, OpenGlBackend>>,
-        render_targets: impl IntoIterator<Item = RenderTargetDescriptor<'a, OpenGlBackend>>,
-        depth_stencil_render_target: Option<RenderTargetDescriptor<'a, OpenGlBackend>>,
+        render_targets: impl IntoIterator<Item = RenderTargetView<'a, OpenGlBackend>>,
+        depth_stencil_render_target: Option<RenderTargetView<'a, OpenGlBackend>>,
         viewports: impl IntoIterator<Item = Viewport>,
         scissors: impl IntoIterator<Item = Scissor>,
     ) -> &'a GlArgumentBlock {
@@ -431,18 +431,18 @@ impl GlArgumentBlock {
                     (&*a).collect_render_targets(&mut tmp_color, &mut tmp_depth_stencil);
                 }
             }
-            tmp_color.extend(render_targets.into_iter().map(|rt| rt.image));
+            tmp_color.extend(render_targets.into_iter().map(|rt| rt.inner()));
 
             if let Some(dst) = depth_stencil_render_target {
                 assert!(tmp_depth_stencil.is_none());
                 assert!(signature.has_depth_render_target);
-                tmp_depth_stencil = Some(dst.image);
+                tmp_depth_stencil = Some(dst.inner());
             }
 
             // build framebuffer
             // put in arena so that it's deleted at the same time as the argument block
             let fb = arena.framebuffers.alloc(
-                GlFramebuffer::new(gl, dbg!(&tmp_color[..]), tmp_depth_stencil)
+                GlFramebuffer::new(gl, &tmp_color[..], tmp_depth_stencil)
                     .expect("failed to create framebuffer"),
             );
 
@@ -451,7 +451,7 @@ impl GlArgumentBlock {
             if signature.num_render_targets > 0 {
                 let rt = arena
                     .other
-                    .alloc_extend(render_targets.into_iter().map(|rt| rt.image as *const _));
+                    .alloc_extend(render_targets.into_iter().map(|rt| rt.inner() as *const _));
                 assert_eq!(rt.len(), signature.num_render_targets);
                 push_state_block(StateBlock::RenderTarget(rt.as_ptr()));
             } else {
@@ -461,7 +461,7 @@ impl GlArgumentBlock {
             if signature.has_depth_render_target {
                 assert!(depth_stencil_render_target.is_some());
                 push_state_block(StateBlock::DepthStencilRenderTarget(
-                    depth_stencil_render_target.unwrap().image,
+                    depth_stencil_render_target.unwrap().inner(),
                 ));
             } else {
                 assert!(depth_stencil_render_target.is_none());

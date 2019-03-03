@@ -7,7 +7,7 @@ edition = '2018'
 
 [dependencies]
 log = "0.4.6"
-autograph-render = { path = "../render", features = ["glm-types"] }
+autograph-render = { path = "../render", features = ["glm"] }
 imgui = "0.0.22"
 
 [dev-dependencies]

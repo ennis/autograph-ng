@@ -13,12 +13,37 @@
     - no need for error msg since we should abandon immediately on encountering a non-repr(C)
 - (render-gl/util) unit tests for dropless arena
 - (render/pipeline/validation) validate fragment outputs
+- (render-gl) don't use config crate for configuration
+    - just pass a struct to the backend
+- (render-extra) load texture from file (OpenImageIO integration)
+- (render) create texture and clear with color
+    - maybe in render-extra?
+    - trait ArenaExt
+- (render) validation of ImageUsage flags when used as attachment or sampled image
+- (render) image builders for convenience
+DONE (render/validation) support booleans in structured buffer interfaces
+    - it's not easy because OpTypeBool in spirv cannot be used in externally visible interfaces
+    - and a bool in a repr(C) obviously does not satisfy the std140 rules...
+    - we loose the "bool" type info somewhere
+        -> don't support bool in structured buffers
+        -> instead, create a BoolU32 type that is equivalent to PrimitiveType::UnsignedInt
 
 - POSTPONED (render/pipeline/validation) Precise errors
     - the current output is the debug formatted TypeDesc, which is readable enough
     - maybe pinpoint the error instead of dumping the whole typedesc? 
         - not a priority: it's easy enough to compare two TypeDesc dumps visually
-        
+
+- (render-extra) post-proc stack
+- (render) blitting
+- (render) sort out descriptors / textures / render targets 
+    - storage_image: ImageView
+    - sampled_image: ImageView OR TextureImageView 
+        - issue: ImageView can be created even if image cannot be sampled
+        - the type in the member does not encode the requirement
+            - the sampler can be statically specified
+        - check validity as soon as possible
+    - render_target: RenderTargetView
+    - StorageImageView, TextureView, 
     
 ### Enhancements
 - (render/validation) accept structs with single member in place of just the member

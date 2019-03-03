@@ -23,10 +23,12 @@
 
 // necessary for const NotNaN
 #![feature(const_transmute)]
+// hopefully stable soon
+#![feature(try_from)]
 extern crate log;
 
 // Reexport nalgebra_glm types if requested
-#[cfg(feature = "glm-types")]
+#[cfg(feature = "glm")]
 pub use nalgebra_glm as glm;
 
 pub mod buffer;
@@ -42,9 +44,9 @@ pub mod traits;
 pub mod typedesc;
 mod util;
 pub mod vertex;
+pub mod error;
 
 pub use crate::{buffer::*, command::*, descriptor::*, format::*, image::*, util::*};
-
 
 // re-export macros
 pub use autograph_shader_macros::{
@@ -52,17 +54,15 @@ pub use autograph_shader_macros::{
     include_shader,
 };
 
-use crate::swapchain::Swapchain;
-use std::marker::PhantomData;
 use crate::{
-    framebuffer::RenderTargetDescriptor,
     pipeline::{
         Arguments, GraphicsPipeline, GraphicsPipelineCreateInfo, Scissor, ShaderModule,
         ShaderStageFlags, Viewport,
     },
+    swapchain::Swapchain,
     vertex::{IndexBufferDescriptor, VertexBufferDescriptor},
 };
-use std::{any::TypeId, collections::HashMap, fmt::Debug, hash::Hash, mem};
+use std::{any::TypeId, collections::HashMap, fmt::Debug, hash::Hash, marker::PhantomData, mem};
 //use crate::pipeline::validate::ValidationError;
 use crate::pipeline::{
     validate::validate_spirv_graphics_pipeline, ArgumentBlock, BareArgumentBlock,
@@ -207,8 +207,8 @@ pub trait Instance<B: Backend> {
         descriptors: impl IntoIterator<Item = Descriptor<'a, B>>,
         vertex_buffers: impl IntoIterator<Item = VertexBufferDescriptor<'a, 'b, B>>,
         index_buffer: Option<IndexBufferDescriptor<'a, B>>,
-        render_targets: impl IntoIterator<Item = RenderTargetDescriptor<'a, B>>,
-        depth_stencil_render_target: Option<RenderTargetDescriptor<'a, B>>,
+        render_targets: impl IntoIterator<Item = RenderTargetView<'a, B>>,
+        depth_stencil_render_target: Option<RenderTargetView<'a, B>>,
         viewports: impl IntoIterator<Item = Viewport>,
         scissors: impl IntoIterator<Item = Scissor>,
     ) -> &'a B::ArgumentBlock;
@@ -251,6 +251,158 @@ pub trait Backend:
     type Signature: Sync + Debug;
     type ArgumentBlock: Sync + Debug;
     type HostReference: Sync + Debug;
+}
+
+/// Dummy backend for testing purposes.
+///
+/// Should this be in render-test?
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct DummyBackend;
+
+#[derive(Debug)]
+pub struct DummySwapchain;
+
+impl traits::Swapchain for DummySwapchain {
+    fn size(&self) -> (u32, u32) {
+        unimplemented!()
+    }
+}
+
+impl Backend for DummyBackend {
+    type Instance = DummyInstance;
+    type Arena = ();
+    type Swapchain = DummySwapchain;
+    type Image = ();
+    type Buffer = ();
+    type ShaderModule = ();
+    type GraphicsPipeline = ();
+    type Signature = ();
+    type ArgumentBlock = ();
+    type HostReference = ();
+}
+
+/// Dummy instance for testing purposes.
+///
+/// All functions panic when called.
+pub struct DummyInstance;
+
+impl Instance<DummyBackend> for DummyInstance {
+    unsafe fn create_arena(&self) -> Box<()> {
+        unimplemented!()
+    }
+
+    unsafe fn drop_arena(&self, _arena: Box<()>) {
+        unimplemented!()
+    }
+
+    unsafe fn create_swapchain<'a>(&self, _arena: &'a ()) -> &'a DummySwapchain {
+        unimplemented!()
+    }
+
+    unsafe fn default_swapchain<'a>(&'a self) -> Option<&DummySwapchain> {
+        unimplemented!()
+    }
+
+    unsafe fn create_immutable_image<'a>(
+        &self,
+        _arena: &'a (),
+        _format: Format,
+        _dimensions: Dimensions,
+        _mipcount: MipmapsCount,
+        _samples: u32,
+        _usage: ImageUsageFlags,
+        _initial_data: &[u8],
+    ) -> &'a () {
+        unimplemented!()
+    }
+
+    unsafe fn create_image<'a>(
+        &self,
+        _arena: &'a (),
+        _scope: AliasScope,
+        _format: Format,
+        _dimensions: Dimensions,
+        _mipcount: MipmapsCount,
+        _samples: u32,
+        _usage: ImageUsageFlags,
+    ) -> &'a () {
+        unimplemented!()
+    }
+
+    unsafe fn update_image(
+        &self,
+        _image: &(),
+        _min_extent: (u32, u32, u32),
+        _max_extent: (u32, u32, u32),
+        _data: &[u8],
+    ) {
+        unimplemented!()
+    }
+
+    unsafe fn create_immutable_buffer<'a>(
+        &self,
+        _arena: &'a (),
+        _size: u64,
+        _data: &[u8],
+    ) -> &'a () {
+        unimplemented!()
+    }
+
+    unsafe fn create_buffer<'a>(&self, _arena: &'a (), _size: u64) -> &'a () {
+        unimplemented!()
+    }
+
+    unsafe fn create_shader_module<'a>(
+        &self,
+        _arena: &'a (),
+        _spirv: &[u8],
+        _stage: ShaderStageFlags,
+    ) -> &'a () {
+        unimplemented!()
+    }
+
+    unsafe fn create_graphics_pipeline<'a>(
+        &self,
+        _arena: &'a (),
+        _root_signature: &'a (),
+        _root_signature_description: &SignatureDescription,
+        _create_info: &GraphicsPipelineCreateInfo<DummyBackend>,
+    ) -> &'a () {
+        unimplemented!()
+    }
+
+    unsafe fn create_signature<'a>(
+        &'a self,
+        _arena: &'a (),
+        _inherited: &[&()],
+        _description: &SignatureDescription,
+    ) -> &'a () {
+        unimplemented!()
+    }
+
+    unsafe fn create_argument_block<'a, 'b>(
+        &self,
+        _arena: &'a (),
+        _signature: &'a (),
+        _arguments: impl IntoIterator<Item = BareArgumentBlock<'a, DummyBackend>>,
+        _descriptors: impl IntoIterator<Item = Descriptor<'a, DummyBackend>>,
+        _vertex_buffers: impl IntoIterator<Item = VertexBufferDescriptor<'a, 'b, DummyBackend>>,
+        _index_buffer: Option<IndexBufferDescriptor<'a, DummyBackend>>,
+        _render_targets: impl IntoIterator<Item = RenderTargetView<'a, DummyBackend>>,
+        _depth_stencil_render_target: Option<RenderTargetView<'a, DummyBackend>>,
+        _viewports: impl IntoIterator<Item = Viewport>,
+        _scissors: impl IntoIterator<Item = Scissor>,
+    ) -> &'a () {
+        unimplemented!()
+    }
+
+    unsafe fn create_host_reference<'a>(&self, _arena: &'a (), _data: &'a [u8]) -> &'a () {
+        unimplemented!()
+    }
+
+    unsafe fn submit_frame<'a>(&self, _commands: &[Command<'a, DummyBackend>]) {
+        unimplemented!()
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -445,15 +597,15 @@ impl<'r, B: Backend> Arena<'r, B> {
     ///
     /// See also [AliasScope].
     #[inline]
-    pub fn create_image(
-        &self,
+    pub fn create_image<'a>(
+        &'a self,
         scope: AliasScope,
         format: Format,
         dimensions: Dimensions,
         mipcount: MipmapsCount,
         samples: u32,
         usage: ImageUsageFlags,
-    ) -> Image<B> {
+    ) -> Image<'a, B> {
         Image(unsafe {
             self.instance.create_image(
                 &self.inner(),
@@ -576,8 +728,8 @@ impl<'r, B: Backend> Arena<'r, B> {
         descriptors: impl IntoIterator<Item = Descriptor<'a, B>>,
         vertex_buffers: impl IntoIterator<Item = VertexBufferDescriptor<'a, 'b, B>>,
         index_buffer: Option<IndexBufferDescriptor<'a, B>>,
-        render_targets: impl IntoIterator<Item = RenderTargetDescriptor<'a, B>>,
-        depth_stencil_render_target: Option<RenderTargetDescriptor<'a, B>>,
+        render_targets: impl IntoIterator<Item = RenderTargetView<'a, B>>,
+        depth_stencil_render_target: Option<RenderTargetView<'a, B>>,
         viewports: impl IntoIterator<Item = Viewport>,
         scissors: impl IntoIterator<Item = Scissor>,
     ) -> ArgumentBlock<'a, B, S> {
@@ -692,7 +844,10 @@ impl<B: Backend> Renderer<B> {
     ///
     /// Frame-granularity synchronization points happen in this call.
     /// A new frame is implicitly started after this call.
-    pub fn submit_frame(&self, command_buffers: Vec<CommandBuffer<'_, B>>) {
+    pub fn submit_frame<'a>(
+        &self,
+        command_buffers: impl IntoIterator<Item = CommandBuffer<'a, B>>,
+    ) {
         let commands = sort_command_buffers(command_buffers);
         unsafe { self.instance.submit_frame(&commands) }
     }

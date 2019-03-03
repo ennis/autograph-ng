@@ -1,6 +1,6 @@
 use autograph_render::{
     format::Format,
-    pipeline::{ArgumentBlock, Arguments, SignatureDescription, TypedSignature},
+    pipeline::{ArgumentBlock, Arguments, Signature, SignatureDescription, TypedSignature},
     typedesc::{PrimitiveType, TypeDesc},
     vertex::{TypedVertexInputAttributeDescription, VertexData, VertexLayout},
     Arena, Backend, Renderer,
@@ -56,15 +56,15 @@ impl<'a, B: Backend> Arguments<'a, B> for QuadVertices<'a, B> {
         signature: TypedSignature<'a, B, Self::IntoInterface>,
         arena: &'a Arena<B>,
     ) -> ArgumentBlock<'a, B, TypedSignature<'a, B, Self::IntoInterface>> {
-        let (left, top, right, bottom) = (-1.0, 1.0, 1.0, -1.0);
+        let (left, top, right, bottom) = (-1.0, -1.0, 1.0, 1.0);
 
         let verts = arena.upload_slice(&[
-            QuadVertex::new([left, top], [0.0, 1.0]),
-            QuadVertex::new([right, top], [1.0, 1.0]),
-            QuadVertex::new([left, bottom], [0.0, 0.0]),
-            QuadVertex::new([left, bottom], [0.0, 0.0]),
-            QuadVertex::new([right, top], [1.0, 1.0]),
-            QuadVertex::new([right, bottom], [1.0, 0.0]),
+            QuadVertex::new([left, top], [0.0, 0.0]),
+            QuadVertex::new([right, top], [1.0, 0.0]),
+            QuadVertex::new([left, bottom], [0.0, 1.0]),
+            QuadVertex::new([left, bottom], [0.0, 1.0]),
+            QuadVertex::new([right, top], [1.0, 0.0]),
+            QuadVertex::new([right, bottom], [1.0, 1.0]),
         ]);
 
         arena.create_argument_block(

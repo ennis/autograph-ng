@@ -5,6 +5,7 @@ members = [
     "render-extra",
     "render-gl",
     "render-boilerplate",
+    "render-test",
     "shader/macros",
     "spirv",
     "style-test",

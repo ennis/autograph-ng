@@ -1,3 +1,37 @@
+//! OpenGL backend for autograph-render.
+//!
+//!
+//! ### Images
+//!
+//! Images that are used exclusively as render targets (i.e. images that only have the COLOR_ATTACHMENT
+//! usage flag set) are created as OpenGL renderbuffers. If any other usage flag is set, a regular
+//! texture is allocated instead.
+//!
+//! ### Presentation
+//!
+//! Currently, it's not possible to render directly into the default framebuffer: all rendering
+//! operations must be done into a texture.
+//! The "present" command then copies the specified image to the default framebuffer with
+//! `glBlitFramebuffer`, and then calls `SwapBuffers`.
+//!
+//! ### Texture & viewport coordinates
+//!
+//! OpenGL sets the origin of viewports and textures to the lower-left corner. For clip-space,
+//! the lower-left corner is at coordinates (-1,1).
+//! For texture data, this means that OpenGL expects the first scanline to be the lowest row of
+//! pixels in the image.
+//!
+//! For consistency with other backends, all texture data is stored upside-down:
+//! i.e. the first scanline will actually be the topmost row of pixels in the original image.
+//! As with other backends, texcoord (0,0) will sample the upper-left pixel, and
+//! when rendering to a texture, the (-1,-1) coordinate in clip space will map to the upper-left corner.
+//!
+//! This is contrary to the usual convention of OpenGL: in debuggers such as RenderDoc,
+//! the contents of textures and render targets will appear to be flipped vertically.
+//!
+//! In order for the images to appear correctly on the screen, image data is flipped vertically
+//! before a "present" operation.
+//!
 #![feature(align_offset)]
 #[macro_use]
 extern crate log;

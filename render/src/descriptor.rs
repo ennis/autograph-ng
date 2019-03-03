@@ -1,12 +1,13 @@
 //! Descriptors
 use crate::{
     buffer::{Buffer, BufferData, BufferTypeless, StructuredBufferData},
-    image::{SampledImage, SamplerDescription},
+    image::{ TextureImageView, SamplerDescription},
     pipeline::ShaderStageFlags,
     typedesc::TypeDesc,
     Backend,
 };
 use std::marker::PhantomData;
+use crate::image::ImageView;
 
 #[derive(Copy, Clone, Debug)]
 #[repr(transparent)]
@@ -94,7 +95,11 @@ impl<'a, B: Backend, T: ?Sized + StructuredBufferData> DescriptorInterface<'a, B
     const TYPE: Option<&'static TypeDesc<'static>> = Some(<T as StructuredBufferData>::TYPE);
 }
 
-impl<'a, B: Backend> DescriptorInterface<'a, B> for SampledImage<'a, B> {
+impl<'a, B: Backend> DescriptorInterface<'a, B> for TextureImageView<'a, B> {
+    const TYPE: Option<&'static TypeDesc<'static>> = None;
+}
+
+impl<'a, B: Backend> DescriptorInterface<'a, B> for ImageView<'a, B> {
     const TYPE: Option<&'static TypeDesc<'static>> = None;
 }
 
@@ -115,11 +120,32 @@ impl<'a, B: Backend, T: BufferData + ?Sized> From<Buffer<'a, B, T>> for Descript
     }
 }
 
-impl<'a, 'b, B: Backend> From<SampledImage<'a, B>> for Descriptor<'a, B> {
-    fn from(img: SampledImage<'a, B>) -> Self {
+impl<'a, B: Backend> From<TextureImageView<'a, B>> for Descriptor<'a, B> {
+    fn from(img: TextureImageView<'a, B>) -> Self {
         Descriptor::SampledImage {
             img: img.0,
             sampler: img.1,
         }
     }
 }
+
+impl<'a, B: Backend> From<ImageView<'a, B>> for Descriptor<'a, B> {
+    fn from(img: ImageView<'a, B>) -> Self {
+        Descriptor::Image {
+            img: img.0
+        }
+    }
+}
+
+/*
+impl<'a, B: Backend> DescriptorInterface<'a, B> for Image<'a, B> {
+    const TYPE: Option<&'static TypeDesc<'static>> = None;
+}*/
+
+/*
+impl<'a, B: Backend> From<Image<'a, B>> for Descriptor<'a, B> {
+    fn from(img: Image<'a, B>) -> Self {
+        Descriptor::Image { img: img.0 }
+    }
+}
+*/

@@ -1,11 +1,10 @@
-use crate::{image::Image, Backend};
-
 //--------------------------------------------------------------------------------------------------
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct FragmentOutputDescription {
     // nothing yet, we just care about the count
 }
 
+/*
 /// Descriptor for a render target (framebuffer attachment).
 #[derive(Copy, Clone, Debug)]
 pub struct RenderTargetDescriptor<'a, B: Backend> {
@@ -17,3 +16,5 @@ impl<'a, B: Backend> From<Image<'a, B>> for RenderTargetDescriptor<'a, B> {
         RenderTargetDescriptor { image: image.0 }
     }
 }
+*/
+

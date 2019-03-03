@@ -1,4 +1,3 @@
-#![feature(const_type_id)]
 #![feature(proc_macro_hygiene)]
 use autograph_render::{
     buffer::StructuredBufferData,
@@ -11,8 +10,7 @@ use autograph_render::{
     },
     vertex::VertexData,
 };
-use autograph_render_boilerplate::*;
-use log::info;
+use autograph_render_test::*;
 use lyon::{
     extra::rust_logo::build_logo_path,
     path::{
@@ -24,21 +22,12 @@ use lyon::{
         FillOptions, FillTessellator, FillVertex, StrokeOptions, StrokeTessellator, StrokeVertex,
     },
 };
-use std::env;
+use std::iter;
 
 static BACKGROUND_VERT: &[u8] = include_shader!("background.vert");
 static BACKGROUND_FRAG: &[u8] = include_shader!("background.frag");
 static PATH_VERT: &[u8] = include_shader!("path.vert");
 static PATH_FRAG: &[u8] = include_shader!("path.frag");
-
-type Backend = autograph_render_gl::OpenGlBackend;
-type Arena<'a> = autograph_render::Arena<'a, Backend>;
-type Buffer<'a, T> = autograph_render::buffer::Buffer<'a, Backend, T>;
-//type BufferTypeless<'a> = autograph_render::buffer::BufferTypeless<'a, Backend>;
-type Image<'a> = autograph_render::image::Image<'a, Backend>;
-type TypedGraphicsPipeline<'a, T> =
-    autograph_render::pipeline::TypedGraphicsPipeline<'a, Backend, T>;
-type TypedArgumentBlock<'a, T> = autograph_render::pipeline::TypedArgumentBlock<'a, Backend, T>;
 
 //--------------------------------------------------------------------------------------------------
 // Shader stuff
@@ -86,7 +75,7 @@ struct BackgroundParams {
 #[argument(backend = "Backend")]
 struct RenderTargets<'a> {
     #[argument(render_target)]
-    color_target: Image<'a>,
+    color_target: RenderTargetView<'a>,
     #[argument(viewport)]
     viewport: Viewport,
 }
@@ -176,7 +165,7 @@ struct TessPath<'a> {
     index_buffer: Buffer<'a, [u16]>,
 }
 
-fn tesselate_path<'a>(arena: &'a Arena) -> (TessPath<'a>, TessPath<'a>) {
+fn tessellate_path<'a>(arena: &'a Arena) -> (TessPath<'a>, TessPath<'a>) {
     let mut builder = SvgPathBuilder::new(Path::builder());
     build_logo_path(&mut builder);
     let path = builder.build();
@@ -251,163 +240,118 @@ fn tesselate_path<'a>(arena: &'a Arena) -> (TessPath<'a>, TessPath<'a>) {
     (stroke, fill)
 }
 
-#[test]
-fn test_simple() {
-    env::set_current_dir(env!("CARGO_MANIFEST_DIR")).unwrap();
+fn main() {
+    autograph_render_test::with_test_fixture(
+        "lyon tessellation test",
+        None,
+        |renderer, arena, main_loop| {
+            let pipelines = create_pipelines(arena);
+            let (stroke_path, fill_path) = tessellate_path(arena);
+            let default_swapchain = renderer.default_swapchain().unwrap();
+            let (w, h) = default_swapchain.size();
+            let color_buffer =
+                arena.create_unaliasable_render_target(Format::R16G16B16A16_SFLOAT, (w, h), 8);
 
-    // this creates an event loop, a window, context, and a swapchain associated to the window.
-    let app = App::new();
-    let r = app.renderer();
-
-    let arena_0 = r.create_arena();
-    // pipelines
-    let pipelines = create_pipelines(&arena_0);
-    let (stroke_path, fill_path) = tesselate_path(&arena_0);
-
-    'outer: loop {
-        let default_swapchain = r.default_swapchain().unwrap();
-        let (w, h) = default_swapchain.size();
-        let arena_1 = r.create_arena();
-        let color_buffer =
-            arena_1.create_unaliasable_render_target(Format::R16G16B16A16_SFLOAT, (w, h), 8);
-
-        let render_targets = arena_1.create_typed_argument_block(RenderTargets {
-            color_target: color_buffer,
-            viewport: (w, h).into(),
-        });
-
-        let (left, top, right, bottom) = (-1.0, 1.0, 1.0, -1.0);
-
-        let vertex_buffer = arena_1.upload_slice(&[
-            Vertex2D::new([left, top]),
-            Vertex2D::new([right, top]),
-            Vertex2D::new([left, bottom]),
-            Vertex2D::new([left, bottom]),
-            Vertex2D::new([right, top]),
-            Vertex2D::new([right, bottom]),
-        ]);
-
-        'inner: loop {
-            //----------------------------------------------------------------------------------
-            // handle events
-            let should_close = app.poll_events(|event| match event {
-                Event::WindowEvent {
-                    event:
-                        WindowEvent::KeyboardInput {
-                            input:
-                                KeyboardInput {
-                                    virtual_keycode: Some(vkey),
-                                    modifiers: mods,
-                                    ..
-                                },
-                            ..
-                        },
-                    ..
-                } => {
-                    info!("key={:?} mod={:?}", vkey, mods);
-                }
-                _ => {}
+            let render_targets = arena.create_typed_argument_block(RenderTargets {
+                color_target: color_buffer.into(),
+                viewport: (w, h).into(),
             });
 
-            let arena_2 = r.create_arena();
-            let mut cmdbuf = r.create_command_buffer();
-            cmdbuf.clear_image(0x0, color_buffer, &[0.0, 0.2, 0.8, 1.0]);
+            let (left, top, right, bottom) = (-1.0, 1.0, 1.0, -1.0);
 
-            //----------------------------------------------------------------------------------
-            // Draw background
-            let background_params = arena_2.upload(&BackgroundParams {
-                resolution: glm::vec2(w as f32, h as f32),
-                scroll_offset: glm::vec2(0.0, 0.0),
-                zoom: 5.0,
-            });
+            let vertex_buffer = arena.upload_slice(&[
+                Vertex2D::new([left, top]),
+                Vertex2D::new([right, top]),
+                Vertex2D::new([left, bottom]),
+                Vertex2D::new([left, bottom]),
+                Vertex2D::new([right, top]),
+                Vertex2D::new([right, bottom]),
+            ]);
 
-            cmdbuf.draw(
-                0x0,
-                &arena_2,
-                pipelines.background,
-                Background {
-                    render_targets,
-                    params: background_params,
-                    vertex_buffer,
-                },
-                DrawParams {
-                    instance_count: 1,
-                    first_instance: 0,
-                    vertex_count: 6,
-                    first_vertex: 0,
-                },
-            );
+            main_loop.run(|| {
+                let arena = renderer.create_arena();
+                let mut cmdbuf = renderer.create_command_buffer();
 
-            //----------------------------------------------------------------------------------
-            // Draw path
+                //----------------------------------------------------------------------------------
+                // Draw background
+                let background_params = arena.upload(&BackgroundParams {
+                    resolution: glm::vec2(w as f32, h as f32),
+                    scroll_offset: glm::vec2(0.0, 0.0),
+                    zoom: 5.0,
+                });
 
-            // fill
-            cmdbuf.draw_indexed(
-                0x0,
-                &arena_2,
-                pipelines.path,
-                PathRendering {
-                    render_targets,
-                    params: background_params,
-                    primitives: arena_2.upload(&Primitive {
-                        color: glm::vec4(1.0, 1.0, 1.0, 1.0),
-                        z_index: 0,
-                        width: 0.0,
-                        translate: glm::vec2(-70.0, -70.0),
-                    }),
-                    vertex_buffer: fill_path.vertex_buffer,
-                    index_buffer: fill_path.index_buffer,
-                },
-                DrawIndexedParams {
-                    first_index: 0,
-                    index_count: fill_path.num_indices as u32,
-                    vertex_offset: 0,
-                    first_instance: 0,
-                    instance_count: 1,
-                },
-            );
+                cmdbuf.draw(
+                    0x0,
+                    &arena,
+                    pipelines.background,
+                    Background {
+                        render_targets,
+                        params: background_params,
+                        vertex_buffer,
+                    },
+                    DrawParams::quad(),
+                );
 
-            // stroke
-            cmdbuf.draw_indexed(
-                0x0,
-                &arena_2,
-                pipelines.path,
-                PathRendering {
-                    render_targets,
-                    params: background_params,
-                    primitives: arena_2.upload(&Primitive {
-                        color: glm::vec4(0.0, 0.0, 0.0, 1.0),
-                        z_index: 0,
-                        width: 1.0,
-                        translate: glm::vec2(-70.0, -70.0),
-                    }),
-                    vertex_buffer: stroke_path.vertex_buffer,
-                    index_buffer: stroke_path.index_buffer,
-                },
-                DrawIndexedParams {
-                    first_index: 0,
-                    index_count: stroke_path.num_indices as u32,
-                    vertex_offset: 0,
-                    first_instance: 0,
-                    instance_count: 1,
-                },
-            );
+                //----------------------------------------------------------------------------------
+                // Draw path
 
-            //----------------------------------------------------------------------------------
-            // Present
-            cmdbuf.present(0x0, color_buffer, default_swapchain);
-            r.submit_frame(vec![cmdbuf]);
+                // fill
+                cmdbuf.draw_indexed(
+                    0x0,
+                    &arena,
+                    pipelines.path,
+                    PathRendering {
+                        render_targets,
+                        params: background_params,
+                        primitives: arena.upload(&Primitive {
+                            color: glm::vec4(1.0, 1.0, 1.0, 1.0),
+                            z_index: 0,
+                            width: 0.0,
+                            translate: glm::vec2(-70.0, -70.0),
+                        }),
+                        vertex_buffer: fill_path.vertex_buffer,
+                        index_buffer: fill_path.index_buffer,
+                    },
+                    DrawIndexedParams {
+                        first_index: 0,
+                        index_count: fill_path.num_indices as u32,
+                        vertex_offset: 0,
+                        first_instance: 0,
+                        instance_count: 1,
+                    },
+                );
 
-            if should_close {
-                break 'outer;
-            }
+                // stroke
+                cmdbuf.draw_indexed(
+                    0x0,
+                    &arena,
+                    pipelines.path,
+                    PathRendering {
+                        render_targets,
+                        params: background_params,
+                        primitives: arena.upload(&Primitive {
+                            color: glm::vec4(0.0, 0.0, 0.0, 1.0),
+                            z_index: 0,
+                            width: 1.0,
+                            translate: glm::vec2(-70.0, -70.0),
+                        }),
+                        vertex_buffer: stroke_path.vertex_buffer,
+                        index_buffer: stroke_path.index_buffer,
+                    },
+                    DrawIndexedParams {
+                        first_index: 0,
+                        index_count: stroke_path.num_indices as u32,
+                        vertex_offset: 0,
+                        first_instance: 0,
+                        instance_count: 1,
+                    },
+                );
 
-            let (new_w, new_h) = default_swapchain.size();
-            // don't resize if new size is null in one dimension, as it will
-            // cause create_framebuffer to fail.
-            if (new_w, new_h) != (w, h) && new_w != 0 && new_h != 0 {
-                break 'inner;
-            }
-        }
-    }
+                //----------------------------------------------------------------------------------
+                // Present
+                cmdbuf.present(0x0, color_buffer, default_swapchain);
+                renderer.submit_frame(iter::once(cmdbuf));
+            })
+        },
+    );
 }

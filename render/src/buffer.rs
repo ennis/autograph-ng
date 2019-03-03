@@ -87,6 +87,21 @@ macro_rules! impl_structured_type {
     };
 }
 
+// Boolean type for use in GLSL interfaces
+#[repr(u32)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum BoolU32 {
+    False = 0,
+    True = 1,
+}
+
+impl Default for BoolU32 {
+    fn default() -> Self {
+        BoolU32::False
+    }
+}
+
+impl_structured_type!(BoolU32, &TypeDesc::Primitive(PrimitiveType::UnsignedInt));
 impl_structured_type!(f32, &TypeDesc::Primitive(PrimitiveType::Float));
 impl_structured_type!([f32; 2], &TypeDesc::Vector(PrimitiveType::Float, 2));
 impl_structured_type!([f32; 3], &TypeDesc::Vector(PrimitiveType::Float, 3));
@@ -105,37 +120,37 @@ unsafe impl<T: StructuredBufferData + Copy> StructuredBufferData for [T; 32] {
     const TYPE: &'static TypeDesc<'static> = &TypeDesc::Array(T::TYPE, 32, mem::size_of::<T>());
 }
 
-#[cfg(feature = "glm-types")]
+#[cfg(feature = "glm")]
 impl_structured_type!(
     nalgebra_glm::Vec2,
     &TypeDesc::Vector(PrimitiveType::Float, 2)
 );
-#[cfg(feature = "glm-types")]
+#[cfg(feature = "glm")]
 impl_structured_type!(
     nalgebra_glm::Vec3,
     &TypeDesc::Vector(PrimitiveType::Float, 3)
 );
-#[cfg(feature = "glm-types")]
+#[cfg(feature = "glm")]
 impl_structured_type!(
     nalgebra_glm::Vec4,
     &TypeDesc::Vector(PrimitiveType::Float, 4)
 );
-#[cfg(feature = "glm-types")]
+#[cfg(feature = "glm")]
 impl_structured_type!(
     nalgebra_glm::Mat2,
     &TypeDesc::Matrix(PrimitiveType::Float, 2, 2)
 );
-#[cfg(feature = "glm-types")]
+#[cfg(feature = "glm")]
 impl_structured_type!(
     nalgebra_glm::Mat3,
     &TypeDesc::Matrix(PrimitiveType::Float, 3, 3)
 );
-#[cfg(feature = "glm-types")]
+#[cfg(feature = "glm")]
 impl_structured_type!(
     nalgebra_glm::Mat4,
     &TypeDesc::Matrix(PrimitiveType::Float, 4, 4)
 );
-#[cfg(feature = "glm-types")]
+#[cfg(feature = "glm")]
 impl_structured_type!(
     nalgebra_glm::Mat4x3,
     &TypeDesc::Matrix(PrimitiveType::Float, 4, 3)
