@@ -23,8 +23,6 @@
 
 // necessary for const NotNaN
 #![feature(const_transmute)]
-// hopefully stable soon
-#![feature(try_from)]
 extern crate log;
 
 // Reexport nalgebra_glm types if requested
@@ -34,17 +32,16 @@ pub use nalgebra_glm as glm;
 pub mod buffer;
 pub mod command;
 pub mod descriptor;
+pub mod error;
 pub mod format;
 pub mod framebuffer;
 pub mod image;
 pub mod pipeline;
 pub mod swapchain;
-mod sync;
 pub mod traits;
 pub mod typedesc;
 mod util;
 pub mod vertex;
-pub mod error;
 
 pub use crate::{buffer::*, command::*, descriptor::*, format::*, image::*, util::*};
 
@@ -56,19 +53,17 @@ pub use autograph_shader_macros::{
 
 use crate::{
     pipeline::{
-        Arguments, GraphicsPipeline, GraphicsPipelineCreateInfo, Scissor, ShaderModule,
-        ShaderStageFlags, Viewport,
+        ArgumentBlock, Arguments, BareArgumentBlock, GraphicsPipeline, GraphicsPipelineCreateInfo,
+        GraphicsShaderStages, Scissor, ShaderModule, ShaderStageFlags, Signature,
+        SignatureDescription, TypedSignature, Viewport,
     },
     swapchain::Swapchain,
-    vertex::{IndexBufferDescriptor, VertexBufferDescriptor},
+    vertex::{IndexBufferView, VertexBufferView},
 };
-use std::{any::TypeId, collections::HashMap, fmt::Debug, hash::Hash, marker::PhantomData, mem};
-//use crate::pipeline::validate::ValidationError;
-use crate::pipeline::{
-    validate::validate_spirv_graphics_pipeline, ArgumentBlock, BareArgumentBlock,
-    GraphicsShaderStages, Signature, SignatureDescription, TypedSignature,
+use std::{
+    any::TypeId, collections::HashMap, fmt::Debug, hash::Hash, marker::PhantomData, mem,
+    sync::Mutex,
 };
-use std::sync::Mutex;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -128,29 +123,17 @@ pub trait Instance<B: Backend> {
     /// See [Renderer::default_swapchain](crate::Renderer::default_swapchain).
     unsafe fn default_swapchain<'a>(&'a self) -> Option<&'a B::Swapchain>;
 
-    /// Creates an immutable image that cannot be modified by any operation (render, transfer, swaps or otherwise).
-    /// Useful for long-lived texture data.
-    unsafe fn create_immutable_image<'a>(
-        &self,
-        arena: &'a B::Arena,
-        format: Format,
-        dimensions: Dimensions,
-        mipcount: MipmapsCount,
-        samples: u32,
-        usage: ImageUsageFlags,
-        initial_data: &[u8],
-    ) -> &'a B::Image;
-
-    /// Creates an image containing uninitialized data.
+    ///
     unsafe fn create_image<'a>(
         &self,
         arena: &'a B::Arena,
         scope: AliasScope,
         format: Format,
         dimensions: Dimensions,
-        mipcount: MipmapsCount,
+        mipcount: MipmapsOption,
         samples: u32,
         usage: ImageUsageFlags,
+        initial_data: Option<&[u8]>,
     ) -> &'a B::Image;
 
     /// Updates a region of an image.
@@ -198,17 +181,16 @@ pub trait Instance<B: Backend> {
         description: &SignatureDescription,
     ) -> &'a B::Signature;
 
-    unsafe fn create_argument_block<'a, 'b>(
+    unsafe fn create_argument_block<'a>(
         &self,
         arena: &'a B::Arena,
         signature: &'a B::Signature,
-        //description: &SignatureDescription,
         arguments: impl IntoIterator<Item = BareArgumentBlock<'a, B>>,
         descriptors: impl IntoIterator<Item = Descriptor<'a, B>>,
-        vertex_buffers: impl IntoIterator<Item = VertexBufferDescriptor<'a, 'b, B>>,
-        index_buffer: Option<IndexBufferDescriptor<'a, B>>,
+        vertex_buffers: impl IntoIterator<Item = VertexBufferView<'a, B>>,
+        index_buffer: Option<IndexBufferView<'a, B>>,
         render_targets: impl IntoIterator<Item = RenderTargetView<'a, B>>,
-        depth_stencil_render_target: Option<RenderTargetView<'a, B>>,
+        depth_stencil_target: Option<DepthStencilView<'a, B>>,
         viewports: impl IntoIterator<Item = Viewport>,
         scissors: impl IntoIterator<Item = Scissor>,
     ) -> &'a B::ArgumentBlock;
@@ -303,28 +285,16 @@ impl Instance<DummyBackend> for DummyInstance {
         unimplemented!()
     }
 
-    unsafe fn create_immutable_image<'a>(
-        &self,
-        _arena: &'a (),
-        _format: Format,
-        _dimensions: Dimensions,
-        _mipcount: MipmapsCount,
-        _samples: u32,
-        _usage: ImageUsageFlags,
-        _initial_data: &[u8],
-    ) -> &'a () {
-        unimplemented!()
-    }
-
     unsafe fn create_image<'a>(
         &self,
         _arena: &'a (),
         _scope: AliasScope,
         _format: Format,
         _dimensions: Dimensions,
-        _mipcount: MipmapsCount,
+        _mipcount: MipmapsOption,
         _samples: u32,
         _usage: ImageUsageFlags,
+        _initial_data: Option<&[u8]>,
     ) -> &'a () {
         unimplemented!()
     }
@@ -380,16 +350,16 @@ impl Instance<DummyBackend> for DummyInstance {
         unimplemented!()
     }
 
-    unsafe fn create_argument_block<'a, 'b>(
+    unsafe fn create_argument_block<'a>(
         &self,
         _arena: &'a (),
         _signature: &'a (),
         _arguments: impl IntoIterator<Item = BareArgumentBlock<'a, DummyBackend>>,
         _descriptors: impl IntoIterator<Item = Descriptor<'a, DummyBackend>>,
-        _vertex_buffers: impl IntoIterator<Item = VertexBufferDescriptor<'a, 'b, DummyBackend>>,
-        _index_buffer: Option<IndexBufferDescriptor<'a, DummyBackend>>,
+        _vertex_buffers: impl IntoIterator<Item = VertexBufferView<'a, DummyBackend>>,
+        _index_buffer: Option<IndexBufferView<'a, DummyBackend>>,
         _render_targets: impl IntoIterator<Item = RenderTargetView<'a, DummyBackend>>,
-        _depth_stencil_render_target: Option<RenderTargetView<'a, DummyBackend>>,
+        _depth_stencil_render_target: Option<DepthStencilView<'a, DummyBackend>>,
         _viewports: impl IntoIterator<Item = Viewport>,
         _scissors: impl IntoIterator<Item = Scissor>,
     ) -> &'a () {
@@ -535,14 +505,14 @@ impl<'r, B: Backend> Arena<'r, B> {
         let root_signature = self.renderer.get_cached_signature::<P>();
 
         // validate the pipeline
-        let validation_result =
+        /*let validation_result =
             validate_spirv_graphics_pipeline(root_signature.description(), &create_info);
         if let Err(es) = validation_result {
             for e in es {
                 log::error!("validation error: {}", e);
             }
             panic!("graphics pipeline validation failed");
-        }
+        }*/
 
         GraphicsPipeline {
             inner: unsafe {
@@ -557,37 +527,7 @@ impl<'r, B: Backend> Arena<'r, B> {
         }
     }
 
-    /// Creates an immutable image that cannot be modified by any operation
-    /// (render, transfer, swaps or otherwise).
-    /// Useful for long-lived texture data.
-    /// Initial data is uploaded to the image memory, and will be visible to all operations
-    /// from the current frame and after.
-    /// The first operation that depends on the image will block until the initial data upload
-    /// is complete.
-    #[inline]
-    pub fn create_immutable_image(
-        &self,
-        format: Format,
-        dimensions: Dimensions,
-        mipcount: MipmapsCount,
-        samples: u32,
-        usage: ImageUsageFlags,
-        initial_data: &[u8],
-    ) -> Image<B> {
-        Image(unsafe {
-            self.instance.create_immutable_image(
-                &self.inner(),
-                format,
-                dimensions,
-                mipcount,
-                samples,
-                usage,
-                initial_data,
-            )
-        })
-    }
-
-    /// Creates an image containing uninitialized data.
+    /// Creates an image.
     ///
     /// If `scope` is not `AliasScope::no_alias()`, the image is considered _aliasable_, meaning
     /// that the memory backing this image can be shared between multiple image objects.
@@ -595,59 +535,53 @@ impl<'r, B: Backend> Arena<'r, B> {
     /// and should only be accessed within the specified scope.
     /// This is suitable for transient image data that is not used during the entirety of a frame.
     ///
+    /// If `initial_data` is not `None`, the data is uploaded to the image memory,
+    /// and will be visible to all operations from the current frame and after.
+    /// The first operation that depends on the image will block until the initial data upload
+    /// is complete.
+    ///
     /// See also [AliasScope].
     #[inline]
-    pub fn create_image<'a>(
-        &'a self,
+    pub fn create_image(
+        &self,
         scope: AliasScope,
         format: Format,
         dimensions: Dimensions,
-        mipcount: MipmapsCount,
+        mipcount: MipmapsOption,
         samples: u32,
         usage: ImageUsageFlags,
-    ) -> Image<'a, B> {
-        Image(unsafe {
-            self.instance.create_image(
-                &self.inner(),
-                scope,
-                format,
-                dimensions,
-                mipcount,
-                samples,
-                usage,
-            )
-        })
+        initial_data: Option<&[u8]>,
+    ) -> UnsafeImage<B> {
+        UnsafeImage {
+            image: unsafe {
+                self.instance.create_image(
+                    &self.inner(),
+                    scope,
+                    format,
+                    dimensions,
+                    mipcount,
+                    samples,
+                    usage,
+                    initial_data,
+                )
+            },
+        }
     }
 
-    /// Creates an image suitable for use exclusively as a render target (color attachment image),
-    /// and usable in the whole command stream (unaliasable).
-    ///
-    /// The created image has one mip level, and cannot be used as a sampled image.
-    ///
-    /// Equivalent to `create_image(AliasScope::no_alias(), format, dimensions.into(), MipmapsCount::One, samples, ImageUsageFlags::COLOR_ATTACHMENT)`
     #[inline]
-    pub fn create_unaliasable_render_target(
-        &self,
-        format: Format,
-        dimensions: (u32, u32),
-        samples: u32,
-    ) -> Image<B> {
-        self.create_image(
-            AliasScope::no_alias(),
-            format,
-            dimensions.into(),
-            MipmapsCount::One,
-            samples,
-            ImageUsageFlags::COLOR_ATTACHMENT,
-        )
+    pub fn image_1d(&self, format: Format, size: u32) -> Image1dBuilder<B> {
+        Image1dBuilder::new(self, format, size)
     }
 
-    /*/// Creates an image suitable (but not optimal) for every use.
     #[inline]
-    pub fn create_default_image_2d(&self, format: Format, dimensions: (u32, u32), mip_levels: MipmapsCount, samples: u32) -> Image<B>
-    {
+    pub fn image_2d(&self, format: Format, width: u32, height: u32) -> Image2dBuilder<B> {
+        Image2dBuilder::new(self, format, (width, height))
+    }
 
-    }*/
+    #[inline]
+    pub fn render_target(&self, format: Format, width: u32, height: u32) -> RenderTargetBuilder<B> {
+        RenderTargetBuilder::new(self, format, (width, height))
+    }
 
     /// Creates a GPU (device local) buffer.
     #[inline]
@@ -719,17 +653,16 @@ impl<'r, B: Backend> Arena<'r, B> {
     }
 
     /// Creates an _argument block_.
-    ///
-    ///
-    pub fn create_argument_block<'a, 'b, S: Signature<'a, B>>(
+
+    pub fn create_argument_block<'a, S: Signature<'a, B>>(
         &'a self,
         signature: S,
         inherited: impl IntoIterator<Item = BareArgumentBlock<'a, B>>,
         descriptors: impl IntoIterator<Item = Descriptor<'a, B>>,
-        vertex_buffers: impl IntoIterator<Item = VertexBufferDescriptor<'a, 'b, B>>,
-        index_buffer: Option<IndexBufferDescriptor<'a, B>>,
+        vertex_buffers: impl IntoIterator<Item = VertexBufferView<'a, B>>,
+        index_buffer: Option<IndexBufferView<'a, B>>,
         render_targets: impl IntoIterator<Item = RenderTargetView<'a, B>>,
-        depth_stencil_render_target: Option<RenderTargetView<'a, B>>,
+        depth_stencil_target: Option<DepthStencilView<'a, B>>,
         viewports: impl IntoIterator<Item = Viewport>,
         scissors: impl IntoIterator<Item = Scissor>,
     ) -> ArgumentBlock<'a, B, S> {
@@ -738,13 +671,12 @@ impl<'r, B: Backend> Arena<'r, B> {
                 self.instance.create_argument_block(
                     &self.inner(),
                     signature.inner(),
-                    //signature.description(),
                     inherited,
                     descriptors,
                     vertex_buffers,
                     index_buffer,
                     render_targets,
-                    depth_stencil_render_target,
+                    depth_stencil_target,
                     viewports,
                     scissors,
                 )
@@ -753,7 +685,7 @@ impl<'r, B: Backend> Arena<'r, B> {
         }
     }
 
-    pub fn create_typed_argument_block<'a, 'b, T: Arguments<'a, B>>(
+    pub fn create_typed_argument_block<'a, T: Arguments<'a, B>>(
         &'a self,
         args: T,
     ) -> ArgumentBlock<'a, B, TypedSignature<'a, B, T::IntoInterface>> {

@@ -47,38 +47,13 @@ struct ArgumentsItem {
     index_buffer: Flag,
     // Shader interfaces -----------------------
     #[darling(default)]
-    uniform_buffer: Flag,
-    #[darling(default)]
-    storage_buffer: Flag,
-    #[darling(default)]
-    sampled_image: Flag,
-    #[darling(default)]
-    storage_image: Flag,
-}
-
-fn quote_descriptor(
-    gfx: &syn::Path,
-    index: usize,
-    ty: &syn::Type,
-    ty_backend: &syn::Ident,
-    descty: &str,
-) -> TokenStream {
-    let descty = Some(syn::Ident::new(descty, Span::call_site()));
-    quote! {
-        #gfx::descriptor::DescriptorBinding {
-            binding: #index,
-            descriptor_type: #gfx::descriptor::DescriptorType::#descty,
-            stage_flags: #gfx::pipeline::ShaderStageFlags::ALL_GRAPHICS,
-            count: 1,
-            tydesc: <#ty as #gfx::descriptor::DescriptorInterface<#ty_backend> >::TYPE,
-        }
-    }
+    descriptor: Flag,
 }
 
 pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     let s: ArgumentsStruct = <ArgumentsStruct as FromDeriveInput>::from_derive_input(ast).unwrap();
 
-    let gfx = autograph_name();
+    let g = autograph_name();
     let struct_name = &s.ident;
 
     //----------------------------------------------------------------------------------------------
@@ -170,16 +145,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                 if pitem.index_buffer.is_some() {
                     num_attrs += 1;
                 }
-                if pitem.uniform_buffer.is_some() {
-                    num_attrs += 1;
-                }
-                if pitem.storage_buffer.is_some() {
-                    num_attrs += 1;
-                }
-                if pitem.sampled_image.is_some() {
-                    num_attrs += 1;
-                }
-                if pitem.storage_image.is_some() {
+                if pitem.descriptor.is_some() {
                     num_attrs += 1;
                 }
                 if pitem.depth_stencil_render_target.is_some() {
@@ -207,9 +173,8 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                     iter_args.push(quote! {
                         std::iter::once(self.#name.into())
                     });
-                    i_inherited.push(
-                        quote! { <#ty as #gfx::pipeline::Arguments<#ty_backend>>::SIGNATURE },
-                    );
+                    i_inherited
+                        .push(quote! { <#ty as #g::pipeline::Arguments<#ty_backend>>::SIGNATURE });
                     i_inherited_ty.push(quote!(#ty));
                 }
                 // render target --------------------------------------------
@@ -217,7 +182,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                     iter_render_targets.push(quote! {
                         std::iter::once(self.#name.into())
                     });
-                    i_fragout.push(quote! { #gfx::framebuffer::FragmentOutputDescription{} });
+                    i_fragout.push(quote! { #g::framebuffer::FragmentOutputDescription{} });
                 }
                 // depth stencil render target --------------------------------------------
                 else if pitem.depth_stencil_render_target.is_some() {
@@ -236,61 +201,21 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                         );
                     }
                 }
-                // descriptor: ubo --------------------------------------------
-                else if pitem.uniform_buffer.is_some() {
+                // descriptor --------------------------------------------
+                else if pitem.descriptor.is_some() {
                     iter_descriptors.push(quote! {
-                       std::iter::once(self.#name.into())
+                       std::iter::once(self.#name.into_descriptor())
                     });
                     let index = i_desc.len();
-                    i_desc.push(quote_descriptor(
-                        &gfx,
-                        index,
-                        ty,
-                        &ty_backend,
-                        "UniformBuffer",
-                    ));
-                }
-                // descriptor: ssbo --------------------------------------------
-                else if pitem.storage_buffer.is_some() {
-                    iter_descriptors.push(quote! {
-                       std::iter::once(self.#name.into())
+                    i_desc.push(quote!{
+                        #g::descriptor::ResourceBinding {
+                            index: #index,
+                            ty: <#ty as #g::descriptor::ResourceInterface<#ty_backend>>::TYPE,
+                            stage_flags: #g::pipeline::ShaderStageFlags::ALL_GRAPHICS,
+                            count: 1,
+                            data_ty: <#ty as #g::descriptor::ResourceInterface<#ty_backend>>::DATA_TYPE,
+                        }
                     });
-                    let index = i_desc.len();
-                    i_desc.push(quote_descriptor(
-                        &gfx,
-                        index,
-                        ty,
-                        &ty_backend,
-                        "StorageBuffer",
-                    ));
-                }
-                // descriptor: tex --------------------------------------------
-                else if pitem.sampled_image.is_some() {
-                    iter_descriptors.push(quote! {
-                       std::iter::once(self.#name.into())
-                    });
-                    let index = i_desc.len();
-                    i_desc.push(quote_descriptor(
-                        &gfx,
-                        index,
-                        ty,
-                        &ty_backend,
-                        "SampledImage",
-                    ));
-                }
-                // descriptor: img --------------------------------------------
-                else if pitem.storage_image.is_some() {
-                    iter_descriptors.push(quote! {
-                        std::iter::once(self.#name.into())
-                    });
-                    let index = i_desc.len();
-                    i_desc.push(quote_descriptor(
-                        &gfx,
-                        index,
-                        ty,
-                        &ty_backend,
-                        "StorageImage",
-                    ));
                 }
                 // vertex buffer --------------------------------------------
                 else if pitem.vertex_buffer.is_some() {
@@ -299,7 +224,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                     });
 
                     i_vtxin.push(quote! {
-                        <<#ty as #gfx::vertex::VertexBufferInterface<#ty_backend>>::Vertex as #gfx::vertex::VertexData>::LAYOUT
+                        <<#ty as #g::vertex::VertexBufferInterface<#ty_backend>>::Vertex as #g::vertex::VertexData>::LAYOUT
                     });
                 }
                 // index buffer --------------------------------------------
@@ -310,7 +235,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                             index_buffer = Some(self.#name.into());
                         });
                         ib_format = Some(
-                            quote!(Some(<<#ty as #gfx::vertex::IndexBufferInterface<#ty_backend>>::Index as #gfx::vertex::IndexData>::FORMAT)),
+                            quote!(Some(<<#ty as #g::vertex::IndexBufferInterface<#ty_backend>>::Index as #g::vertex::IndexData>::FORMAT)),
                         );
                     } else {
                         stmts.push(
@@ -360,7 +285,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     let is_root_fragment_output_signature = i_fragout.len() > 0;
     let is_root_vertex_input_signature = false;
     let depth_stencil_fragment_output = if seen_dst {
-        quote!(Some(#gfx::framebuffer::FragmentOutputDescription{}))
+        quote!(Some(#g::framebuffer::FragmentOutputDescription{}))
     } else {
         quote!(None)
     };
@@ -387,12 +312,12 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
             pub struct Dummy<#(#ty_params,)*>(std::marker::PhantomData<(#(#ty_params3),*)>);
         }
 
-        impl #impl_generics #gfx::pipeline::Arguments<#lt_arena, #ty_backend> for #struct_name #ty_generics #where_clause {
+        impl #impl_generics #g::pipeline::Arguments<#lt_arena, #ty_backend> for #struct_name #ty_generics #where_clause {
 
             type UniqueType = #privmod::Dummy<#(#ty_params2,)*>;
             type IntoInterface = Self;
 
-            const SIGNATURE: &'static #gfx::pipeline::SignatureDescription<'static> = &#gfx::pipeline::SignatureDescription {
+            const SIGNATURE: &'static #g::pipeline::SignatureDescription<'static> = &#g::pipeline::SignatureDescription {
                 is_root_fragment_output_signature : #is_root_fragment_output_signature,
                 is_root_vertex_input_signature    : #is_root_vertex_input_signature,
                 inherited                         : &[#(#i_inherited,)*],
@@ -405,7 +330,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                 num_scissors                      : #n_scissors,
             };
 
-            fn get_inherited_signatures(renderer: &#lt_arena #gfx::Renderer<#ty_backend>) -> Vec<&#lt_arena <#ty_backend as #gfx::Backend>::Signature> {
+            fn get_inherited_signatures(renderer: &#lt_arena #g::Renderer<#ty_backend>) -> Vec<&#lt_arena <#ty_backend as #g::Backend>::Signature> {
                 use autograph_render::pipeline::Signature;
                 let mut sig = Vec::new();
                 #(sig.push(renderer.get_cached_signature::<#i_inherited_ty>().inner());)*
@@ -414,11 +339,12 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
 
             fn into_block(
                     self,
-                    signature: #gfx::pipeline::TypedSignature<#lt_arena, #ty_backend, Self::IntoInterface>,
-                    arena: &#lt_arena #gfx::Arena <#ty_backend>) ->
-                    #gfx::pipeline::ArgumentBlock<#lt_arena,  #ty_backend, #gfx::pipeline::TypedSignature<#lt_arena, #ty_backend, Self::IntoInterface>>
+                    signature: #g::pipeline::TypedSignature<#lt_arena, #ty_backend, Self::IntoInterface>,
+                    arena: &#lt_arena #g::Arena <#ty_backend>) ->
+                    #g::pipeline::ArgumentBlock<#lt_arena,  #ty_backend, #g::pipeline::TypedSignature<#lt_arena, #ty_backend, Self::IntoInterface>>
             {
-                use #gfx::pipeline::Arguments;
+                use #g::pipeline::Arguments;
+                use #g::descriptor::ResourceInterface;
 
                 let mut index_buffer = None;
                 let mut depth_stencil_render_target = None;

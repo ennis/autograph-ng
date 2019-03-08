@@ -4,27 +4,22 @@
 
 // TODO it's unclear what's best: a shared error enum like this, or smaller error types for each module
 
-use std::error;
-use std::fmt;
+use std::{error, fmt};
 
-#[derive(Clone,Debug)]
-pub enum Error
-{
+#[derive(Clone, Debug)]
+pub enum Error {
     OutOfMemory,
     InvalidRenderTarget,
     InvalidSampledImage,
     InvalidStorageImage,
 }
 
-impl fmt::Display for Error
-{
+impl fmt::Display for Error {
     fn fmt(&self, _f: &mut fmt::Formatter) -> fmt::Result {
         unimplemented!()
     }
 }
 
-impl error::Error for Error
-{
-}
+impl error::Error for Error {}
 
 pub type Result<T> = ::std::result::Result<T, Error>;

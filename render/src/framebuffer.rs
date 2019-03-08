@@ -17,4 +17,3 @@ impl<'a, B: Backend> From<Image<'a, B>> for RenderTargetDescriptor<'a, B> {
     }
 }
 */
-

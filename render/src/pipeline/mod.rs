@@ -1,8 +1,9 @@
 use crate::{
-    descriptor::DescriptorBinding,
+    descriptor::{Descriptor, ResourceBinding, ResourceInterface},
     format::Format,
     framebuffer::FragmentOutputDescription,
-    vertex::{IndexFormat, VertexLayout},
+    image::{DepthStencilView, RenderTargetView},
+    vertex::{IndexBufferView, IndexFormat, VertexBufferView, VertexLayout},
     Arena, Backend, Renderer,
 };
 pub use autograph_render_macros::Arguments;
@@ -586,7 +587,7 @@ pub struct SignatureDescription<'a> {
     /// Descriptors in the block.
     ///
     /// The length of this slice defines the number of _descriptors_ in a block.
-    pub descriptors: &'a [DescriptorBinding<'a>],
+    pub descriptors: &'a [ResourceBinding<'a>],
 
     /// Layouts of all vertex buffers in the block.
     ///
@@ -720,11 +721,9 @@ pub type TypedArgumentBlock<'a, B, T> = ArgumentBlock<'a, B, TypedSignature<'a, 
 #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
 pub struct BareArgumentBlock<'a, B: Backend>(pub &'a B::ArgumentBlock);
 
-impl<'a, B: Backend, S: Signature<'a, B>> Into<BareArgumentBlock<'a, B>>
-    for ArgumentBlock<'a, B, S>
-{
-    fn into(self) -> BareArgumentBlock<'a, B> {
-        BareArgumentBlock(self.arguments)
+impl<'a, B: Backend, S: Signature<'a, B>> From<ArgumentBlock<'a, B, S>> for BareArgumentBlock<'a, B> {
+    fn from(b: ArgumentBlock<'a, B, S>) -> Self {
+        BareArgumentBlock(b.arguments)
     }
 }
 

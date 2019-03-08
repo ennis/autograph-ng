@@ -1,5 +1,5 @@
 use crate::{
-    descriptor::{DescriptorBinding, DescriptorType},
+    descriptor::{ResourceBinding, ResourceBindingType},
     framebuffer::FragmentOutputDescription,
     pipeline::{GraphicsPipelineCreateInfo, Scissors, SignatureDescription, Viewports},
     vertex::{IndexFormat, TypedVertexInputAttributeDescription, VertexLayout},
@@ -9,10 +9,10 @@ use autograph_spirv as spirv;
 use autograph_spirv::{headers::StorageClass, TypeDesc};
 use log::warn;
 use std::{error, fmt};
-
+/*
 #[derive(Copy, Clone, Debug)]
 pub enum Interface {
-    Descriptor(u32, u32, DescriptorType),
+    Descriptor(u32, u32, ResourceBindingType),
     UnhandledDescriptor(u32, u32),
     VertexInput(u32),
     FragmentOutput(u32),
@@ -24,7 +24,7 @@ pub enum ValidationError {
     InterfaceNotFound(Interface),
     DescriptorTypeMismatch {
         interface: Interface,
-        host: DescriptorType,
+        host: ResourceBindingType,
     },
     TypeError {
         interface: Interface,
@@ -266,8 +266,8 @@ fn unwrap_ptr_type<'a>(ptr: &'a TypeDesc<'a>) -> &'a TypeDesc<'a> {
 }
 
 fn validate_descriptor_type(
-    host: DescriptorType,
-    shader: DescriptorType,
+    host: ResourceBindingType,
+    shader: ResourceBindingType,
     interface: Interface,
 ) -> ValidationResult<()> {
     if host != shader {
@@ -296,7 +296,7 @@ fn validate_data_type(
 }
 
 struct ValidationInfo<'a> {
-    descriptor_sets: Vec<Vec<(&'a DescriptorBinding<'a>, bool)>>,
+    descriptor_sets: Vec<Vec<(&'a ResourceBinding<'a>, bool)>>,
     fragment_outputs: Vec<FragmentOutputDescription>,
     vertex_layouts: Vec<VertexLayout<'a>>,
     vertex_attributes: Vec<TypedVertexInputAttributeDescription<'a>>,
@@ -416,11 +416,11 @@ impl<'a> ValidationInfo<'a> {
         set: u32,
         binding: u32,
         interface: Interface,
-    ) -> ValidationResult<&'a DescriptorBinding<'a>> {
+    ) -> ValidationResult<&'a ResourceBinding<'a>> {
         let set = self.descriptor_sets.get_mut(set as usize);
         if let Some(set) = set {
             for (b, ref mut seen) in set.iter_mut() {
-                if b.binding == binding as usize {
+                if b.index == binding as usize {
                     //let () = seen;
                     *seen = true;
                     return Ok(b);
@@ -465,15 +465,15 @@ impl<'a> ValidationInfo<'a> {
         /*&& has_block_deco*/
         {
             // uniform buffer --------------------------------------------------------------------------
-            let interface = Interface::Descriptor(set, binding, DescriptorType::UniformBuffer);
+            let interface = Interface::Descriptor(set, binding, ResourceBindingType::UniformBuffer);
             let desc = self.use_descriptor(set, binding, interface)?;
             validate_descriptor_type(
-                desc.descriptor_type,
-                DescriptorType::UniformBuffer,
+                desc.ty,
+                ResourceBindingType::UniformBuffer,
                 interface,
             )?;
             let shader_ty = unwrap_ptr_type(v.ty);
-            if let Some(tydesc) = desc.tydesc {
+            if let Some(tydesc) = desc.data_ty {
                 validate_data_type(tydesc, shader_ty, interface)?;
             }
             Ok(())
@@ -481,36 +481,36 @@ impl<'a> ValidationInfo<'a> {
             || (v.storage == StorageClass::StorageBuffer)
         {
             // shader storage buffer -------------------------------------------------------------------
-            let interface = Interface::Descriptor(set, binding, DescriptorType::StorageBuffer);
+            let interface = Interface::Descriptor(set, binding, ResourceBindingType::StorageBuffer);
             let desc = self.use_descriptor(set, binding, interface)?;
             validate_descriptor_type(
-                desc.descriptor_type,
-                DescriptorType::StorageBuffer,
+                desc.ty,
+                ResourceBindingType::StorageBuffer,
                 interface,
             )?;
             let shader_ty = unwrap_ptr_type(v.ty);
-            if let Some(tydesc) = desc.tydesc {
+            if let Some(tydesc) = desc.data_ty {
                 validate_data_type(tydesc, shader_ty, interface)?;
             }
             Ok(())
         } else if v.storage == StorageClass::UniformConstant {
             if let &TypeDesc::Pointer(&TypeDesc::Image(_, _)) = v.ty {
                 // image -------------------------------------------------------------------------------
-                let interface = Interface::Descriptor(set, binding, DescriptorType::StorageImage);
+                let interface = Interface::Descriptor(set, binding, ResourceBindingType::StorageImage);
                 let desc = self.use_descriptor(set, binding, interface)?;
                 validate_descriptor_type(
-                    desc.descriptor_type,
-                    DescriptorType::StorageImage,
+                    desc.ty,
+                    ResourceBindingType::StorageImage,
                     interface,
                 )?;
                 Ok(())
             } else if let &TypeDesc::Pointer(&TypeDesc::SampledImage(_, _)) = v.ty {
                 // sampled image -----------------------------------------------------------------------
-                let interface = Interface::Descriptor(set, binding, DescriptorType::SampledImage);
+                let interface = Interface::Descriptor(set, binding, ResourceBindingType::SampledImage);
                 let desc = self.use_descriptor(set, binding, interface)?;
                 validate_descriptor_type(
-                    desc.descriptor_type,
-                    DescriptorType::SampledImage,
+                    desc.ty,
+                    ResourceBindingType::SampledImage,
                     interface,
                 )?;
                 Ok(())
@@ -677,3 +677,4 @@ pub fn validate_spirv_graphics_pipeline<B: Backend>(
         Err(errors)
     }
 }
+*/

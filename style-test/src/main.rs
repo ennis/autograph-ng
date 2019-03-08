@@ -4,7 +4,7 @@ use autograph_render::{
     command::DrawParams,
     format::Format,
     glm,
-    image::{ImageUsageFlags, MipmapsCount, SamplerDescription},
+    image::{ImageUsageFlags, MipmapsOption, SamplerDescription},
     include_shader,
     pipeline::{
         Arguments, ColorBlendAttachmentState, ColorBlendAttachments, ColorBlendState,
@@ -30,9 +30,11 @@ use std::{env, iter, mem, path::Path, slice, time};
 type Backend = autograph_render_gl::OpenGlBackend;
 type Arena<'a> = autograph_render::Arena<'a, Backend>;
 type Buffer<'a, T> = autograph_render::buffer::Buffer<'a, Backend, T>;
-//type BufferTypeless<'a> = autograph_render::buffer::BufferTypeless<'a, Backend>;
-type Image<'a> = autograph_render::image::Image<'a, Backend>;
-type TextureImageView<'a> = autograph_render::image::TextureImageView<'a, Backend>;
+type TypedConstantBufferView<'a, T> =
+    autograph_render::buffer::TypedConstantBufferView<'a, Backend, T>;
+type Image2d<'a> = autograph_render::image::Image2d<'a, Backend>;
+type RenderTarget2dView<'a> = autograph_render::image::RenderTarget2dView<'a, Backend>;
+type TextureSampler2dView<'a> = autograph_render::image::TextureSampler2dView<'a, Backend>;
 type TypedGraphicsPipeline<'a, T> =
     autograph_render::pipeline::TypedGraphicsPipeline<'a, Backend, T>;
 type TypedArgumentBlock<'a, T> = autograph_render::pipeline::TypedArgumentBlock<'a, Backend, T>;
@@ -142,10 +144,10 @@ pub struct CommonUniforms {
 #[derive(Arguments, Copy, Clone)]
 #[argument(backend = "Backend")]
 pub struct CommonArguments<'a> {
-    #[argument(uniform_buffer)]
-    pub uniforms: Buffer<'a, CommonUniforms>,
-    #[argument(sampled_image)]
-    pub color_tex: TextureImageView<'a>,
+    #[argument(descriptor)]
+    pub uniforms: TypedConstantBufferView<'a, CommonUniforms>,
+    #[argument(descriptor)]
+    pub color_tex: TextureSampler2dView<'a>,
     #[argument(viewport)]
     pub viewport: Viewport,
     //#[argument(vertex_buffer)]
@@ -157,14 +159,14 @@ pub struct CommonArguments<'a> {
 pub struct PigmentApplication<'a> {
     #[argument(inherit)]
     pub common: TypedArgumentBlock<'a, CommonArguments<'a>>,
-    #[argument(uniform_buffer)]
-    pub params: Buffer<'a, PigmentApplicationParams>,
-    #[argument(sampled_image)]
-    pub filter_tex: TextureImageView<'a>,
-    #[argument(sampled_image)]
-    pub substrate_tex: TextureImageView<'a>,
-    #[argument(sampled_image)]
-    pub control_tex: TextureImageView<'a>,
+    #[argument(descriptor)]
+    pub params: TypedConstantBufferView<'a, PigmentApplicationParams>,
+    #[argument(render_target)]
+    pub filter_tex: RenderTarget2dView<'a>,
+    #[argument(render_target)]
+    pub substrate_tex: RenderTarget2dView<'a>,
+    #[argument(render_target)]
+    pub control_tex: RenderTarget2dView<'a>,
 }
 
 #[derive(Arguments, Copy, Clone)]
@@ -173,9 +175,9 @@ pub struct EdgeDetection<'a> {
     #[argument(inherit)]
     pub common: TypedArgumentBlock<'a, CommonArguments<'a>>,
     #[argument(render_target)]
-    pub edge_out: Image<'a>,
-    #[argument(sampled_image)]
-    pub depth_tex: TextureImageView<'a>,
+    pub edge_out: RenderTarget2dView<'a>,
+    #[argument(descriptor)]
+    pub depth_tex: TextureSampler2dView<'a>,
 }
 
 //type EdgeDetectionParams<'a> = Quad<'a,OpenGlBackend,EdgeDetection<'a>>;
@@ -190,12 +192,12 @@ pub struct GradientEdgesWatercolorParams {
 #[derive(Arguments, Copy, Clone)]
 #[argument(backend = "Backend")]
 pub struct GradientEdgesWatercolor<'a> {
-    #[argument(uniform_buffer)]
-    params: Buffer<'a, GradientEdgesWatercolorParams>,
-    #[argument(sampled_image)]
-    edge_tex_sampler: TextureImageView<'a>,
-    #[argument(sampled_image)]
-    control_tex_sampler: TextureImageView<'a>,
+    #[argument(descriptor)]
+    params: TypedConstantBufferView<'a, GradientEdgesWatercolorParams>,
+    #[argument(descriptor)]
+    edge_tex_sampler: TextureSampler2dView<'a>,
+    #[argument(descriptor)]
+    control_tex_sampler: TextureSampler2dView<'a>,
 }
 
 #[derive(StructuredBufferData, Copy, Clone)]
@@ -230,17 +232,17 @@ pub struct SubstrateCommon<'a> {
     #[argument(inherit)]
     pub common: TypedArgumentBlock<'a, CommonArguments<'a>>,
     #[argument(render_target)]
-    pub color_target: Image<'a>,
-    #[argument(uniform_buffer)]
-    pub params: Buffer<'a, SubstrateParams>,
-    #[argument(sampled_image)]
-    pub substrate_tex: TextureImageView<'a>,
-    #[argument(sampled_image)]
-    pub edge_tex: TextureImageView<'a>,
-    #[argument(sampled_image)]
-    pub control_tex: TextureImageView<'a>,
-    #[argument(sampled_image)]
-    pub depth_tex: TextureImageView<'a>,
+    pub color_target: RenderTarget2dView<'a>,
+    #[argument(descriptor)]
+    pub params: TypedConstantBufferView<'a, SubstrateParams>,
+    #[argument(descriptor)]
+    pub substrate_tex: TextureSampler2dView<'a>,
+    #[argument(descriptor)]
+    pub edge_tex: TextureSampler2dView<'a>,
+    #[argument(descriptor)]
+    pub control_tex: TextureSampler2dView<'a>,
+    #[argument(descriptor)]
+    pub depth_tex: TextureSampler2dView<'a>,
 }
 
 #[repr(C)]
@@ -325,21 +327,21 @@ impl Default for WatercolorShadingParams {
 #[argument(backend = "Backend")]
 struct WatercolorShading<'a> {
     #[argument(render_target)]
-    target: Image<'a>,
+    target: RenderTarget2dView<'a>,
     #[argument(viewport)]
     viewport: Viewport,
-    #[argument(uniform_buffer)]
-    params: Buffer<'a, WatercolorShadingParams>,
-    #[argument(sampled_image)]
-    diffuse_color: TextureImageView<'a>,
-    #[argument(sampled_image)]
-    diffuse_direct_lighting: TextureImageView<'a>,
-    #[argument(sampled_image)]
-    specular_color: TextureImageView<'a>,
-    #[argument(sampled_image)]
-    specular_direct_lighting: TextureImageView<'a>,
-    #[argument(sampled_image)]
-    ambient_occlusion: TextureImageView<'a>,
+    #[argument(descriptor)]
+    params: TypedConstantBufferView<'a, WatercolorShadingParams>,
+    #[argument(descriptor)]
+    diffuse_color: TextureSampler2dView<'a>,
+    #[argument(descriptor)]
+    diffuse_direct_lighting: TextureSampler2dView<'a>,
+    #[argument(descriptor)]
+    specular_color: TextureSampler2dView<'a>,
+    #[argument(descriptor)]
+    specular_direct_lighting: TextureSampler2dView<'a>,
+    #[argument(descriptor)]
+    ambient_occlusion: TextureSampler2dView<'a>,
 }
 
 struct Pipelines<'a> {
@@ -349,8 +351,7 @@ struct Pipelines<'a> {
     substrate_deferred_lighting:
         TypedGraphicsPipeline<'a, Quad<'a, OpenGlBackend, SubstrateCommon<'a>>>,
     watercolor_shading: TypedGraphicsPipeline<'a, Quad<'a, OpenGlBackend, WatercolorShading<'a>>>,
-    substrate_distortion:
-        TypedGraphicsPipeline<'a, Quad<'a, OpenGlBackend, SubstrateCommon<'a>>>,
+    substrate_distortion: TypedGraphicsPipeline<'a, Quad<'a, OpenGlBackend, SubstrateCommon<'a>>>,
 }
 
 impl<'a> Pipelines<'a> {
@@ -408,10 +409,8 @@ impl<'a> Pipelines<'a> {
         };
 
         let substrate_distortion = GraphicsPipelineCreateInfo {
-            shader_stages: arena.create_vertex_fragment_shader_stages(
-                QUAD_SAMPLER_VERT,
-                SUBSTRATE_DISTORTION_FRAG,
-            ),
+            shader_stages: arena
+                .create_vertex_fragment_shader_stages(QUAD_SAMPLER_VERT, SUBSTRATE_DISTORTION_FRAG),
             viewport_state: ViewportState::default(),
             rasterization_state: RasterisationState::default(),
             multisample_state: MultisampleState::default(),
@@ -474,18 +473,10 @@ fn load_image_data<'a, T: oiio::ImageData>(
     input: &mut oiio::ImageInput,
     chans: &[&str],
     fmt: Format,
-) -> Image<'a> {
+) -> Image2d<'a> {
     let (w, h, _) = input.spec().size();
     let data: oiio::ImageBuffer<T> = input.channels_by_name(chans).unwrap().read().unwrap();
-
-    a.create_immutable_image(
-        fmt,
-        (w, h).into(),
-        MipmapsCount::One,
-        1,
-        ImageUsageFlags::SAMPLED,
-        data.as_bytes(),
-    )
+    a.image_2d(fmt, w, h).with_data(data.as_bytes())
 }
 
 const FONT: &[u8] = include_bytes!("../../imgui/tests/ChiKareGo2.ttf");
@@ -587,61 +578,18 @@ fn main() {
     // load substrate texture
     let mut substrate_img = oiio::ImageInput::open("data/rough_default_2k.jpg").unwrap();
     let substrate_data: oiio::ImageBuffer<u16> = substrate_img.all_channels().read().unwrap();
-    let substrate = arena_0.create_immutable_image(
-        Format::R16G16B16_UNORM,
-        (
+    let substrate = arena_0.image_2d(Format::R16G16B16_UNORM,
             substrate_data.width() as u32,
-            substrate_data.height() as u32,
-        )
-            .into(),
-        MipmapsCount::One,
-        1,
-        ImageUsageFlags::SAMPLED,
-        substrate_data.as_bytes(),
-    );
+            substrate_data.height() as u32).with_data(substrate_data.as_bytes());
 
-    // control map
-    let control = arena_0.create_image(
-        AliasScope::no_alias(),
-        Format::R8G8B8A8_UNORM,
-        (frame_width, frame_height).into(),
-        MipmapsCount::One,
-        1,
-        ImageUsageFlags::SAMPLED,
-    );
-
-    // edge map
-    let edge_map = arena_0.create_image(
-        AliasScope::no_alias(),
-        Format::R32_SFLOAT,
-        (frame_width, frame_height).into(),
-        MipmapsCount::One,
-        1,
-        ImageUsageFlags::COLOR_ATTACHMENT | ImageUsageFlags::SAMPLED,
-    );
-
-    // lighting
-    let lighting = arena_0.create_image(
-        AliasScope::no_alias(),
-        Format::R16G16B16_UNORM,
-        (frame_width, frame_height).into(),
-        MipmapsCount::One,
-        1,
-        ImageUsageFlags::COLOR_ATTACHMENT | ImageUsageFlags::SAMPLED,
-    );
-
-    let color_buffer_2 = arena_0.create_image(
-        AliasScope::no_alias(),
-        Format::R16G16B16_UNORM,
-        (frame_width, frame_height).into(),
-        MipmapsCount::One,
-        1,
-        ImageUsageFlags::COLOR_ATTACHMENT | ImageUsageFlags::SAMPLED,
-    );
+    let control = arena_0.image_2d(Format::R8G8B8A8_UNORM, frame_width, frame_height).build();
+    let edge_map = arena_0.image_2d(Format::R32_SFLOAT, frame_width, frame_height).build();
+    let lighting = arena_0.image_2d(Format::R16G16B16_UNORM,frame_width, frame_height).build();
+    let color_buffer_2 = arena_0.image_2d(Format::R16G16B16_UNORM, frame_width, frame_height).build();
 
     // clear control map
     let mut cmdbuf = r.create_command_buffer();
-    cmdbuf.clear_image(0x0, control, &[0.0, 0.0, 0.0, 0.0]);
+    cmdbuf.clear_render_target(0x0, control.render_target_view(), &[0.0, 0.0, 0.0, 0.0]);
     r.submit_frame(iter::once(cmdbuf));
 
     // create imgui context
@@ -659,11 +607,11 @@ fn main() {
         let (w, h) = default_swapchain.size();
         let arena_1 = r.create_arena();
         let color_buffer =
-            arena_1.create_unaliasable_render_target(Format::R16G16B16A16_SFLOAT, (w, h), 8);
+            arena_1.render_target(Format::R16G16B16A16_SFLOAT, w, h).samples(8).build();
 
         // UI renderer
         let mut imgui_renderer =
-            ImGuiRenderer::new(&arena_1, imguictx.imgui(), color_buffer, (w, h).into());
+            ImGuiRenderer::new(&arena_1, imguictx.imgui(), color_buffer.render_target_view(), (w, h).into());
 
         'inner: loop {
             //----------------------------------------------------------------------------------
@@ -674,7 +622,7 @@ fn main() {
             let mut cmdbuf = r.create_command_buffer();
 
             // Clear background
-            cmdbuf.clear_image(0x0, color_buffer, &[0.0, 0.2, 0.8, 1.0]);
+            cmdbuf.clear_render_target(0x0, color_buffer.render_target_view(), &[0.0, 0.2, 0.8, 1.0]);
 
             // common arguments
             let common = arena_frame.create_typed_argument_block(CommonArguments {
@@ -683,8 +631,8 @@ fn main() {
                     screen_size: glm::vec2(w as f32, h as f32),
                     _padding: [0.0; 2],
                     luminance_coeff: glm::vec3(1.0, 1.0, 1.0),
-                }),
-                color_tex: lighting.into_texture_view_linear(),
+                }).into(),
+                color_tex: lighting.sampled_linear(),
                 viewport: (frame_width, frame_height).into(),
             });
 
@@ -694,13 +642,12 @@ fn main() {
                     screen_size: glm::vec2(w as f32, h as f32),
                     _padding: [0.0; 2],
                     luminance_coeff: glm::vec3(1.0, 1.0, 1.0),
-                }),
-                color_tex: color_buffer_2.into_texture_view_linear(),
+                }).into(),
+                color_tex: color_buffer_2.sampled_linear(),
                 viewport: (frame_width, frame_height).into(),
             });
 
-
-           /* //----------------------------------------------------------------------------------
+            /* //----------------------------------------------------------------------------------
             // Run edge detection
             cmdbuf.draw_quad(
                 0x0,
@@ -720,17 +667,16 @@ fn main() {
                 &arena_frame,
                 pipelines.watercolor_shading,
                 WatercolorShading {
-                    target: lighting,
+                    target: lighting.render_target_view(),
                     viewport: (frame_width, frame_height).into(),
-                    params: arena_frame.upload(&watercolor_shading_params),
-                    diffuse_color: diffuse_color.into_texture_view_linear(),
-                    diffuse_direct_lighting: diffuse_direct_lighting.into_texture_view_linear(),
-                    specular_color: specular_color.into_texture_view_linear(),
-                    specular_direct_lighting: specular_direct_lighting.into_texture_view_linear(),
-                    ambient_occlusion: ambient_occlusion.into_texture_view_linear(),
+                    params: arena_frame.upload(&watercolor_shading_params).into(),
+                    diffuse_color: diffuse_color.sampled_linear(),
+                    diffuse_direct_lighting: diffuse_direct_lighting.sampled_linear(),
+                    specular_color: specular_color.sampled_linear(),
+                    specular_direct_lighting: specular_direct_lighting.sampled_linear(),
+                    ambient_occlusion: ambient_occlusion.sampled_linear(),
                 },
             );
-
 
             //----------------------------------------------------------------------------------
             // Run distortion
@@ -740,15 +686,14 @@ fn main() {
                 pipelines.substrate_distortion,
                 SubstrateCommon {
                     common,
-                    color_target: color_buffer_2,
-                    params: arena_frame.upload(&substrate_params),
-                    substrate_tex: substrate.into_texture_view_linear(),
-                    edge_tex: edge_map.into_texture_view_linear(),
-                    control_tex: control.into_texture_view_linear(),
-                    depth_tex: depth.into_texture_view_linear(),
+                    color_target: color_buffer_2.render_target_view(),
+                    params: arena_frame.upload(&substrate_params).into(),
+                    substrate_tex: substrate.sampled_linear(),
+                    edge_tex: edge_map.sampled_linear(),
+                    control_tex: control.sampled_linear(),
+                    depth_tex: depth.sampled_linear(),
                 },
             );
-
 
             //----------------------------------------------------------------------------------
             // Run substrate shading
@@ -758,12 +703,12 @@ fn main() {
                 pipelines.substrate_deferred_lighting,
                 SubstrateCommon {
                     common: common2,
-                    color_target: color_buffer,
-                    params: arena_frame.upload(&substrate_params),
-                    substrate_tex: substrate.into_texture_view_linear(),
-                    edge_tex: edge_map.into_texture_view_linear(),
-                    control_tex: control.into_texture_view_linear(),
-                    depth_tex: depth.into_texture_view_linear(),
+                    color_target: color_buffer.render_target_view(),
+                    params: arena_frame.upload(&substrate_params).into(),
+                    substrate_tex: substrate.sampled_linear(),
+                    edge_tex: edge_map.sampled_linear(),
+                    control_tex: control.sampled_linear(),
+                    depth_tex: depth.sampled_linear(),
                 },
             );
 
@@ -787,13 +732,50 @@ fn main() {
             )
             .build();
 
-            ui.slider_float(im_str!("gamma"), &mut substrate_params.gamma, 0.0, 1.0).build(); // 1.0,
-            ui.slider_float(im_str!("substrate_light_dir"), &mut substrate_params.substrate_light_dir, 0.0, 90.0).build(); // 0.0,
-            ui.slider_float(im_str!("substrate_light_tilt"), &mut substrate_params.substrate_light_tilt, 0.0, 90.0).build(); // 45.0,
-            ui.slider_float(im_str!("substrate_shading"), &mut substrate_params.substrate_shading, 0.0, 1.0).build(); // 1.0,
-            ui.slider_float(im_str!("substrate_distortion"), &mut substrate_params.substrate_distortion, 0.0, 30.0).build(); // 1.0,
-            ui.slider_float(im_str!("impasto_phong_specular"), &mut substrate_params.impasto_phong_specular, 0.0, 1.0).build(); // 0.6,
-            ui.slider_float(im_str!("impasto_phong_shininess"), &mut substrate_params.impasto_phong_shininess, 0.0, 100.0).build(); // 16.0,
+            ui.slider_float(im_str!("gamma"), &mut substrate_params.gamma, 0.0, 1.0)
+                .build(); // 1.0,
+            ui.slider_float(
+                im_str!("substrate_light_dir"),
+                &mut substrate_params.substrate_light_dir,
+                0.0,
+                90.0,
+            )
+            .build(); // 0.0,
+            ui.slider_float(
+                im_str!("substrate_light_tilt"),
+                &mut substrate_params.substrate_light_tilt,
+                0.0,
+                90.0,
+            )
+            .build(); // 45.0,
+            ui.slider_float(
+                im_str!("substrate_shading"),
+                &mut substrate_params.substrate_shading,
+                0.0,
+                1.0,
+            )
+            .build(); // 1.0,
+            ui.slider_float(
+                im_str!("substrate_distortion"),
+                &mut substrate_params.substrate_distortion,
+                0.0,
+                30.0,
+            )
+            .build(); // 1.0,
+            ui.slider_float(
+                im_str!("impasto_phong_specular"),
+                &mut substrate_params.impasto_phong_specular,
+                0.0,
+                1.0,
+            )
+            .build(); // 0.6,
+            ui.slider_float(
+                im_str!("impasto_phong_shininess"),
+                &mut substrate_params.impasto_phong_shininess,
+                0.0,
+                100.0,
+            )
+            .build(); // 16.0,
 
             ui.color_picker(
                 im_str!("Paper color"),

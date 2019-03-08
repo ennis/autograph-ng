@@ -1,11 +1,11 @@
-use crate::backend::OpenGlInstance;
+use crate::backend::{OpenGlInstance, InstanceConfig};
 use config::Config;
 use glutin::{self, GlWindow};
 use std::sync::Arc;
 use winit::{EventsLoop, WindowBuilder};
 
 pub fn create_instance_and_window(
-    cfg: &Config,
+    cfg: &InstanceConfig,
     events_loop: &EventsLoop,
     window_builder: WindowBuilder,
 ) -> (OpenGlInstance, Arc<GlWindow>) {

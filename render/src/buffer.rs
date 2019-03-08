@@ -1,4 +1,5 @@
 use crate::{
+    descriptor::{Descriptor, ResourceBindingType, ResourceInterface},
     typedesc::{PrimitiveType, TypeDesc},
     Backend,
 };
@@ -34,7 +35,7 @@ impl<U: BufferData> BufferData for [U] {
 #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
 #[repr(transparent)]
 pub struct Buffer<'a, B: Backend, T: BufferData + ?Sized>(
-    pub &'a B::Buffer,
+    pub(crate) &'a B::Buffer,
     pub(crate) PhantomData<&'a T>,
 );
 
@@ -155,3 +156,40 @@ impl_structured_type!(
     nalgebra_glm::Mat4x3,
     &TypeDesc::Matrix(PrimitiveType::Float, 4, 3)
 );
+
+//--------------------------------------------------------------------------------------------------
+#[derive(derivative::Derivative)]
+#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+pub struct TypedConstantBufferView<'a, B: Backend, T: StructuredBufferData> {
+    pub(crate) buffer: &'a B::Buffer,
+    pub(crate) offset: usize,
+    pub(crate) size: Option<usize>,
+    pub(crate) _phantom: PhantomData<&'a T>,
+}
+
+impl<'a, B: Backend, T: StructuredBufferData> ResourceInterface<'a, B>
+    for TypedConstantBufferView<'a, B, T>
+{
+    const TYPE: ResourceBindingType = ResourceBindingType::ConstantBuffer;
+    const DATA_TYPE: Option<&'static TypeDesc<'static>> = None;
+    fn into_descriptor(self) -> Descriptor<'a, B> {
+        Descriptor::ConstantBuffer {
+            buffer: self.buffer,
+            offset: self.offset,
+            size: self.size,
+        }
+    }
+}
+
+impl<'a, B: Backend, T: StructuredBufferData> From<Buffer<'a, B, T>>
+    for TypedConstantBufferView<'a, B, T>
+{
+    fn from(buf: Buffer<'a, B, T>) -> Self {
+        TypedConstantBufferView {
+            buffer: buf.0,
+            offset: 0,
+            size: None,
+            _phantom: PhantomData,
+        }
+    }
+}

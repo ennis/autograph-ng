@@ -1,12 +1,10 @@
 use autograph_render::{
     buffer::{Buffer, BufferTypeless},
-    image::{TextureImageView},
+    image::{ImageView, RenderTargetView, TextureImageView},
     pipeline::{Arguments, Scissor, TypedArgumentBlock, Viewport},
     vertex::{IndexFormat, VertexData},
     Backend, DummyBackend,
 };
-use autograph_render::image::RenderTargetView;
-use autograph_render::image::ImageView;
 
 #[derive(VertexData, Copy, Clone)]
 #[repr(C)]
@@ -104,19 +102,19 @@ const ARGS_0_SIGNATURE: &'static autograph_render::pipeline::SignatureDescriptio
         is_root_vertex_input_signature: false,
         inherited: &[],
         descriptors: &[
-            autograph_render::descriptor::DescriptorBinding {
-                binding: 0usize,
-                descriptor_type: autograph_render::descriptor::DescriptorType::StorageImage,
+            autograph_render::descriptor::ResourceBinding {
+                index: 0usize,
+                ty: autograph_render::descriptor::ResourceBindingType::StorageImage,
                 stage_flags: autograph_render::pipeline::ShaderStageFlags::ALL_GRAPHICS,
                 count: 1,
-                tydesc: None,
+                data_ty: None,
             },
-            autograph_render::descriptor::DescriptorBinding {
-                binding: 1usize,
-                descriptor_type: autograph_render::descriptor::DescriptorType::StorageImage,
+            autograph_render::descriptor::ResourceBinding {
+                index: 1usize,
+                ty: autograph_render::descriptor::ResourceBindingType::StorageImage,
                 stage_flags: autograph_render::pipeline::ShaderStageFlags::ALL_GRAPHICS,
                 count: 1,
-                tydesc: None,
+                data_ty: None,
             },
         ],
         vertex_layouts: &[],
@@ -138,26 +136,26 @@ const ARGS_1_SIGNATURE: &'static autograph_render::pipeline::SignatureDescriptio
         is_root_vertex_input_signature: false,
         inherited: &[],
         descriptors: &[
-            autograph_render::descriptor::DescriptorBinding {
-                binding: 0usize,
-                descriptor_type: autograph_render::descriptor::DescriptorType::SampledImage,
+            autograph_render::descriptor::ResourceBinding {
+                index: 0usize,
+                ty: autograph_render::descriptor::ResourceBindingType::SampledImage,
                 stage_flags: autograph_render::pipeline::ShaderStageFlags::ALL_GRAPHICS,
                 count: 1,
-                tydesc: None,
+                data_ty: None,
             },
-            autograph_render::descriptor::DescriptorBinding {
-                binding: 1usize,
-                descriptor_type: autograph_render::descriptor::DescriptorType::SampledImage,
+            autograph_render::descriptor::ResourceBinding {
+                index: 1usize,
+                ty: autograph_render::descriptor::ResourceBindingType::SampledImage,
                 stage_flags: autograph_render::pipeline::ShaderStageFlags::ALL_GRAPHICS,
                 count: 1,
-                tydesc: None,
+                data_ty: None,
             },
-            autograph_render::descriptor::DescriptorBinding {
-                binding: 2usize,
-                descriptor_type: autograph_render::descriptor::DescriptorType::StorageBuffer,
+            autograph_render::descriptor::ResourceBinding {
+                index: 2usize,
+                ty: autograph_render::descriptor::ResourceBindingType::StorageBuffer,
                 stage_flags: autograph_render::pipeline::ShaderStageFlags::ALL_GRAPHICS,
                 count: 1,
-                tydesc: None,
+                data_ty: None,
             },
         ],
         vertex_layouts: &[Vertex::LAYOUT, Vertex::LAYOUT],
@@ -173,12 +171,12 @@ const ARGS_2_SIGNATURE: &'static autograph_render::pipeline::SignatureDescriptio
         is_root_fragment_output_signature: true,
         is_root_vertex_input_signature: false,
         inherited: &[ARGS_0_SIGNATURE],
-        descriptors: &[autograph_render::descriptor::DescriptorBinding {
-            binding: 0usize,
-            descriptor_type: autograph_render::descriptor::DescriptorType::StorageImage,
+        descriptors: &[autograph_render::descriptor::ResourceBinding {
+            index: 0usize,
+            ty: autograph_render::descriptor::ResourceBindingType::StorageImage,
             stage_flags: autograph_render::pipeline::ShaderStageFlags::ALL_GRAPHICS,
             count: 1,
-            tydesc: None,
+            data_ty: None,
         }],
         vertex_layouts: &[],
         fragment_outputs: &[
@@ -197,40 +195,40 @@ const SIGNATURE: &'static autograph_render::pipeline::SignatureDescription<'stat
         is_root_vertex_input_signature: false,
         inherited: &[ARGS_1_SIGNATURE, ARGS_2_SIGNATURE],
         descriptors: &[
-            autograph_render::descriptor::DescriptorBinding {
-                binding: 0usize,
-                descriptor_type: autograph_render::descriptor::DescriptorType::UniformBuffer,
+            autograph_render::descriptor::ResourceBinding {
+                index: 0usize,
+                ty: autograph_render::descriptor::ResourceBindingType::UniformBuffer,
                 stage_flags: autograph_render::pipeline::ShaderStageFlags::ALL_GRAPHICS,
                 count: 1,
-                tydesc: None,
+                data_ty: None,
             },
-            autograph_render::descriptor::DescriptorBinding {
-                binding: 1usize,
-                descriptor_type: autograph_render::descriptor::DescriptorType::UniformBuffer,
+            autograph_render::descriptor::ResourceBinding {
+                index: 1usize,
+                ty: autograph_render::descriptor::ResourceBindingType::UniformBuffer,
                 stage_flags: autograph_render::pipeline::ShaderStageFlags::ALL_GRAPHICS,
                 count: 1,
-                tydesc: None,
+                data_ty: None,
             },
-            autograph_render::descriptor::DescriptorBinding {
-                binding: 2usize,
-                descriptor_type: autograph_render::descriptor::DescriptorType::StorageBuffer,
+            autograph_render::descriptor::ResourceBinding {
+                index: 2usize,
+                ty: autograph_render::descriptor::ResourceBindingType::StorageBuffer,
                 stage_flags: autograph_render::pipeline::ShaderStageFlags::ALL_GRAPHICS,
                 count: 1,
-                tydesc: None,
+                data_ty: None,
             },
-            autograph_render::descriptor::DescriptorBinding {
-                binding: 3usize,
-                descriptor_type: autograph_render::descriptor::DescriptorType::SampledImage,
+            autograph_render::descriptor::ResourceBinding {
+                index: 3usize,
+                ty: autograph_render::descriptor::ResourceBindingType::SampledImage,
                 stage_flags: autograph_render::pipeline::ShaderStageFlags::ALL_GRAPHICS,
                 count: 1,
-                tydesc: None,
+                data_ty: None,
             },
-            autograph_render::descriptor::DescriptorBinding {
-                binding: 4usize,
-                descriptor_type: autograph_render::descriptor::DescriptorType::StorageImage,
+            autograph_render::descriptor::ResourceBinding {
+                index: 4usize,
+                ty: autograph_render::descriptor::ResourceBindingType::StorageImage,
                 stage_flags: autograph_render::pipeline::ShaderStageFlags::ALL_GRAPHICS,
                 count: 1,
-                tydesc: None,
+                data_ty: None,
             },
         ],
         vertex_layouts: &[Vertex2::LAYOUT, Vertex2::LAYOUT],

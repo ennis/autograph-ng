@@ -35,15 +35,6 @@ DONE (render/validation) support booleans in structured buffer interfaces
 
 - (render-extra) post-proc stack
 - (render) blitting
-- (render) sort out descriptors / textures / render targets 
-    - storage_image: ImageView
-    - sampled_image: ImageView OR TextureImageView 
-        - issue: ImageView can be created even if image cannot be sampled
-        - the type in the member does not encode the requirement
-            - the sampler can be statically specified
-        - check validity as soon as possible
-    - render_target: RenderTargetView
-    - StorageImageView, TextureView, 
     
 ### Enhancements
 - (render/validation) accept structs with single member in place of just the member

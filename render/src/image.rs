@@ -1,8 +1,16 @@
-use crate::Backend;
+use crate::{
+    descriptor::{
+        Descriptor, ResourceBindingType, ResourceInterface, ResourceShape, SubresourceRange,
+    },
+    format::Format,
+    typedesc::*,
+    AliasScope, Arena, Backend,
+};
 use bitflags::bitflags;
-use std::fmt;
-use std::convert::TryFrom;
-use crate::error::Error;
+use std::{
+    fmt,
+    ops::{Bound, RangeBounds},
+};
 
 /// An image.
 #[derive(derivative::Derivative)]
@@ -10,182 +18,38 @@ use crate::error::Error;
 pub struct GenericImage<'a, B: Backend> {
     pub(crate) inner: &'a B::Image,
     pub(crate) flags: ImageUsageFlags,
+    pub(crate) shape: ResourceShape,
+    pub(crate) format: Format,
 }
 
 impl<'a, B: Backend> GenericImage<'a, B> {
     pub fn inner(&self) -> &'a B::Image {
         self.inner
     }
-
     pub fn flags(&self) -> ImageUsageFlags {
         self.flags
     }
-
     pub fn is_render_target(&self) -> bool {
         self.flags.intersects(ImageUsageFlags::COLOR_ATTACHMENT)
     }
-
     pub fn is_texture(&self) -> bool {
         self.flags.intersects(ImageUsageFlags::SAMPLED)
     }
-
-    pub fn is_storage(&self) -> bool {
+    pub fn is_read_write(&self) -> bool {
         self.flags.intersects(ImageUsageFlags::STORAGE)
     }
-
-
-    pub fn try_into_texture_view(self, d: SamplerDescription) -> Result<TextureImageView<'a,B>, Error> {
-        if !self.is_texture() {
-            return Err(Error::InvalidSampledImage);
-        }
-        Ok(TextureImageView(self.inner, d))
-    }
-
-    pub fn try_into_texture_view_linear(self) -> Result<TextureImageView<'a, B>, Error> {
-        self.try_into_texture_view(SamplerDescription::LINEAR_MIPMAP_LINEAR)
-    }
-
-    pub fn try_into_texture_view_nearest(self) -> Result<TextureImageView<'a, B>, Error> {
-        self.try_into_texture_view(SamplerDescription::NEAREST_MIPMAP_NEAREST)
-    }
-
-    pub fn try_into_render_target_view(self) -> Result<RenderTargetView<'a,B>, Error> {
-        if !self.is_render_target() {
-            return Err(Error::InvalidRenderTarget);
-        }
-        Ok(RenderTargetView(self.inner))
-    }
-
-    pub fn try_into_image_view(self) -> Result<ImageView<'a,B>, Error> {
-        if !self.is_storage() {
-            return Err(Error::InvalidStorageImage);
-        }
-        Ok(ImageView(self.inner))
+    pub fn shape(&self) -> ResourceShape {
+        self.shape
     }
 }
-
-/// An image suitable for every use: render target, texture
-#[derive(derivative::Derivative)]
-#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
-#[repr(transparent)]
-pub struct Image<'a, B: Backend>(pub(crate) &'a B::Image);
-
-impl<'a, B: Backend> Image<'a, B> {
-    pub fn inner(&self) -> &'a B::Image {
-        &self.0
-    }
-
-    pub fn into_texture_view(self, d: SamplerDescription) -> TextureImageView<'a, B> {
-        TextureImageView(self.0, d)
-    }
-
-    pub fn into_texture_view_linear(self) -> TextureImageView<'a, B> {
-        TextureImageView(self.0, SamplerDescription::LINEAR_MIPMAP_LINEAR)
-    }
-
-    pub fn into_texture_view_nearest(self) -> TextureImageView<'a, B> {
-        TextureImageView(self.0, SamplerDescription::NEAREST_MIPMAP_NEAREST)
-    }
-
-    pub fn into_render_target_view(self) -> RenderTargetView<'a, B> {
-        RenderTargetView(self.0)
-    }
-
-    pub fn into_image_view(self) -> ImageView<'a, B> {
-        ImageView(self.0)
-    }
-}
-
-
-/// An image only suitable for use as a color render target
-#[derive(derivative::Derivative)]
-#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
-#[repr(transparent)]
-pub struct RenderTargetImage<'a, B: Backend>(pub(crate) &'a B::Image);
-
-impl<'a,B:Backend> RenderTargetImage<'a,B> {
-    pub fn inner(&self) -> &'a B::Image {
-        &self.0
-    }
-
-    pub fn into_render_target(self) -> RenderTargetView<'a,B> {
-        RenderTargetView(self.0)
-    }
-}
-
-//--------------------------------------------------------------------------------------------------
-// Image views
-
-#[derive(derivative::Derivative)]
-#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
-#[repr(transparent)]
-pub struct ImageView<'a, B: Backend>(pub(crate) &'a B::Image);
-
-impl<'a,B:Backend> From<Image<'a,B>> for ImageView<'a, B> {
-    fn from(img: Image<'a, B>) -> Self {
-        ImageView(img.0)
-    }
-}
-
-impl<'a,B:Backend> TryFrom<GenericImage<'a,B>> for ImageView<'a,B> {
-    type Error = crate::error::Error;
-
-    fn try_from(img: GenericImage<'a, B>) -> Result<Self, Self::Error> {
-        img.try_into_image_view()
-    }
-}
-
-
-#[derive(derivative::Derivative)]
-#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
-pub struct TextureImageView<'a, B: Backend>(pub(crate) &'a B::Image, pub SamplerDescription);
-
-
-#[derive(derivative::Derivative)]
-#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
-#[repr(transparent)]
-pub struct RenderTargetView<'a, B: Backend>(pub(crate) &'a B::Image);
-
-impl<'a, B: Backend> RenderTargetView<'a,B>
-{
-    pub fn inner(&self) -> &'a B::Image {
-        self.0
-    }
-}
-
-impl<'a,B:Backend> From<Image<'a,B>> for RenderTargetView<'a, B> {
-    fn from(img: Image<'a, B>) -> Self {
-        RenderTargetView(img.0)
-    }
-}
-
-impl<'a,B:Backend> TryFrom<GenericImage<'a,B>> for RenderTargetView<'a,B> {
-    type Error = crate::error::Error;
-
-    fn try_from(img: GenericImage<'a, B>) -> Result<Self, Self::Error> {
-        img.try_into_render_target_view()
-    }
-}
-
-#[derive(derivative::Derivative)]
-#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
-#[repr(transparent)]
-pub struct DepthRenderTargetView<'a, B: Backend>(pub &'a B::Image);
-
 
 /// Dimensions of an image.
-///
-/// **Borrowed from vulkano**
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Dimensions {
     /// 1D image
-    Dim1d { width: u32 },
-    /// Array of 1D images
-    Dim1dArray { width: u32, array_layers: u32 },
+    Dim1d { width: u32, array_layers: u32 },
     /// 2D image
-    Dim2d { width: u32, height: u32 },
-    /// Array of 2D images
-    Dim2dArray {
+    Dim2d {
         width: u32,
         height: u32,
         array_layers: u32,
@@ -193,9 +57,7 @@ pub enum Dimensions {
     /// 3D image
     Dim3d { width: u32, height: u32, depth: u32 },
     /// Cubemap image (6 2D images)
-    Cubemap { size: u32 },
-    /// Array of cubemaps
-    CubemapArray { size: u32, array_layers: u32 },
+    Cubemap { size: u32, array_layers: u32 },
 }
 
 impl Dimensions {
@@ -203,13 +65,10 @@ impl Dimensions {
     #[inline]
     pub fn width(&self) -> u32 {
         match *self {
-            Dimensions::Dim1d { width } => width,
-            Dimensions::Dim1dArray { width, .. } => width,
+            Dimensions::Dim1d { width, .. } => width,
             Dimensions::Dim2d { width, .. } => width,
-            Dimensions::Dim2dArray { width, .. } => width,
             Dimensions::Dim3d { width, .. } => width,
-            Dimensions::Cubemap { size } => size,
-            Dimensions::CubemapArray { size, .. } => size,
+            Dimensions::Cubemap { size, .. } => size,
         }
     }
 
@@ -220,12 +79,9 @@ impl Dimensions {
     pub fn height(&self) -> u32 {
         match *self {
             Dimensions::Dim1d { .. } => 1,
-            Dimensions::Dim1dArray { .. } => 1,
             Dimensions::Dim2d { height, .. } => height,
-            Dimensions::Dim2dArray { height, .. } => height,
             Dimensions::Dim3d { height, .. } => height,
-            Dimensions::Cubemap { size } => size,
-            Dimensions::CubemapArray { size, .. } => size,
+            Dimensions::Cubemap { size, .. } => size,
         }
     }
 
@@ -244,12 +100,9 @@ impl Dimensions {
     pub fn depth(&self) -> u32 {
         match *self {
             Dimensions::Dim1d { .. } => 1,
-            Dimensions::Dim1dArray { .. } => 1,
             Dimensions::Dim2d { .. } => 1,
-            Dimensions::Dim2dArray { .. } => 1,
             Dimensions::Dim3d { depth, .. } => depth,
             Dimensions::Cubemap { .. } => 1,
-            Dimensions::CubemapArray { .. } => 1,
         }
     }
 
@@ -264,82 +117,81 @@ impl Dimensions {
     #[inline]
     pub fn array_layers(&self) -> u32 {
         match *self {
-            Dimensions::Dim1d { .. } => 1,
-            Dimensions::Dim1dArray { array_layers, .. } => array_layers,
-            Dimensions::Dim2d { .. } => 1,
-            Dimensions::Dim2dArray { array_layers, .. } => array_layers,
+            Dimensions::Dim1d { array_layers, .. } => array_layers,
+            Dimensions::Dim2d { array_layers, .. } => array_layers,
             Dimensions::Dim3d { .. } => 1,
-            Dimensions::Cubemap { .. } => 1,
-            Dimensions::CubemapArray { array_layers, .. } => array_layers,
+            Dimensions::Cubemap { array_layers, .. } => array_layers,
         }
     }
 
     #[inline]
     pub fn array_layers_with_cube(&self) -> u32 {
         match *self {
-            Dimensions::Dim1d { .. } => 1,
-            Dimensions::Dim1dArray { array_layers, .. } => array_layers,
-            Dimensions::Dim2d { .. } => 1,
-            Dimensions::Dim2dArray { array_layers, .. } => array_layers,
+            Dimensions::Dim1d { array_layers, .. } => array_layers,
+            Dimensions::Dim2d { array_layers, .. } => array_layers,
             Dimensions::Dim3d { .. } => 1,
-            Dimensions::Cubemap { .. } => 6,
-            Dimensions::CubemapArray { array_layers, .. } => array_layers * 6,
+            Dimensions::Cubemap { array_layers, .. } => array_layers * 6,
         }
     }
 }
 
 impl From<(u32, u32)> for Dimensions {
     fn from((width, height): (u32, u32)) -> Dimensions {
-        Dimensions::Dim2d { width, height }
+        Dimensions::Dim2d {
+            width,
+            height,
+            array_layers: 1,
+        }
     }
 }
 
 impl fmt::Debug for Dimensions {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Dimensions::Dim1d { width } => {
-                write!(f, "[1D {}x1]", width)?;
-            }
-            Dimensions::Dim1dArray {
+            Dimensions::Dim1d {
                 width,
                 array_layers,
             } => {
-                write!(f, "[1D Array {}x1(x{})]", width, array_layers)?;
+                if *array_layers == 1 {
+                    write!(f, "[1D {}]", width)
+                } else {
+                    write!(f, "[1D Array {}(x{})]", width, array_layers)
+                }
             }
-            Dimensions::Dim2d { width, height } => {
-                write!(f, "[2D {}x{}]", width, height)?;
-            }
-            Dimensions::Dim2dArray {
+            Dimensions::Dim2d {
                 width,
                 height,
                 array_layers,
             } => {
-                write!(f, "[2D Array {}x{}(x{})]", width, height, array_layers)?;
+                if *array_layers == 1 {
+                    write!(f, "[2D {}x{}]", width, height)
+                } else {
+                    write!(f, "[2D Array {}x{}(x{})]", width, height, array_layers)
+                }
             }
             Dimensions::Dim3d {
                 width,
                 height,
                 depth,
-            } => {
-                write!(f, "[3D {}x{}x{}]", width, height, depth)?;
-            }
-            Dimensions::Cubemap { size } => {
-                write!(f, "[Cubemap {}x{}]", size, size)?;
-            }
-            Dimensions::CubemapArray { size, array_layers } => {
-                write!(f, "[Cubemap Array {}x{}(x{})]", size, size, array_layers)?;
+            } => write!(f, "[3D {}x{}x{}]", width, height, depth),
+            Dimensions::Cubemap { size, array_layers } => {
+                if *array_layers == 1 {
+                    write!(f, "[Cubemap {}x{}]", size, size)
+                } else {
+                    write!(f, "[Cubemap Array {}x{}(x{})]", size, size, array_layers)
+                }
             }
         }
-        Ok(())
     }
 }
 
+/*
 #[derive(Debug, Copy, Clone)]
 pub enum MipmapsCount {
     Log2,
     One,
     Specific(u32),
-}
+}*/
 
 ///
 /// Get the maximum number of mip map levels for a 2D texture of size (width,height)
@@ -449,38 +301,529 @@ impl SamplerDescription {
     };
 }
 
-/*
 //--------------------------------------------------------------------------------------------------
-pub struct ImageBuilder<'a, B: Backend>
-{
-    arena: &'a Arena<'a, B>,
-    format: Format,
-    dimensions: Dimensions,
-    mips: MipmapsCount,
-    samples: u32,
-    usage: ImageUsageFlags,
-    aliasing: AliasScope,
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum MipmapsOption {
+    NoMipmap,
+    Allocate,
+    AllocateCount(u32),
+    Generate,
+    GenerateCount(u32),
 }
 
-impl<'a,B:Backend> ImageBuilder<'a, B>
-{
-    pub fn new(arena: &'a Arena<'a, B>) -> ImageBuilder<'a,B>
-    {
-        ImageBuilder {
-            arena,
-            format: Format::R8G8B8A8_SRGB,
-            dimensions: (512,512).into(),
-            mips: MipmapsCount::One,
-            samples: 1,
-            usage: Default::default(),
-            aliasing: AliasScope::no_alias()
+macro_rules! impl_image_builder {
+    (@T size D1) => { u32 };
+    (@T size D2) => { (u32,u32) };
+    (@T size D3) => { (u32,u32,u32) };
+    (@T size Cube) => { u32 };
+
+    (@M dimensions D1) => {
+        fn dimensions(&self) -> Dimensions {
+            Dimensions::Dim1d { width: self.size, array_layers: self.array_layers }
+        }
+    };
+    (@M dimensions D2) => {
+        fn dimensions(&self) -> Dimensions {
+            Dimensions::Dim2d { width: self.size.0, height: self.size.1, array_layers: self.array_layers }
+        }
+    };
+    (@M dimensions D3) => {
+        fn dimensions(&self) -> Dimensions {
+            Dimensions::Dim3d { width: self.size.0, height: self.size.1, depth: self.size.2 }
+        }
+    };
+    (@M dimensions Cube) => {
+        fn dimensions(&self) -> Dimensions {
+            Dimensions::DimCube { size: self.size, array_layers: self.array_layers }
+        }
+    };
+
+    (@MM mipmap_methods) => {
+        pub fn mipmaps(&mut self, mipmaps: MipmapsOption) -> &mut Self {
+            self.mipmaps = mipmaps;
+            self
+        }
+        pub fn no_mipmaps(&mut self) -> &mut Self {
+            self.mipmaps(MipmapsOption::NoMipmap)
+        }
+        pub fn allocate_mipmaps(&mut self) -> &mut Self {
+            self.mipmaps(MipmapsOption::Generate)
+        }
+        pub fn generate_mipmaps(&mut self) -> &mut Self {
+            self.mipmaps(MipmapsOption::Generate)
+        }
+    };
+
+    (@MM mipmap_methods D1 SS) => { impl_image_builder!(@MM mipmap_methods); };
+    (@MM mipmap_methods D2 SS) => { impl_image_builder!(@MM mipmap_methods); };
+    (@MM mipmap_methods D3 SS) => { impl_image_builder!(@MM mipmap_methods); };
+    (@MM mipmap_methods Cube SS) => { impl_image_builder!(@MM mipmap_methods); };
+    (@MM mipmap_methods $_:ident MS) => {};
+
+    (@M samples MS) => {
+        pub fn samples(&mut self, count: u32) -> &mut Self {
+            self.samples = count;
+            self
+        }
+    };
+
+    (@M samples SS) => {};
+
+    (@M array_layers) => {
+        pub fn array_layers(&mut self, count: u32) -> &mut Self {
+            self.array_layers = count;
+            self
+        }
+    };
+
+    (@M size D1) => {
+        pub fn size(&mut self, w: u32) -> &mut Self {
+            self.size = w;
+            self
+        }
+    };
+
+    (@M size D2) => {
+        pub fn size(&mut self, w: u32, h: u32) -> &mut Self {
+            self.size = (w,h).into();
+            self
+        }
+    };
+
+    (@M size Cube) => { impl_image_builder!(@M size D1) };
+
+    (@M size D3) => {
+        pub fn size(&mut self, w: u32, h: u32, d: u32) -> &mut Self {
+            self.size = (w,h,d).into();
+            self
+        }
+    };
+
+    (@M array_layers D1) => { impl_image_builder!(@M array_layers); };
+    (@M array_layers D2) => { impl_image_builder!(@M array_layers); };
+    (@M array_layers Cube) => { impl_image_builder!(@M array_layers); };
+    (@M array_layers D3) => { };
+
+    (@E flags RW) => {
+        ImageUsageFlags::COLOR_ATTACHMENT
+            | ImageUsageFlags::INPUT_ATTACHMENT
+            | ImageUsageFlags::STORAGE
+            | ImageUsageFlags::SAMPLED
+    };
+    (@E flags RO) => { ImageUsageFlags::SAMPLED };
+    (@E flags C) => { ImageUsageFlags::COLOR_ATTACHMENT };
+    (@E flags DS) => { ImageUsageFlags::DEPTH_ATTACHMENT };
+
+    (@M build $rty:ident) => {
+        pub fn build(&mut self) -> $rty<'a,B> {
+            $rty {
+                image: self.arena.create_image(self.aliasing, self.format, self.dimensions(), self.mipmaps, self.samples, self.usage, None).image
+            }
+        }
+    };
+
+    // RO: Read-only (sample)
+    // RW: Read/write (sample, storage, render target)
+    // C: Color render target
+    // DS: Depth stencil taret
+    (@M build RW $rty:ident) => { impl_image_builder!(@M build $rty); };
+    (@M build C $rty:ident) => { impl_image_builder!(@M build $rty); };
+    (@M build DS $rty:ident) => { impl_image_builder!(@M build $rty); };
+    (@M build RO $rty:ident) => {};
+
+    (@M with_data $rty:ident) => {
+        pub fn with_data(&mut self, data: &[u8]) -> $rty<'a,B> {
+            $rty {
+                image: self.arena.create_image(self.aliasing, self.format, self.dimensions(), self.mipmaps, self.samples, self.usage, Some(data)).image
+            }
+        }
+    };
+
+    ($n:ident $mode:ident $shape:ident $multisample:ident $rty:ident) => {
+        #[allow(dead_code)]
+        pub struct $n<'a,B:Backend> {
+            arena: &'a Arena<'a, B>,
+            format: Format,
+            size: impl_image_builder!(@T size $shape),
+            array_layers: u32,
+            mipmaps: MipmapsOption,
+            samples: u32,
+            usage: ImageUsageFlags,
+            aliasing: AliasScope,
+        }
+
+        impl<'a,B:Backend> $n<'a,B> {
+            pub fn new(arena: &'a Arena<'a,B>, format: Format, size: impl_image_builder!(@T size $shape)) -> $n<'a,B> {
+                $n {
+                    arena,
+                    format,
+                    size,
+                    array_layers: 1,
+                    mipmaps: MipmapsOption::NoMipmap,
+                    samples: 1,
+                    usage: impl_image_builder!(@E flags $mode),
+                    aliasing: AliasScope::no_alias(),
+                }
+            }
+
+            impl_image_builder!(@M array_layers $shape);
+            impl_image_builder!(@M dimensions $shape);
+            impl_image_builder!(@M samples $multisample);
+            impl_image_builder!(@M size $shape);
+            impl_image_builder!(@MM mipmap_methods $shape $multisample);
+            impl_image_builder!(@M build $mode $rty);
+            impl_image_builder!(@M with_data $rty);
+        }
+    };
+}
+
+impl_image_builder!(Image1dBuilder RW D1 SS Image1d);
+impl_image_builder!(Image2dBuilder RW D2 MS Image2d);
+impl_image_builder!(Image3dBuilder RW D3 SS Image3d);
+impl_image_builder!(RenderTargetBuilder       C  D2 MS RenderTargetImage2d);
+impl_image_builder!(DepthStencilTargetBuilder DS D2 MS DepthStencilImage2d);
+
+//--------------------------------------------------------------------------------------------------
+// Image types
+
+fn normalize_mip_range(miprange: impl RangeBounds<u32>) -> (u32, Option<u32>) {
+    let a = match miprange.start_bound() {
+        Bound::Unbounded => 0,
+        Bound::Excluded(&n) => n + 1,
+        Bound::Included(&n) => n,
+    };
+    let b = match miprange.start_bound() {
+        Bound::Unbounded => None,
+        Bound::Excluded(&n) => Some(n),
+        Bound::Included(&n) => Some(n + 1),
+    };
+    (a, b)
+}
+
+macro_rules! impl_image {
+    ($n:ident) => {
+        #[derive(derivative::Derivative)]
+        #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+        pub struct $n<'a, B: Backend> {
+            pub(crate) image: &'a B::Image,
+        }
+
+        impl<'a, B: Backend> $n<'a, B> {
+            pub fn inner(&self) -> &'a B::Image {
+                &self.image
+            }
+        }
+    };
+}
+
+macro_rules! impl_image_mipmap {
+    ($n_image:ident, $n_image_mipmap:ident) => {
+        #[derive(derivative::Derivative)]
+        #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+        pub struct $n_image_mipmap<'a, B: Backend> {
+            pub(crate) image: &'a B::Image,
+            pub(crate) miplevel: u32,
+        }
+
+        impl<'a, B: Backend> $n_image<'a, B> {
+            pub fn mipmap(&self, miplevel: u32) -> $n_image_mipmap<'a, B> {
+                $n_image_mipmap {
+                    image: self.image,
+                    miplevel,
+                }
+            }
+        }
+    };
+}
+
+macro_rules! impl_image_mipmaps {
+    ($n_image:ident, $n_image_mipmaps:ident, $texture_sampler_view:ident) => {
+        #[derive(derivative::Derivative)]
+        #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+        pub struct $n_image_mipmaps<'a, B: Backend> {
+            pub(crate) image: &'a B::Image,
+            pub(crate) most_detailed_miplevel: u32,
+            pub(crate) mip_count: Option<u32>,
+        }
+
+        impl<'a, B: Backend> $n_image_mipmaps<'a, B> {
+            pub fn sampled(&self, sampler: SamplerDescription) -> $texture_sampler_view<'a, B> {
+                $texture_sampler_view {
+                    image: self.image,
+                    sampler,
+                    subresource: SubresourceRange {
+                        base_mip_level: self.most_detailed_miplevel,
+                        level_count: self.mip_count,
+                        base_array_layer: 0,
+                        layer_count: Some(1),
+                    },
+                }
+            }
+            pub fn sampled_linear(&self) -> $texture_sampler_view<'a, B> {
+                self.sampled(SamplerDescription::LINEAR_MIPMAP_LINEAR)
+            }
+            pub fn sampled_nearest(&self) -> $texture_sampler_view<'a, B> {
+                self.sampled(SamplerDescription::NEAREST_MIPMAP_NEAREST)
+            }
+        }
+
+        impl<'a, B: Backend> $n_image<'a, B> {
+            pub fn mipmaps(&self, miprange: impl RangeBounds<u32>) -> $n_image_mipmaps<'a, B> {
+                let (most_detailed_miplevel, mip_count) = normalize_mip_range(miprange);
+                $n_image_mipmaps {
+                    image: self.image,
+                    most_detailed_miplevel,
+                    mip_count,
+                }
+            }
+            pub fn sampled(&self, sampler: SamplerDescription) -> $texture_sampler_view<'a, B> {
+                self.mipmaps(0..).sampled(sampler)
+            }
+            pub fn sampled_linear(&self) -> $texture_sampler_view<'a, B> {
+                self.mipmaps(0..)
+                    .sampled(SamplerDescription::LINEAR_MIPMAP_LINEAR)
+            }
+            pub fn sampled_nearest(&self) -> $texture_sampler_view<'a, B> {
+                self.mipmaps(0..)
+                    .sampled(SamplerDescription::NEAREST_MIPMAP_NEAREST)
+            }
+        }
+    };
+}
+
+impl_image!(UnsafeImage);
+impl_image!(Image1d);
+impl_image_mipmap!(Image1d, Image1dMipmap);
+impl_image_mipmaps!(Image1d, Image1dMipmaps, TextureSampler1dView);
+impl_image!(Image2d);
+impl_image_mipmap!(Image2d, Image2dMipmap);
+impl_image_mipmaps!(Image2d, Image2dMipmaps, TextureSampler2dView);
+impl_image!(Image3d);
+impl_image_mipmap!(Image3d, Image3dMipmap);
+impl_image_mipmaps!(Image3d, Image3dMipmaps, TextureSampler3dView);
+impl_image!(RenderTargetImage2d);
+impl_image!(DepthStencilImage2d);
+
+//pub struct RenderTargetImage<'a, B: Backend>(pub(crate) &'a B::Image);
+//pub struct DepthStencilImage<'a, B: Backend>(pub(crate) &'a B::Image);
+
+impl<'a, B: Backend> RenderTargetImage2d<'a, B> {
+    pub fn render_target_view(&self) -> RenderTarget2dView<'a, B> {
+        RenderTarget2dView {
+            image: self.image,
+            subresource: SubresourceRange {
+                base_mip_level: 0,
+                level_count: Some(1),
+                base_array_layer: 0,
+                layer_count: Some(1),
+            },
         }
     }
-}*/
+}
 
-// Strongly-typed render targets?
-// arena.create_render_target(...) -> RenderTarget
-// impl From<Image> for RenderTarget
+impl<'a, B: Backend> Image2d<'a, B> {
+    pub fn render_target_view(&self) -> RenderTarget2dView<'a, B> {
+        RenderTarget2dView {
+            image: self.image,
+            subresource: SubresourceRange {
+                base_mip_level: 0,
+                level_count: Some(1),
+                base_array_layer: 0,
+                layer_count: Some(1),
+            },
+        }
+    }
+}
 
-// arena.image(Format::R8G8B8A8_SRGB, (512,512)).build() -> Image
-// arena.image(Format::..., (512,512)).with_pixels(...) -> Image
+impl<'a, B: Backend> Image2dMipmap<'a, B> {
+    pub fn render_target_view(&self) -> RenderTarget2dView<'a, B> {
+        RenderTarget2dView {
+            image: self.image,
+            subresource: SubresourceRange {
+                base_mip_level: self.miplevel,
+                level_count: Some(1),
+                base_array_layer: 0,
+                layer_count: Some(1),
+            },
+        }
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+macro_rules! impl_view_type {
+    ($nv:ident) => {
+        impl_view_type!($nv from);
+    };
+    (sampled $nv:ident) => {
+        impl_view_type!(sampled $nv from);
+    };
+    ($nv:ident from $($trivial_conv:ident),*) => {
+        #[derive(derivative::Derivative)]
+        #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+        pub struct $nv<'a, B: Backend> {
+            pub(crate) image: &'a B::Image,
+            pub(crate) subresource: SubresourceRange,
+        }
+        impl<'a, B: Backend> $nv<'a,B> {
+            pub fn inner(&self) -> &'a B::Image { self.image }
+            pub fn subresource(&self) -> SubresourceRange { self.subresource }
+        }
+        $(impl<'a,B:Backend> From<$trivial_conv<'a,B>> for $nv<'a,B> {
+            fn from(other: $trivial_conv<'a,B>) -> $nv<'a,B> {
+                $nv {
+                    image: other.image,
+                    subresource: other.subresource,
+                }
+            }
+        })*
+    };
+    (sampled $nv:ident from $($trivial_conv:ident),*) => {
+        #[derive(derivative::Derivative)]
+        #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+        pub struct $nv<'a, B: Backend> {
+            pub(crate) image: &'a B::Image,
+            pub(crate) subresource: SubresourceRange,
+            pub(crate) sampler: SamplerDescription,
+        }
+        impl<'a, B: Backend> $nv<'a,B> {
+            pub fn inner(&self) -> &'a B::Image { self.image }
+            pub fn subresource(&self) -> SubresourceRange { self.subresource }
+            pub fn sampler(&self) -> &SamplerDescription { &self.sampler }
+        }
+        $(impl<'a,B:Backend> From<$trivial_conv<'a,B>> for $nv<'a,B> {
+            fn from(other: $trivial_conv<'a,B>) -> $nv<'a,B> {
+                $nv {
+                    image: other.image,
+                    subresource: other.subresource,
+                    sampler: other.sampler,
+                }
+            }
+        })*
+    };
+}
+
+macro_rules! impl_resource_interface_view {
+    ($nv: ident, $rt:expr, $desc:ident) => {
+        impl<'a, B: Backend> ResourceInterface<'a, B> for $nv<'a, B> {
+            const TYPE: ResourceBindingType = $rt;
+            const DATA_TYPE: Option<&'static TypeDesc<'static>> = None;
+            fn into_descriptor(self) -> Descriptor<'a, B> {
+                Descriptor::$desc {
+                    image: self.image,
+                    subresource: self.subresource,
+                }
+            }
+        }
+    };
+
+    (sampled $nv: ident, $rt:expr, $desc:ident) => {
+        impl<'a, B: Backend> ResourceInterface<'a, B> for $nv<'a, B> {
+            const TYPE: ResourceBindingType = $rt;
+            const DATA_TYPE: Option<&'static TypeDesc<'static>> = None;
+            fn into_descriptor(self) -> Descriptor<'a, B> {
+                Descriptor::$desc {
+                    image: self.image,
+                    subresource: self.subresource,
+                    sampler: self.sampler,
+                }
+            }
+        }
+    };
+}
+
+macro_rules! impl_single_mipmap_view {
+    (default $n:ident => $nv:ident) => {
+        impl<'a, B: Backend> From<$n<'a, B>> for $nv<'a, B> {
+            fn from(other: $n<'a, B>) -> $nv<'a, B> {
+                $nv {
+                    image: other.image,
+                    subresource: SubresourceRange {
+                        base_mip_level: 0,
+                        level_count: Some(1),
+                        base_array_layer: 0,
+                        layer_count: Some(1),
+                    },
+                }
+            }
+        }
+    };
+    ($n:ident => $nv:ident) => {
+        impl<'a, B: Backend> From<$n<'a, B>> for $nv<'a, B> {
+            fn from(other: $n<'a, B>) -> $nv<'a, B> {
+                $nv {
+                    image: other.image,
+                    subresource: SubresourceRange {
+                        base_mip_level: other.miplevel,
+                        level_count: Some(1),
+                        base_array_layer: 0,
+                        layer_count: Some(1),
+                    },
+                }
+            }
+        }
+    };
+}
+
+// also, any image can be converted to an imageview
+impl_view_type!(ImageView from Image1dView,Image2dView,Image3dView);
+impl_view_type!(Image1dView);
+impl_view_type!(Image2dView);
+impl_view_type!(Image3dView);
+impl_single_mipmap_view!(default Image1d => Image1dView);
+impl_single_mipmap_view!(default Image2d => Image2dView);
+impl_single_mipmap_view!(default Image3d => Image3dView);
+impl_single_mipmap_view!(default RenderTargetImage2d => Image2dView);
+impl_single_mipmap_view!(default DepthStencilImage2d => Image2dView);
+impl_single_mipmap_view!(Image1dMipmap => Image1dView);
+impl_single_mipmap_view!(Image2dMipmap => Image2dView);
+impl_single_mipmap_view!(Image3dMipmap => Image3dView);
+
+impl_view_type!(RenderTargetView from RenderTarget2dView);
+impl_view_type!(DepthStencilView from DepthStencil2dView);
+impl_view_type!(RenderTarget2dView);
+impl_view_type!(DepthStencil2dView);
+// img2d, default level can be converted to RTV via into
+impl_single_mipmap_view!(default Image2d => RenderTargetView);
+impl_single_mipmap_view!(default Image2d => RenderTarget2dView);
+// rtimage2d can be converted to RTV via into
+impl_single_mipmap_view!(default RenderTargetImage2d => RenderTargetView);
+impl_single_mipmap_view!(default RenderTargetImage2d => RenderTarget2dView);
+// img2dmipmap can be converted to RTV via into
+impl_single_mipmap_view!(Image2dMipmap => RenderTargetView);
+impl_single_mipmap_view!(Image2dMipmap => RenderTarget2dView);
+
+impl_view_type!(RwImage1dView);
+impl_view_type!(RwImage2dView);
+impl_view_type!(RwImage3dView);
+// imgNd can be converted to RwImage via into
+impl_single_mipmap_view!(default Image1d => RwImage1dView);
+impl_single_mipmap_view!(default Image2d => RwImage2dView);
+impl_single_mipmap_view!(default Image3d => RwImage3dView);
+impl_single_mipmap_view!(Image1dMipmap => RwImage1dView);
+impl_single_mipmap_view!(Image2dMipmap => RwImage2dView);
+impl_single_mipmap_view!(Image3dMipmap => RwImage3dView);
+
+impl_resource_interface_view!(
+    RwImage1dView,
+    ResourceBindingType::RwImage(ResourceShape::R1d),
+    RwImage
+);
+impl_resource_interface_view!(
+    RwImage2dView,
+    ResourceBindingType::RwImage(ResourceShape::R2d),
+    RwImage
+);
+impl_resource_interface_view!(
+    RwImage3dView,
+    ResourceBindingType::RwImage(ResourceShape::R3d),
+    RwImage
+);
+
+impl_view_type!(sampled TextureSamplerView from TextureSampler1dView,TextureSampler2dView,TextureSampler3dView);
+impl_view_type!(sampled TextureSampler1dView);
+impl_view_type!(sampled TextureSampler2dView);
+impl_view_type!(sampled TextureSampler3dView);
+
+impl_resource_interface_view!(sampled TextureSampler1dView, ResourceBindingType::TextureSampler(ResourceShape::R1d), TextureSampler);
+impl_resource_interface_view!(sampled TextureSampler2dView, ResourceBindingType::TextureSampler(ResourceShape::R2d), TextureSampler);
+impl_resource_interface_view!(sampled TextureSampler3dView, ResourceBindingType::TextureSampler(ResourceShape::R3d), TextureSampler);

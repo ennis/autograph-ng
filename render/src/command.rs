@@ -1,12 +1,9 @@
 use crate::{
-    buffer::BufferTypeless,
-    image::Image,
+    image::{DepthStencilView, Image2dView, RenderTargetView},
     pipeline::{Arguments, GraphicsPipeline, TypedSignature},
     swapchain::Swapchain,
-    sync::{MemoryBarrier, PipelineStageFlags},
     Arena, Backend,
 };
-use std::ops::Range;
 
 /// Represents a command to be executed by the renderer backend.
 ///
@@ -113,34 +110,14 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
         self.commands.push(Command { cmd, sortkey })
     }
 
-    // fn self.push_header_command(sortkey)
-    // fn self.push_trailing_command()
-
     pub fn iter(&self) -> impl Iterator<Item = &Command<'a, B>> {
         self.commands.iter()
     }
 
     //----------------------------------------------------------------------------------------------
-    // Manual sync
-
-    /// Inserts an explicit pipeline barrier.
-    pub fn pipeline_barrier(
-        &mut self,
-        _sort_key: u64,
-        _src: PipelineStageFlags,
-        _dst: PipelineStageFlags,
-        _memory_barriers: &[MemoryBarrier<'a, B>],
-    ) {
-        unimplemented!()
-    }
-
-    //----------------------------------------------------------------------------------------------
-    // Allocate
-
-    //----------------------------------------------------------------------------------------------
     // Copy
 
-    /// Copy data between buffers.
+    /*/// Copy data between buffers.
     pub fn copy_buffer(
         &mut self,
         _sort_key: u64,
@@ -150,34 +127,41 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
         _dst_range: Range<u64>,
     ) {
         unimplemented!()
-    }
+    }*/
 
     //----------------------------------------------------------------------------------------------
     // Clear
 
     /// Clears an image.
-    pub fn clear_image(&mut self, sortkey: u64, image: Image<'a, B>, color: &[f32; 4]) {
+    ///
+    /// Q: Should it be necessary for the image to be an RTV?
+    pub fn clear_render_target(
+        &mut self,
+        sortkey: u64,
+        image: impl Into<RenderTargetView<'a, B>>,
+        color: &[f32; 4],
+    ) {
         self.push_command(
             sortkey,
             CommandInner::ClearImageFloat {
-                image: image.0,
+                image: image.into().image,
                 color: *color,
             },
         )
     }
 
     /// Clears an image.
-    pub fn clear_depth_stencil_image(
+    pub fn clear_depth_stencil(
         &mut self,
         sortkey: u64,
-        image: Image<'a, B>,
+        image: impl Into<DepthStencilView<'a, B>>,
         depth: f32,
         stencil: Option<u8>,
     ) {
         self.push_command(
             sortkey,
             CommandInner::ClearDepthStencilImage {
-                image: image.0,
+                image: image.into().image,
                 depth,
                 stencil,
             },
@@ -244,11 +228,18 @@ impl<'a, B: Backend> CommandBuffer<'a, B> {
 
     /// Presents the specified image to the swapchain.
     /// Might incur a copy / blit or format conversion if necessary.
-    pub fn present(&mut self, sortkey: u64, image: Image<'a, B>, swapchain: Swapchain<'a, B>) {
+    ///
+    /// Q: What type should `image` be? Need a 2D view of an image which supports transfer source.
+    pub fn present(
+        &mut self,
+        sortkey: u64,
+        image: impl Into<Image2dView<'a, B>>,
+        swapchain: Swapchain<'a, B>,
+    ) {
         self.push_command(
             sortkey,
             CommandInner::Present {
-                image: image.0,
+                image: image.into().image,
                 swapchain: swapchain.0,
             },
         )

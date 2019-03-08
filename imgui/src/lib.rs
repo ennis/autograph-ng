@@ -1,19 +1,22 @@
 //! Renderer for dear imgui (https://github.com/ocornut/imgui) using autograph-render as a backend.
 #![feature(proc_macro_hygiene)]
 use autograph_render::{
-    buffer::{Buffer, StructuredBufferData},
+    buffer::{Buffer, StructuredBufferData, TypedConstantBufferView},
     command::{CommandBuffer, DrawIndexedParams},
     format::Format,
     glm,
-    image::{ImageUsageFlags, MipmapsCount, TextureImageView, SamplerDescription},
+    image::{
+        ImageUsageFlags, MipmapsOption, RenderTarget2dView, SamplerDescription,
+        TextureSampler2dView,
+    },
     include_shader,
     pipeline::{
         Arguments, ColorBlendState, DepthStencilState, GraphicsPipelineCreateInfo,
         InputAssemblyState, MultisampleState, RasterisationState, Scissor, ScissorRect,
         TypedArgumentBlock, TypedGraphicsPipeline, Viewport, ViewportState,
     },
-    vertex::VertexData,
-    Arena, Backend, Image,
+    vertex::{IndexBufferView, VertexBufferView, VertexData},
+    Arena, Backend,
 };
 use imgui::ImGui;
 use std::{mem, slice};
@@ -41,7 +44,7 @@ struct ImUniforms {
 #[derive(Copy, Clone, Debug, Arguments)]
 struct ImRenderTarget<'a, B: Backend> {
     #[argument(render_target)]
-    target: Image<'a, B>,
+    target: RenderTarget2dView<'a, B>,
     #[argument(viewport)]
     viewport: Viewport,
 }
@@ -50,12 +53,12 @@ struct ImRenderTarget<'a, B: Backend> {
 struct ImArguments<'a, B: Backend> {
     #[argument(inherit)]
     rt: TypedArgumentBlock<'a, B, ImRenderTarget<'a, B>>,
-    #[argument(uniform_buffer)]
-    uniforms: Buffer<'a, B, ImUniforms>,
+    #[argument(descriptor)]
+    uniforms: TypedConstantBufferView<'a, B, ImUniforms>,
+    #[argument(descriptor)]
+    tex: TextureSampler2dView<'a, B>,
     #[argument(vertex_buffer)]
     vertices: Buffer<'a, B, [ImDrawVert]>,
-    #[argument(sampled_image)]
-    tex: TextureImageView<'a, B>,
     #[argument(index_buffer)]
     indices: Buffer<'a, B, [u16]>,
     #[argument(scissor)]
@@ -82,7 +85,7 @@ fn create_pipeline<'a, B: Backend>(
 pub struct ImGuiRenderer<'a, B: Backend> {
     pipeline: TypedGraphicsPipeline<'a, B, ImArguments<'a, B>>,
     render_target: TypedArgumentBlock<'a, B, ImRenderTarget<'a, B>>,
-    font_tex: TextureImageView<'a, B>,
+    font_tex: TextureSampler2dView<'a, B>,
 }
 
 impl<'a, B: Backend> ImGuiRenderer<'a, B> {
@@ -95,7 +98,7 @@ impl<'a, B: Backend> ImGuiRenderer<'a, B> {
     pub fn new(
         arena: &'a Arena<B>,
         ui: &mut ImGui,
-        target: Image<'a, B>,
+        target: RenderTarget2dView<'a, B>,
         viewport: Viewport,
     ) -> ImGuiRenderer<'a, B> {
         // sanity check
@@ -107,15 +110,9 @@ impl<'a, B: Backend> ImGuiRenderer<'a, B> {
         let pipeline = create_pipeline(arena);
 
         let font_tex = ui.prepare_texture(|handle| {
-            let texture = arena.create_immutable_image(
-                Format::R8G8B8A8_SRGB,
-                (handle.width, handle.height).into(),
-                MipmapsCount::One,
-                1,
-                ImageUsageFlags::SAMPLED,
-                handle.pixels,
-            );
-
+            let texture = arena
+                .image_2d(Format::R8G8B8A8_SRGB, handle.width, handle.height)
+                .with_data(handle.pixels);
             texture
         });
 
@@ -123,7 +120,7 @@ impl<'a, B: Backend> ImGuiRenderer<'a, B> {
 
         ImGuiRenderer {
             pipeline,
-            font_tex: font_tex.into_texture_view(SamplerDescription::NEAREST_MIPMAP_NEAREST),
+            font_tex: font_tex.sampled(SamplerDescription::NEAREST_MIPMAP_NEAREST),
             render_target,
         }
     }
@@ -158,17 +155,14 @@ impl<'a, B: Backend> ImGuiRenderer<'a, B> {
             0.0,
             0.0,
             0.0,
-
             0.0,
             2.0 / height as f32,
             0.0,
             0.0,
-
             0.0,
             0.0,
             -1.0,
             0.0,
-
             -1.0,
             -1.0,
             0.0,
@@ -187,7 +181,7 @@ impl<'a, B: Backend> ImGuiRenderer<'a, B> {
 
             let args = frame_arena.create_typed_argument_block(ImArguments {
                 rt: self.render_target,
-                uniforms: frame_arena.upload(&ImUniforms { mat }),
+                uniforms: frame_arena.upload(&ImUniforms { mat }).into(),
                 vertices,
                 tex: self.font_tex,
                 indices,

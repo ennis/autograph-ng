@@ -5,7 +5,7 @@ use crate::{
     AliasInfo,
 };
 use autograph_render::{
-    get_texture_mip_map_count, Dimensions, Format, ImageUsageFlags, MipmapsCount,
+    get_texture_mip_map_count, Dimensions, Format, ImageUsageFlags, MipmapsOption,
 };
 use slotmap::new_key_type;
 use std::cmp::max;
@@ -24,22 +24,23 @@ impl ImageDescription {
     pub fn new(
         format: Format,
         dimensions: Dimensions,
-        mipmaps_count: MipmapsCount,
+        mipmaps: MipmapsOption,
         samples: u32,
         usage: ImageUsageFlags,
     ) -> ImageDescription {
         let (w, h, _d) = dimensions.width_height_depth();
-        let mipcount = match mipmaps_count {
+        let mipcount = match mipmaps {
             // TODO mipcount for 3D textures?
-            MipmapsCount::Log2 => get_texture_mip_map_count(max(w, h)),
-            MipmapsCount::Specific(count) => {
-                // Multisampled textures can't have more than one mip level
-                if samples > 1 {
-                    assert_eq!(count, 1);
-                }
-                count
+            MipmapsOption::Allocate | MipmapsOption::Generate => {
+                get_texture_mip_map_count(max(w, h))
             }
-            MipmapsCount::One => 1,
+            MipmapsOption::GenerateCount(n) | MipmapsOption::AllocateCount(n) => {
+                if samples > 1 {
+                    assert_eq!(n, 1);
+                }
+                n
+            }
+            MipmapsOption::NoMipmap => 1,
         };
         ImageDescription {
             format,
@@ -63,31 +64,17 @@ struct ExtentsAndType {
 impl ExtentsAndType {
     fn from_dimensions(dim: &Dimensions) -> ExtentsAndType {
         match *dim {
-            Dimensions::Dim1d { width } => ExtentsAndType {
+            Dimensions::Dim1d {
+                width,
+                array_layers,
+            } => ExtentsAndType {
                 target: gl::TEXTURE_1D,
                 width,
                 height: 1,
                 depth: 1,
-                array_layers: 1,
-            },
-            Dimensions::Dim1dArray {
-                width,
-                array_layers,
-            } => ExtentsAndType {
-                target: gl::TEXTURE_2D,
-                width,
-                height: 1,
-                depth: 1,
                 array_layers,
             },
-            Dimensions::Dim2d { width, height } => ExtentsAndType {
-                target: gl::TEXTURE_2D,
-                width,
-                height,
-                depth: 1,
-                array_layers: 1,
-            },
-            Dimensions::Dim2dArray {
+            Dimensions::Dim2d {
                 width,
                 height,
                 array_layers,
@@ -119,33 +106,43 @@ impl ExtentsAndType {
 /// Wrapper for OpenGL textures and renderbuffers.
 #[derive(Copy, Clone, Debug)]
 pub struct RawImage {
-    pub obj: GLuint,
-    pub target: GLenum,
+    pub(crate) obj: GLuint,
+    pub(crate) target: GLenum,
     //pub format: Format,
 }
 
 impl RawImage {
+    pub fn new(gl: &Gl, d: &ImageDescription) -> RawImage {
+        if d.usage != ImageUsageFlags::COLOR_ATTACHMENT {
+            // will be used as storage or sampled image
+            RawImage::new_texture(gl, d.format, &d.dimensions, d.mipcount, d.samples)
+        } else {
+            // only used as color attachments: can use a renderbuffer instead
+            RawImage::new_renderbuffer(gl, d.format, &d.dimensions, d.samples)
+        }
+    }
+
     pub fn new_texture(
         gl: &Gl,
         format: Format,
         dimensions: &Dimensions,
-        mipmaps: MipmapsCount,
+        mipcount: u32,
         samples: u32,
     ) -> RawImage {
         let et = ExtentsAndType::from_dimensions(&dimensions);
         let glfmt = GlFormatInfo::from_format(format);
 
-        let mipcount = match mipmaps {
-            MipmapsCount::Log2 => get_texture_mip_map_count(max(et.width, et.height)),
-            MipmapsCount::Specific(count) => {
+        /*let mipcount = match mipmaps {
+            MipmapsOption::Log2 => get_texture_mip_map_count(max(et.width, et.height)),
+            MipmapsOption::Specific(count) => {
                 // Multisampled textures can't have more than one mip level
                 if samples > 1 {
                     assert_eq!(count, 1);
                 }
                 count
             }
-            MipmapsCount::One => 1,
-        };
+            MipmapsOption::One => 1,
+        };*/
 
         if et.array_layers > 1 {
             unimplemented!("array textures")
@@ -290,8 +287,6 @@ pub unsafe fn upload_image_region(
     let mut prev_unpack_alignment = 0;
     gl.GetIntegerv(gl::UNPACK_ALIGNMENT, &mut prev_unpack_alignment);
     gl.PixelStorei(gl::UNPACK_ALIGNMENT, 1);
-
-
 
     match target {
         gl::TEXTURE_1D => {

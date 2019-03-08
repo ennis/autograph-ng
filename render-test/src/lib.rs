@@ -84,7 +84,11 @@ where
 #[cfg(test)]
 mod tests {
     use crate::with_test_fixture;
-    use autograph_render::{format::Format, image::MipmapsCount, AliasScope, image::ImageUsageFlags};
+    use autograph_render::{
+        format::Format,
+        image::{ImageUsageFlags, MipmapsOption},
+        AliasScope,
+    };
     use std::iter;
 
     fn works() {
@@ -93,7 +97,7 @@ mod tests {
                 AliasScope::no_alias(),
                 Format::R16G16B16A16_UNORM,
                 (640, 480).into(),
-                MipmapsCount::One,
+                MipmapsOption::One,
                 1,
                 ImageUsageFlags::SAMPLED,
             );

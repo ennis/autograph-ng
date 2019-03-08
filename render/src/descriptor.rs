@@ -1,13 +1,9 @@
 //! Descriptors
 use crate::{
-    buffer::{Buffer, BufferData, BufferTypeless, StructuredBufferData},
-    image::{ TextureImageView, SamplerDescription},
-    pipeline::ShaderStageFlags,
-    typedesc::TypeDesc,
+    buffer::BufferData, image::SamplerDescription, pipeline::ShaderStageFlags, typedesc::TypeDesc,
     Backend,
 };
 use std::marker::PhantomData;
-use crate::image::ImageView;
 
 #[derive(Copy, Clone, Debug)]
 #[repr(transparent)]
@@ -16,13 +12,39 @@ pub struct HostReference<'a, B: Backend, T: BufferData>(
     pub(crate) PhantomData<&'a T>,
 );
 
-/// Represents an entry (binding) in a descriptor set layout.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct DescriptorBinding<'tcx> {
+pub enum ResourceShape {
+    R1d,
+    R1dArray,
+    R2d,
+    R2dArray,
+    R2dMultisample,
+    R2dMultisampleArray,
+    R3d,
+    RCube,
+}
+
+/// Descriptor type
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum ResourceBindingType {
+    Sampler,
+    Texture(ResourceShape),
+    TextureSampler(ResourceShape),
+    //Image(ResourceShape), => use texture instead
+    RwImage(ResourceShape),
+    ConstantBuffer,
+    RwBuffer,
+    TexelBuffer,
+    RwTexelBuffer,
+}
+
+///
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct ResourceBinding<'tcx> {
     /// Binding index
-    pub binding: usize,
+    pub index: usize,
     /// Descriptor type
-    pub descriptor_type: DescriptorType,
+    pub ty: ResourceBindingType,
     /// Which shader stages will see this descriptor
     pub stage_flags: ShaderStageFlags,
     /// TODO How many descriptors in the binding? Should be 1
@@ -30,50 +52,74 @@ pub struct DescriptorBinding<'tcx> {
     /// Precise description of the expected data type (image format, layout of buffer data, etc.).
     ///
     /// Can be None if no type information is available for this binding.
-    pub tydesc: Option<&'tcx TypeDesc<'tcx>>,
+    pub data_ty: Option<&'tcx TypeDesc<'tcx>>,
 }
 
-/// Descriptor type
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum DescriptorType {
-    Sampler, // TODO
-    SampledImage,
-    StorageImage,
-    UniformBuffer,
-    StorageBuffer,
-    InputAttachment,
+#[derive(Copy, Clone, Debug)]
+pub struct SubresourceRange {
+    pub base_mip_level: u32,
+    pub level_count: Option<u32>,
+    pub base_array_layer: u32,
+    pub layer_count: Option<u32>,
 }
 
 /// A reference to a resource used by one or more shader stages in the pipeline.
 #[derive(Copy, Clone)]
 pub enum Descriptor<'a, B: Backend> {
-    SampledImage {
-        img: &'a B::Image,
+    Sampler {
+        desc: SamplerDescription,
+    },
+    Texture {
+        image: &'a B::Image,
+        subresource: SubresourceRange,
+    },
+    TextureSampler {
+        image: &'a B::Image,
+        subresource: SubresourceRange,
         sampler: SamplerDescription,
     },
-    Image {
-        img: &'a B::Image,
+    RwImage {
+        image: &'a B::Image,
+        subresource: SubresourceRange,
     },
-    Buffer {
+    ConstantBuffer {
         buffer: &'a B::Buffer,
         offset: usize,
         size: Option<usize>,
     },
-    //HostReference(HostReference<'a, B>),
+    RwBuffer {
+        buffer: &'a B::Buffer,
+        offset: usize,
+        size: Option<usize>,
+    },
+    TexelBuffer {
+        buffer: &'a B::Buffer,
+        offset: usize,
+        size: Option<usize>,
+    },
+    RwTexelBuffer {
+        buffer: &'a B::Buffer,
+        offset: usize,
+        size: Option<usize>,
+    },
     Empty,
 }
 
 /// Trait implemented by types that can be turned into descriptors.
 ///
 /// This trait is implemented by default for buffer objects, buffer slices, and images.
-pub trait DescriptorInterface<'a, B: Backend>: Into<Descriptor<'a, B>> {
+pub trait ResourceInterface<'a, B: Backend> {
+    /// Descriptor type
+    const TYPE: ResourceBindingType;
     /// Type information about the content of the data referenced by the descriptor.
-    const TYPE: Option<&'static TypeDesc<'static>>;
+    const DATA_TYPE: Option<&'static TypeDesc<'static>>;
+    fn into_descriptor(self) -> Descriptor<'a, B>;
 }
 
-impl<'a, B: Backend> DescriptorInterface<'a, B> for BufferTypeless<'a, B> {
-    const TYPE: Option<&'static TypeDesc<'static>> = None;
-}
+/*impl<'a, B: Backend> ResourceInterface<'a, B> for BufferTypeless<'a, B> {
+    const TYPE: ResourceBindingType = ResourceBindingType::;
+    const DATA_TYPE: Option<&'static TypeDesc<'static>> = None;
+}*/
 
 /*
 impl<'a, B: Backend, T: StructuredBufferData> DescriptorInterface<'a, B> for HostReference<'a, B, T> {
@@ -88,18 +134,19 @@ impl<'a, B: Backend, T: StructuredBufferData> From<HostReference<'a, B, T>> for 
 }*/
 
 // TODO: no impl for T: !BufferLayout, must use specialization
-impl<'a, B: Backend, T: ?Sized + StructuredBufferData> DescriptorInterface<'a, B>
+/*
+impl<'a, B: Backend, T: ?Sized + StructuredBufferData> ResourceInterface<'a, B>
     for Buffer<'a, B, T>
 {
     // T: BufferLayout so we have type info about the contents
     const TYPE: Option<&'static TypeDesc<'static>> = Some(<T as StructuredBufferData>::TYPE);
 }
 
-impl<'a, B: Backend> DescriptorInterface<'a, B> for TextureImageView<'a, B> {
+impl<'a, B: Backend> ResourceInterface<'a, B> for TextureImageView<'a, B> {
     const TYPE: Option<&'static TypeDesc<'static>> = None;
 }
 
-impl<'a, B: Backend> DescriptorInterface<'a, B> for ImageView<'a, B> {
+impl<'a, B: Backend> ResourceInterface<'a, B> for ImageView<'a, B> {
     const TYPE: Option<&'static TypeDesc<'static>> = None;
 }
 
@@ -111,8 +158,8 @@ impl<'a, B: Backend> From<BufferTypeless<'a, B>> for Descriptor<'a, B> {
             size: None,
         }
     }
-}
-
+}*/
+/*
 impl<'a, B: Backend, T: BufferData + ?Sized> From<Buffer<'a, B, T>> for Descriptor<'a, B> {
     fn from(buffer: Buffer<'a, B, T>) -> Self {
         // TODO pass/check type info?
@@ -135,7 +182,7 @@ impl<'a, B: Backend> From<ImageView<'a, B>> for Descriptor<'a, B> {
             img: img.0
         }
     }
-}
+}*/
 
 /*
 impl<'a, B: Backend> DescriptorInterface<'a, B> for Image<'a, B> {

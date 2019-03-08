@@ -1997,6 +1997,35 @@ GraphicsPipeline trait
 #### Investigate a D3D12 Backend as a proof of concept
 - why not vulkan? 
     - D3D12 has nice tools 
+- issues:
+    - current lib needs SPIR-V for validation
+    - but: no path from SPIR-V to DXIL yet
+- proposal: redesign of shader compilation
+    - autograph-render no longer expects SPIR-V as input
+        - instead, expects backend-specific bytecode...
+        - ... with reflection info in a **standardized format**
+            - so use spirv crate to reflect spirv, and something else to reflect DXIL
+            - extract TypeDesc and other outside of autograph-spirv (not spirv specific anymore)
+            - generate reflection at **compile time**
+        - issue: descriptor sets? root signatures? descriptor tables? 
+            - the reflection format must be aware of all these little differences
+- a single shader compiler crate that contains macro to
+    - compile shader code to SPIR-V
+    - compile shader code to DXIL
+    - compile (or just copy) shader code to GLSL
+    - backend crates re-export the macros that correspond to the targeted API 
+- proposal: wrap/use DXC (DirectX shader compiler), and use HLSL
+    - why? consider targeting d3d12
+        - HLSL -> DXIL provided by DXC
+        - HLSL -> SPIR-V **also** provided by DXC (spiregg)
+        - for GL: HLSL -> SPIR-V -> GLSL -> driver (spirv-cross)
+    - vs GLSL:
+        - GLSL -> SPIR-V provided by glslang
+        - but GLSL -> DXIL not provided by anything!
+            - need GLSL -> SPIR-V -> HLSL -> DXIL
+            - or GLSL -> HLSL -> DXIL
+- also: slang (extension to HLSL) has the concept of ParameterBlocks, which map quite well to our ArgumentBlocks
+    - also also, can already produce a compiler to DXBC, DXIL and SPIR-V
     
 #### Autograph-render-extra: "batteries included" rendering engine
 - frame graph library
@@ -2012,4 +2041,73 @@ GraphicsPipeline trait
 - 2D rendering utilities
 - reexport UI
 
+#### sort out descriptors / textures / render targets 
+- storage_image: ImageView
+- sampled_image: ImageView OR TextureImageView 
+    - issue: ImageView can be created even if image cannot be sampled
+    - the type in the member does not encode the requirement
+        - the sampler can be statically specified
+    - check validity as soon as possible
+- render_target: RenderTargetView
+- StorageImageView, TextureView, 
+- Buffers:
+    - UniformBufferView
+    - StorageBufferView
+- Bikeshedding: D3D vs Vulkan parlance
+    - Shader Resource View/ConstantBuffer/StructuredBuffer vs Uniform Buffer
+    - Unordered Access View / RWStructuredBuffer VS Storage Buffer
+    - Vulkan parlance is more concise
     
+- Sampled Image -> TextureView/TextureSamplerView
+    - Texture{1D,2D,3D,Cube}View / TextureSamplerView
+- Storage Image -> StorageImage{1D,2D,3D,Cube}View
+- Uniform Buffer -> UniformBufferView / ConstantBufferView
+- Storage Buffer -> StorageBufferView / RWBufferView
+- Index Buffer -> IndexBufferView
+- Vertex Buffer -> VertexBufferView
+- Render target / framebuffer attachment -> RenderTargetView
+- Depth stencil render target -> DepthStencilView
+
+- View types:
+    - Images that are sampled
+        TextureView, TextureSamplerView
+    - Images that are read by texel but not sampled
+        ImageView (ReadOnlyImageView)
+    - Images that are read OR written by texel but not sampled
+        RwImageView
+    - Constant buffers (buffer containing read-only, non-texel data)
+        ConstantBufferView
+    - Buffers containing texel data, can be viewed as an array of texels (?)
+        TexelBufferView
+    - Read/write buffers containing texel data
+        RwTexelBufferView
+        
+    - Read only
+        - Structured
+            - ConstantBufferView
+        - Sampled
+            - TextureView/TextureSamplerView
+        - Texel
+            - ImageView (image-backed)
+            - TexelBufferView (buffer-backed)
+    - Read/write
+        - Structured
+            - RwBufferView
+    
+    - Storage VS UnorderedAccess VS Rw VS Mut?
+        - which is clearer?
+        - Rw conveys Read/Write, Storage conveys ... storage, and unordered access conveys something too technical
+    - SampledImage VS Texture
+        - texture is clearer, and shorter; use image for texel access
+    - Uniform VS Constant VS Nothing
+    
+
+- no need for attributes anymore!
+    - all descriptors on the same level    
+    - just a list of pipeline::Parameter, backed by concrete pipeline::Argument
+
+#### Shaders v2
+- generate reflection data at compile time so that render does not need to parse SPIR-V
+- issue: not using attributes for fields produce stuff in the wrong order
+    - not optimal
+    - revert to old design

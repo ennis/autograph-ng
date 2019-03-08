@@ -20,12 +20,12 @@ use autograph_render::{
     command::Command,
     descriptor::Descriptor,
     format::Format,
-    image::{Dimensions, ImageUsageFlags, MipmapsCount},
+    image::{DepthStencilView, Dimensions, ImageUsageFlags, MipmapsOption, RenderTargetView},
     pipeline::{
         BareArgumentBlock, GraphicsPipelineCreateInfo, Scissor, ShaderStageFlags,
         SignatureDescription, Viewport,
     },
-    vertex::{IndexBufferDescriptor, VertexBufferDescriptor},
+    vertex::{IndexBufferView, VertexBufferView},
     AliasScope, Backend, Instance,
 };
 use config::Config;
@@ -41,7 +41,6 @@ use std::{
     time::Duration,
 };
 use typed_arena::Arena;
-use autograph_render::image::RenderTargetView;
 
 //--------------------------------------------------------------------------------------------------
 extern "system" fn debug_callback(
@@ -203,36 +202,15 @@ impl Resources {
         gl: &Gl,
         arena: &'a GlArena,
         scope: AliasScope,
-        format: Format,
-        dimensions: Dimensions,
-        mipcount: MipmapsCount,
-        samples: u32,
-        usage: ImageUsageFlags,
+        desc: &ImageDescription,
     ) -> &'a GlImage {
-        let desc = ImageDescription::new(format, dimensions, mipcount, samples, usage);
-        let (key, raw_img) = self.image_pool.alloc(scope, desc, |d| {
-            debug!(
-                "Allocating new scoped image {:?} ({:?}, {:?}, mips: {}, samples: {})",
-                d.dimensions, d.format, d.usage, d.mipcount, d.samples
-            );
-            if d.usage != ImageUsageFlags::COLOR_ATTACHMENT {
-                // will be used as storage or sampled image
-                RawImage::new_texture(
-                    gl,
-                    d.format,
-                    &d.dimensions,
-                    MipmapsCount::Specific(d.mipcount),
-                    samples,
-                )
-            } else {
-                // only used as color attachments: can use a renderbuffer instead
-                RawImage::new_renderbuffer(gl, d.format, &d.dimensions, d.samples)
-            }
-        });
+        let (key, raw) = self
+            .image_pool
+            .alloc(scope, *desc, |d| RawImage::new(gl, d));
 
         arena.images.alloc(GlImage {
             alias_info: AliasInfo { key, scope }.into(),
-            raw: raw_img.clone(),
+            raw: raw.clone(),
             should_destroy: false,
         })
     }
@@ -245,13 +223,28 @@ pub struct OpenGlInstance {
     frame_num: Cell<u64>, // replace with AtomicU64 once stabilized
     state_cache: RefCell<StateCache>,
     sampler_cache: RefCell<SamplerCache>,
-    //pipeline_signature_cache: PipelineSignatureCache,
-    //desc_set_layout_cache: SyncArenaHashMap<TypeId, GlDescriptorSetLayout>,
     limits: ImplementationParameters,
     window: Option<Arc<GlWindow>>,
     def_swapchain: Option<GlSwapchain>,
-    max_frames_in_flight: u32,
+    cfg: InstanceConfig,
     gl: gl::Gl,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct InstanceConfig {
+    pub upload_buffer_size: usize,
+    pub max_frames_in_flight: u32,
+    pub vsync: bool,
+}
+
+impl Default for InstanceConfig {
+    fn default() -> Self {
+        InstanceConfig {
+            upload_buffer_size: 4 * 1024 * 1024,
+            max_frames_in_flight: 1,
+            vsync: false,
+        }
+    }
 }
 
 impl OpenGlInstance {
@@ -260,7 +253,7 @@ impl OpenGlInstance {
         self.window.as_ref()
     }
 
-    pub fn from_gl_window(cfg: &Config, window: Arc<GlWindow>) -> OpenGlInstance {
+    pub fn from_gl_window(cfg: &InstanceConfig, window: Arc<GlWindow>) -> OpenGlInstance {
         let gl = unsafe {
             // Make current the OpenGL context associated to the window
             // and load function pointers
@@ -273,6 +266,7 @@ impl OpenGlInstance {
         };
 
         unsafe {
+            // Enable debug output
             gl.Enable(gl::DEBUG_OUTPUT_SYNCHRONOUS);
             gl.DebugMessageCallback(debug_callback as GLDEBUGPROC, ptr::null());
             gl.DebugMessageControl(
@@ -292,18 +286,11 @@ impl OpenGlInstance {
             let vendor = CStr::from_ptr(gl.GetString(gl::VENDOR) as *const c_char);
             let renderer = CStr::from_ptr(gl.GetString(gl::RENDERER) as *const c_char);
 
-            debug!(
+            info!(
                 "OpenGL version {}.{} (vendor: {:?}, renderer: {:?})",
                 major_version, minor_version, vendor, renderer
             );
-
         }
-
-        let upload_buffer_size = cfg
-            .get::<u64>("gfx.default_upload_buffer_size")
-            .unwrap_or(4 * 1024 * 1024);
-        assert!(upload_buffer_size <= usize::max_value() as u64);
-        let max_frames_in_flight = cfg.get::<u32>("gfx.max_frames_in_flight").unwrap_or(2);
 
         let timeline = Timeline::new(0);
 
@@ -311,7 +298,7 @@ impl OpenGlInstance {
         let state_cache = StateCache::new(&limits);
 
         OpenGlInstance {
-            rsrc: RefCell::new(Resources::new(upload_buffer_size as usize)),
+            rsrc: RefCell::new(Resources::new(cfg.upload_buffer_size)),
             timeline: RefCell::new(timeline),
             frame_num: Cell::new(1),
             window: Some(window.clone()),
@@ -319,7 +306,7 @@ impl OpenGlInstance {
                 window: window.clone(),
             }),
             gl,
-            max_frames_in_flight,
+            cfg: *cfg,
             limits,
             state_cache: RefCell::new(state_cache),
             sampler_cache: RefCell::new(SamplerCache::new()),
@@ -361,51 +348,50 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
     }
 
     //----------------------------------------------------------------------------------------------
-    unsafe fn create_immutable_image<'a>(
-        &self,
-        arena: &'a GlArena,
-        fmt: Format,
-        dims: Dimensions,
-        mips: MipmapsCount,
-        samples: u32,
-        _usage: ImageUsageFlags,
-        data: &[u8],
-    ) -> &'a GlImage {
-        // initial data specified, allocate a texture
-        let raw = RawImage::new_texture(&self.gl, fmt, &dims, mips, samples);
-
-        upload_image_region(
-            &self.gl,
-            raw.target,
-            raw.obj,
-            fmt,
-            0,
-            (0, 0, 0),
-            dims.width_height_depth(),
-            data,
-        );
-
-        arena.images.alloc(GlImage {
-            should_destroy: true,
-            raw,
-            alias_info: None,
-        })
-    }
-
-    //----------------------------------------------------------------------------------------------
     unsafe fn create_image<'a>(
         &self,
         arena: &'a GlArena,
         scope: AliasScope,
-        fmt: Format,
-        dims: Dimensions,
-        mipcount: MipmapsCount,
+        format: Format,
+        dimensions: Dimensions,
+        mipmaps: MipmapsOption,
         samples: u32,
         usage: ImageUsageFlags,
+        initial_data: Option<&[u8]>,
     ) -> &'a GlImage {
-        self.rsrc
-            .borrow_mut()
-            .alloc_aliased_image(&self.gl, arena, scope, fmt, dims, mipcount, samples, usage)
+        let d = ImageDescription::new(format, dimensions, mipmaps, samples, usage);
+
+        if scope != AliasScope::no_alias() {
+            // cannot specify initial data for aliasable image
+            assert!(initial_data.is_none());
+            self.rsrc
+                .borrow_mut()
+                .alloc_aliased_image(&self.gl, arena, scope, &d)
+        } else {
+            // not aliasable, dedicated allocation
+            let raw = RawImage::new(&self.gl, &d);
+
+            if let Some(data) = initial_data {
+                unsafe {
+                    upload_image_region(
+                        &self.gl,
+                        raw.target,
+                        raw.obj,
+                        format,
+                        0,
+                        (0, 0, 0),
+                        dimensions.width_height_depth(),
+                        data,
+                    );
+                }
+            }
+
+            arena.images.alloc(GlImage {
+                should_destroy: true,
+                raw,
+                alias_info: None,
+            })
+        }
     }
 
     //----------------------------------------------------------------------------------------------
@@ -497,16 +483,16 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
     }
 
     //----------------------------------------------------------------------------------------------
-    unsafe fn create_argument_block<'a, 'b>(
+    unsafe fn create_argument_block<'a>(
         &self,
         arena: &'a GlArena,
         signature: &'a GlSignature,
-        arguments: impl IntoIterator<Item = BareArgumentBlock<'a, OpenGlBackend>>,
+        inherited: impl IntoIterator<Item = BareArgumentBlock<'a, OpenGlBackend>>,
         descriptors: impl IntoIterator<Item = Descriptor<'a, OpenGlBackend>>,
-        vertex_buffers: impl IntoIterator<Item = VertexBufferDescriptor<'a, 'b, OpenGlBackend>>,
-        index_buffer: Option<IndexBufferDescriptor<'a, OpenGlBackend>>,
+        vertex_buffers: impl IntoIterator<Item = VertexBufferView<'a, OpenGlBackend>>,
+        index_buffer: Option<IndexBufferView<'a, OpenGlBackend>>,
         render_targets: impl IntoIterator<Item = RenderTargetView<'a, OpenGlBackend>>,
-        depth_stencil_render_target: Option<RenderTargetView<'a, OpenGlBackend>>,
+        depth_stencil_render_target: Option<DepthStencilView<'a, OpenGlBackend>>,
         viewports: impl IntoIterator<Item = Viewport>,
         scissors: impl IntoIterator<Item = Scissor>,
     ) -> &'a GlArgumentBlock {
@@ -516,7 +502,7 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
             &self.gl,
             &mut sampler_cache,
             signature,
-            arguments,
+            inherited,
             descriptors,
             vertex_buffers,
             index_buffer,
@@ -566,10 +552,10 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
 
         // wait for previous frames before starting a new one
         // if max_frames_in_flight is zero, then will wait on the previously signalled point.
-        if fnum > u64::from(self.max_frames_in_flight) {
+        if fnum > u64::from(self.cfg.max_frames_in_flight) {
             let timeout = !timeline.client_sync(
                 &self.gl,
-                fnum - u64::from(self.max_frames_in_flight),
+                fnum - u64::from(self.cfg.max_frames_in_flight),
                 FRAME_WAIT_TIMEOUT,
             );
             if timeout {

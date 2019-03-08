@@ -6,6 +6,7 @@ use crate::{
 
 use crate::Backend;
 pub use autograph_render_macros::VertexData;
+use std::marker::PhantomData;
 
 /// Describes the type of indices contained in an index buffer.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -36,26 +37,56 @@ pub struct VertexLayout<'tcx> {
 /// Descriptor for a vertex buffer.
 /// TODO support host references.
 #[derive(Copy, Clone, Debug)]
-pub struct VertexBufferDescriptor<'a, 'tcx, B: Backend> {
+pub struct VertexBufferView<'a, B: Backend> {
     /// Buffer containing vertex data.
-    pub buffer: BufferTypeless<'a, B>,
+    pub(crate) buffer: &'a B::Buffer,
     /// Layout of vertex data.
-    pub layout: &'tcx VertexLayout<'tcx>,
+    pub(crate) stride: usize,
     /// Offset to the start of vertex data in the buffer.
-    pub offset: u64,
+    pub(crate) offset: usize,
 }
 
-impl<'a, B: Backend, T: VertexData> From<Buffer<'a, B, T>>
-    for VertexBufferDescriptor<'a, 'static, B>
-{
-    fn from(buf: Buffer<'a, B, T>) -> Self {
-        VertexBufferDescriptor {
+impl<'a, B: Backend> VertexBufferView<'a, B> {
+    pub fn buffer(&self) -> &'a B::Buffer {
+        self.buffer
+    }
+    pub fn stride(&self) -> usize {
+        self.stride
+    }
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
+}
+
+impl<'a, B: Backend, V: VertexData> From<Buffer<'a, B, [V]>> for VertexBufferView<'a, B> {
+    fn from(buf: Buffer<'a, B, [V]>) -> Self {
+        VertexBufferView {
             offset: 0,
-            buffer: buf.into_typeless(),
-            layout: &T::LAYOUT,
+            buffer: buf.0,
+            stride: V::LAYOUT.stride,
         }
     }
 }
+
+/*
+#[derive(Copy, Clone, Debug)]
+pub struct TypedVertexBufferView<'a, B: Backend, V: VertexData> {
+    /// Buffer containing vertex data.
+    pub(crate) buffer: &'a B::Buffer,
+    /// Offset to the start of vertex data in the buffer.
+    pub(crate) offset: u64,
+    pub(crate) _phantom: PhantomData<&'a V>
+}
+
+impl<'a, B: Backend, V: VertexData> From<Buffer<'a, B, [V]>> for TypedVertexBufferView<'a, B, V> {
+    fn from(buf: Buffer<'a, B, [V]>) -> Self {
+        TypedVertexBufferView {
+            offset: 0,
+            buffer: buf.0,
+            _phantom: PhantomData
+        }
+    }
+}*/
 
 /// Trait implemented by types that represent vertex data in a vertex buffer.
 ///
@@ -82,13 +113,13 @@ pub unsafe trait VertexData: BufferData {
 
 /// Descriptor for an index buffer.
 #[derive(Copy, Clone, Debug)]
-pub struct IndexBufferDescriptor<'a, B: Backend> {
+pub struct IndexBufferView<'a, B: Backend> {
     /// Buffer containing index data.
-    pub buffer: BufferTypeless<'a, B>,
+    pub buffer: &'a B::Buffer,
     /// Format of indices.
     pub format: IndexFormat,
     /// Offset to the start of index data in the buffer.
-    pub offset: u64,
+    pub offset: usize,
 }
 
 /// Trait implemented by types that can serve as indices.
@@ -97,49 +128,75 @@ pub unsafe trait IndexData: BufferData {
     const FORMAT: IndexFormat;
 }
 
-pub trait VertexBufferInterface<'a, 'tcx, B: Backend>:
-    Into<VertexBufferDescriptor<'a, 'tcx, B>>
-{
+impl<'a, B: Backend, I: IndexData> From<Buffer<'a, B, [I]>> for IndexBufferView<'a, B> {
+    fn from(buf: Buffer<'a, B, [I]>) -> Self {
+        IndexBufferView {
+            offset: 0,
+            buffer: buf.0,
+            format: <I as IndexData>::FORMAT,
+        }
+    }
+}
+
+/*
+#[derive(Copy, Clone, Debug)]
+pub struct TypedIndexBufferView<'a, B: Backend, I: IndexData> {
+    pub(crate) buffer: &'a B::Buffer,
+    pub(crate) offset: u64,
+    pub(crate) _phantom: PhantomData<&'a I>
+}
+
+impl<'a, B: Backend, I: IndexData> From<Buffer<'a, B, [I]>> for TypedIndexBufferView<'a, B, I> {
+    fn from(buf: Buffer<'a, B, [I]>) -> Self {
+        TypedIndexBufferView {
+            offset: 0,
+            buffer: buf.0,
+            _phantom: PhantomData
+        }
+    }
+}*/
+
+//--------------------------------------------------------------------------------------------------
+pub trait VertexBufferInterface<'a, B: Backend>: Into<VertexBufferView<'a, B>> {
     type Vertex: VertexData;
 }
 
-pub trait IndexBufferInterface<'a, B: Backend>: Into<IndexBufferDescriptor<'a, B>> {
+pub trait IndexBufferInterface<'a, B: Backend>: Into<IndexBufferView<'a, B>> {
     type Index: IndexData;
 }
 
+/*
 // typed buffer -> vertex buffer descriptor
-impl<'a, 'tcx, B: Backend, T> From<Buffer<'a, B, [T]>> for VertexBufferDescriptor<'a, 'tcx, B>
+impl<'a, B: Backend, V> From<TypedVertexBufferView<'a, B, V>> for VertexBufferView<'a, B>
 where
-    T: VertexData,
+    V: VertexData,
 {
-    fn from(buf: Buffer<'a, B, [T]>) -> Self {
-        VertexBufferDescriptor {
-            offset: 0,
-            buffer: buf.into(),
-            layout: &<T as VertexData>::LAYOUT,
+    fn from(v: TypedVertexBufferView<'a, B, V>) -> Self {
+        VertexBufferView {
+            offset: v.offset,
+            buffer: v.buffer,
+            stride: <V as VertexData>::LAYOUT.stride,
         }
     }
 }
 
 // typed buffer -> index buffer descriptor
-impl<'a, B: Backend, T: IndexData> From<Buffer<'a, B, [T]>> for IndexBufferDescriptor<'a, B> {
-    fn from(buf: Buffer<'a, B, [T]>) -> Self {
-        IndexBufferDescriptor {
-            offset: 0,
-            buffer: buf.into(),
-            format: <T as IndexData>::FORMAT,
+impl<'a, B: Backend, I: IndexData> From<TypedIndexBufferView<'a, B, I>> for IndexBufferView<'a, B> {
+    fn from(i: TypedIndexBufferView<'a, B, I>) -> Self {
+        IndexBufferView {
+            offset: i.offset,
+            buffer: i.buffer,
+            format: <I as IndexData>::FORMAT,
         }
     }
+}*/
+
+impl<'a, 'tcx, B: Backend, V: VertexData> VertexBufferInterface<'a, B> for Buffer<'a, B, [V]> {
+    type Vertex = V;
 }
 
-impl<'a, 'tcx, B: Backend, T: VertexData> VertexBufferInterface<'a, 'tcx, B>
-    for Buffer<'a, B, [T]>
-{
-    type Vertex = T;
-}
-
-impl<'a, B: Backend, T: IndexData> IndexBufferInterface<'a, B> for Buffer<'a, B, [T]> {
-    type Index = T;
+impl<'a, B: Backend, I: IndexData> IndexBufferInterface<'a, B> for Buffer<'a, B, [I]> {
+    type Index = I;
 }
 
 /// Trait implemented by types that can serve as a vertex attribute.
