@@ -52,7 +52,7 @@ mod util;
 mod window;
 
 pub use self::{
-    backend::{OpenGlBackend, OpenGlInstance, InstanceConfig},
+    backend::{InstanceConfig, OpenGlBackend, OpenGlInstance},
     window::create_instance_and_window,
 };
 

@@ -1,1 +1,1 @@
-pub use autograph_spirv::{ImageDataType, PrimitiveType, StructLayout, TypeDesc};
+pub use autograph_spirv::{ArrayLayout, FieldsLayout, Layout, PrimitiveType, TypeDesc, ImageType, LayoutDetails};

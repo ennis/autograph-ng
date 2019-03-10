@@ -1,21 +1,19 @@
 //! SPIR-V parsing and manipulation utilities.
-#[macro_use]
-extern crate log;
-
 pub mod ast;
 mod decode;
 mod edit;
 pub mod inst;
 pub mod layout;
 
-use spirv_headers::ImageFormat;
-use std::{cell::RefCell, fmt, marker::PhantomData};
+use std::{cell::RefCell, fmt};
+use std::error;
 
 //pub use self::inst::*;
 //pub use self::edit::*;
+pub use dropless_arena::DroplessArena;
 pub use self::{decode::DecodedInstruction, layout::*};
 pub use spirv_headers as headers;
-use std::error;
+pub use headers::{Dim, ImageFormat};
 
 /// Error that can happen when parsing.
 #[derive(Debug, Clone)]
@@ -37,9 +35,9 @@ impl error::Error for ParseError {}
 /// Be careful not to mix IPtrs between modules
 /// IPtrs are invalidated after the module is edited.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub struct IPtr<'m>(usize, PhantomData<&'m ()>);
+pub struct IPtr(usize);
 
-impl<'m> fmt::Debug for IPtr<'m> {
+impl fmt::Debug for IPtr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "IPtr({})", self.0)
     }
@@ -119,7 +117,7 @@ impl Module {
 
 //--------------------------------------------------------------------------------------------------
 
-/// Primitive SPIR-V data types.
+/// Primitive data types.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum PrimitiveType {
     /// 32-bit signed integer
@@ -132,29 +130,16 @@ pub enum PrimitiveType {
     Float,
     /// 64-bit floating-point value
     Double,
-    /// Boolean
-    /// TODO size and alignment?
+    /// Boolean.
+    /// Cannot be used with externally-visible storage classes.
     Bool,
 }
 
-/// Texture basic data type (NOT storage format)
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum ImageDataType {
-    Float, // and also depth
-    Integer,
-    UnsignedInteger,
-}
-
-/// Describes the memory layout of struct fields.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct StructLayout<'tcx> {
-    pub fields: &'tcx [(usize, &'tcx TypeDesc<'tcx>)],
-}
-
-impl<'tcx> StructLayout<'tcx> {
-    pub fn new(fields: &'tcx [(usize, &'tcx TypeDesc<'tcx>)]) -> StructLayout<'tcx> {
-        StructLayout { fields }
-    }
+pub struct ImageType<'tcx> {
+    pub sampled_ty: &'tcx TypeDesc<'tcx>,
+    pub format: ImageFormat,
+    pub dimensions: headers::Dim,
 }
 
 /// Describes a data type used inside a SPIR-V shader
@@ -163,30 +148,58 @@ impl<'tcx> StructLayout<'tcx> {
 /// TypeDescs are slightly different from Formats:
 /// the latter describes the precise bit layout, packing, numeric format, and interpretation
 /// of individual data elements, while the former describes unpacked data as seen inside shaders.
-///
-/// For instance, a vertex buffer containing an attribute with format `R16G16B16_UNORM` is unpacked
-/// and fed to the vertex shader as a 3-component vector of floats, which is represented by
-/// `TypeDesc::Vector(PrimitiveType::Float,3)`.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum TypeDesc<'tcx> {
     /// Primitive type.
     Primitive(PrimitiveType),
     /// Array type. (typedesc + length + stride)
-    Array(&'tcx TypeDesc<'tcx>, usize, usize),
+    Array {
+        elem_ty: &'tcx TypeDesc<'tcx>,
+        len: usize,
+    },
     /// Vector type (ty,size).
-    Vector(PrimitiveType, u8),
+    Vector {
+        elem_ty: PrimitiveType,
+        len: u8,
+    },
     /// Matrix type (ty,rows,cols).
-    Matrix(PrimitiveType, u8, u8),
+    Matrix {
+        elem_ty: PrimitiveType,
+        rows: u8,
+        columns: u8,
+    },
     /// Structure type (array of (offset, type) tuples).
-    Struct(StructLayout<'tcx>),
+    Struct {
+        fields: &'tcx [&'tcx TypeDesc<'tcx>],
+    },
     /// Image type.
-    Image(ImageDataType, Option<ImageFormat>),
+    Image(ImageType<'tcx>),
     /// Combination of an image and sampling information.
-    SampledImage(ImageDataType, Option<ImageFormat>),
+    SampledImage(&'tcx ImageType<'tcx>),
     Void,
     /// Pointer to data.
     Pointer(&'tcx TypeDesc<'tcx>),
     Unknown,
+}
+
+impl<'tcx> TypeDesc<'tcx>
+{
+    pub fn element_type(&self) -> Option<&'tcx TypeDesc<'tcx>> {
+        match self {
+            TypeDesc::Array {
+                elem_ty,
+                .. } => Some(*elem_ty),
+            TypeDesc::Pointer(elem_ty) => Some(*elem_ty),
+            _ => None
+        }
+    }
+
+    pub fn pointee_type(&self) -> Option<&'tcx TypeDesc<'tcx>> {
+        match self {
+            TypeDesc::Pointer(elem_ty) => Some(*elem_ty),
+            _ => None
+        }
+    }
 }
 
 /*
@@ -211,6 +224,7 @@ impl<'tcx> TypeDesc<'tcx> {
     }
 }*/
 
+/*
 pub const TYPE_FLOAT: TypeDesc = TypeDesc::Primitive(PrimitiveType::Float);
 pub const TYPE_INT: TypeDesc = TypeDesc::Primitive(PrimitiveType::Int);
 pub const TYPE_VEC2: TypeDesc = TypeDesc::Vector(PrimitiveType::Float, 2);
@@ -222,3 +236,4 @@ pub const TYPE_IVEC4: TypeDesc = TypeDesc::Vector(PrimitiveType::Int, 4);
 pub const TYPE_MAT2: TypeDesc = TypeDesc::Matrix(PrimitiveType::Float, 2, 2);
 pub const TYPE_MAT3: TypeDesc = TypeDesc::Matrix(PrimitiveType::Float, 3, 3);
 pub const TYPE_MAT4: TypeDesc = TypeDesc::Matrix(PrimitiveType::Float, 4, 4);
+*/

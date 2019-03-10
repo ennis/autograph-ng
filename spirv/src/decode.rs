@@ -9,25 +9,24 @@
 use super::{inst::*, IPtr, Module, ParseError};
 use num_traits::FromPrimitive;
 use spirv_headers::*;
-use std::marker::PhantomData;
 
 impl Module {
-    pub fn decode_raw<'a>(&'a self) -> impl Iterator<Item = (IPtr<'a>, RawInstruction)> {
+    pub fn decode_raw(&self) -> impl Iterator<Item = (IPtr, RawInstruction)> {
         struct RawInstIter<'m> {
             i: &'m [u32],
             ptr: usize,
         }
 
         impl<'m> Iterator for RawInstIter<'m> {
-            type Item = (IPtr<'m>, RawInstruction<'m>);
+            type Item = (IPtr, RawInstruction<'m>);
 
-            fn next(&mut self) -> Option<(IPtr<'m>, RawInstruction<'m>)> {
+            fn next(&mut self) -> Option<(IPtr, RawInstruction<'m>)> {
                 if self.i.len() >= 1 {
                     let (inst, rest) = decode_raw_instruction(self.i).unwrap();
                     let ptr = self.ptr;
                     self.i = rest;
                     self.ptr += inst.word_count as usize;
-                    Some((IPtr(ptr, PhantomData), inst))
+                    Some((IPtr(ptr), inst))
                 } else {
                     None
                 }
@@ -43,7 +42,7 @@ impl Module {
 
     pub fn filter_instructions<'a, T: DecodedInstruction<'a>>(
         &'a self,
-    ) -> impl Iterator<Item = (IPtr<'a>, T)> + 'a {
+    ) -> impl Iterator<Item = (IPtr, T)> + 'a {
         self.decode_raw().filter_map(|(iptr, inst)| {
             if inst.opcode == T::OPCODE as u16 {
                 Some((iptr, T::decode(inst.operands).into()))
@@ -57,15 +56,12 @@ impl Module {
         self.decode_raw().map(|(iptr, inst)| (iptr, inst.decode()))
     }
 
-    pub fn decode_raw_at<'a>(&'a self, iptr: IPtr) -> Result<RawInstruction<'a>, ParseError> {
+    pub fn decode_raw_at(&self, iptr: IPtr) -> Result<RawInstruction, ParseError> {
         decode_raw_instruction(&self.data[iptr.0..]).map(|(inst, _)| inst)
     }
 
-    pub fn next_iptr<'a>(&'a self, ptr: IPtr) -> Result<IPtr<'a>, ParseError> {
-        Ok(IPtr(
-            ptr.0 + self.decode_raw_at(ptr)?.word_count as usize,
-            PhantomData,
-        ))
+    pub fn next_iptr(&self, ptr: IPtr) -> Result<IPtr, ParseError> {
+        Ok(IPtr(ptr.0 + self.decode_raw_at(ptr)?.word_count as usize))
     }
 }
 

@@ -1,10 +1,10 @@
 use crate::{
     descriptor::{Descriptor, ResourceBindingType, ResourceInterface},
-    typedesc::{PrimitiveType, TypeDesc},
+    typedesc::{Layout, PrimitiveType, TypeDesc},
     Backend,
 };
 pub use autograph_render_macros::StructuredBufferData;
-use std::{marker::PhantomData, mem};
+use std::{marker::PhantomData};
 
 //--------------------------------------------------------------------------------------------------
 
@@ -77,18 +77,21 @@ pub struct BufferSlice<'a, B: Backend> {
 ///
 /// Unresolved issue: a struct may have alignment requirements
 pub unsafe trait StructuredBufferData: BufferData {
-    const TYPE: &'static TypeDesc<'static>;
+    const TYPE: TypeDesc<'static>;
+    const LAYOUT: Layout<'static>;
 }
 
 macro_rules! impl_structured_type {
     ($t:ty, $tydesc:expr) => {
         unsafe impl StructuredBufferData for $t {
-            const TYPE: &'static TypeDesc<'static> = $tydesc;
+            const TYPE: TypeDesc<'static> = $tydesc;
+            const LAYOUT: Layout<'static> =
+                Layout::with_size_align(std::mem::size_of::<$t>(), std::mem::align_of::<$t>());
         }
     };
 }
 
-// Boolean type for use in GLSL interfaces
+// 32-bit-sized boolean type for use in shader interfaces
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum BoolU32 {
@@ -102,59 +105,144 @@ impl Default for BoolU32 {
     }
 }
 
-impl_structured_type!(BoolU32, &TypeDesc::Primitive(PrimitiveType::UnsignedInt));
-impl_structured_type!(f32, &TypeDesc::Primitive(PrimitiveType::Float));
-impl_structured_type!([f32; 2], &TypeDesc::Vector(PrimitiveType::Float, 2));
-impl_structured_type!([f32; 3], &TypeDesc::Vector(PrimitiveType::Float, 3));
-impl_structured_type!([f32; 4], &TypeDesc::Vector(PrimitiveType::Float, 4));
-impl_structured_type!(i32, &TypeDesc::Primitive(PrimitiveType::Int));
-impl_structured_type!([i32; 2], &TypeDesc::Vector(PrimitiveType::Int, 2));
-impl_structured_type!([i32; 3], &TypeDesc::Vector(PrimitiveType::Int, 3));
-impl_structured_type!([i32; 4], &TypeDesc::Vector(PrimitiveType::Int, 4));
-impl_structured_type!([[f32; 2]; 2], &TypeDesc::Matrix(PrimitiveType::Float, 2, 2));
-impl_structured_type!([[f32; 3]; 3], &TypeDesc::Matrix(PrimitiveType::Float, 3, 3)); // TODO: this is wrong! bad size and alignments
-impl_structured_type!([[f32; 4]; 4], &TypeDesc::Matrix(PrimitiveType::Float, 4, 4));
+impl_structured_type!(BoolU32, TypeDesc::Primitive(PrimitiveType::UnsignedInt));
+impl_structured_type!(f32, TypeDesc::Primitive(PrimitiveType::Float));
+impl_structured_type!(
+    [f32; 2],
+    TypeDesc::Vector {
+        elem_ty: PrimitiveType::Float,
+        len: 2
+    }
+);
+impl_structured_type!(
+    [f32; 3],
+    TypeDesc::Vector {
+        elem_ty: PrimitiveType::Float,
+        len: 3
+    }
+);
+impl_structured_type!(
+    [f32; 4],
+    TypeDesc::Vector {
+        elem_ty: PrimitiveType::Float,
+        len: 4
+    }
+);
+impl_structured_type!(i32, TypeDesc::Primitive(PrimitiveType::Int));
+impl_structured_type!(
+    [i32; 2],
+    TypeDesc::Vector {
+        elem_ty: PrimitiveType::Int,
+        len: 2
+    }
+);
+impl_structured_type!(
+    [i32; 3],
+    TypeDesc::Vector {
+        elem_ty: PrimitiveType::Int,
+        len: 3
+    }
+);
+impl_structured_type!(
+    [i32; 4],
+    TypeDesc::Vector {
+        elem_ty: PrimitiveType::Int,
+        len: 4
+    }
+);
+impl_structured_type!(
+    [[f32; 2]; 2],
+    TypeDesc::Matrix {
+        elem_ty: PrimitiveType::Float,
+        rows: 2,
+        columns: 2
+    }
+);
+impl_structured_type!(
+    [[f32; 3]; 3],
+    TypeDesc::Matrix {
+        elem_ty: PrimitiveType::Float,
+        rows: 3,
+        columns: 3
+    }
+);
+impl_structured_type!(
+    [[f32; 4]; 4],
+    TypeDesc::Matrix {
+        elem_ty: PrimitiveType::Float,
+        rows: 4,
+        columns: 4
+    }
+);
 
+/*
 // array impls
 unsafe impl<T: StructuredBufferData + Copy> StructuredBufferData for [T; 32] {
     // issue: need the stride of the array?
-    const TYPE: &'static TypeDesc<'static> = &TypeDesc::Array(T::TYPE, 32, mem::size_of::<T>());
-}
+    const TYPE: &'static TypeDesc<'static> = &TypeDesc::Array {
+        T
+    }::TYPE, 32, mem::size_of::<T>());
+}*/
 
 #[cfg(feature = "glm")]
 impl_structured_type!(
     nalgebra_glm::Vec2,
-    &TypeDesc::Vector(PrimitiveType::Float, 2)
+    TypeDesc::Vector {
+        elem_ty: PrimitiveType::Float,
+        len: 2
+    }
 );
 #[cfg(feature = "glm")]
 impl_structured_type!(
     nalgebra_glm::Vec3,
-    &TypeDesc::Vector(PrimitiveType::Float, 3)
+    TypeDesc::Vector {
+        elem_ty: PrimitiveType::Float,
+        len: 3
+    }
 );
 #[cfg(feature = "glm")]
 impl_structured_type!(
     nalgebra_glm::Vec4,
-    &TypeDesc::Vector(PrimitiveType::Float, 4)
+    TypeDesc::Vector {
+        elem_ty: PrimitiveType::Float,
+        len: 4
+    }
 );
 #[cfg(feature = "glm")]
 impl_structured_type!(
     nalgebra_glm::Mat2,
-    &TypeDesc::Matrix(PrimitiveType::Float, 2, 2)
+    TypeDesc::Matrix {
+        elem_ty: PrimitiveType::Float,
+        rows: 2,
+        columns: 2
+    }
 );
 #[cfg(feature = "glm")]
 impl_structured_type!(
     nalgebra_glm::Mat3,
-    &TypeDesc::Matrix(PrimitiveType::Float, 3, 3)
+    TypeDesc::Matrix {
+        elem_ty: PrimitiveType::Float,
+        rows: 3,
+        columns: 3
+    }
 );
 #[cfg(feature = "glm")]
 impl_structured_type!(
     nalgebra_glm::Mat4,
-    &TypeDesc::Matrix(PrimitiveType::Float, 4, 4)
+    TypeDesc::Matrix {
+        elem_ty: PrimitiveType::Float,
+        rows: 4,
+        columns: 4
+    }
 );
 #[cfg(feature = "glm")]
 impl_structured_type!(
     nalgebra_glm::Mat4x3,
-    &TypeDesc::Matrix(PrimitiveType::Float, 4, 3)
+    TypeDesc::Matrix {
+        elem_ty: PrimitiveType::Float,
+        rows: 4,
+        columns: 3
+    }
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -171,7 +259,8 @@ impl<'a, B: Backend, T: StructuredBufferData> ResourceInterface<'a, B>
     for TypedConstantBufferView<'a, B, T>
 {
     const TYPE: ResourceBindingType = ResourceBindingType::ConstantBuffer;
-    const DATA_TYPE: Option<&'static TypeDesc<'static>> = None;
+    const DATA_TYPE: Option<&'static TypeDesc<'static>> = Some(&T::TYPE);
+    const DATA_LAYOUT: Option<&'static Layout<'static>> = Some(&T::LAYOUT);
     fn into_descriptor(self) -> Descriptor<'a, B> {
         Descriptor::ConstantBuffer {
             buffer: self.buffer,

@@ -30,6 +30,7 @@ fxhash = "0.2.1"
 #unsafe-any = "0.4.2"
 autograph-render = { path = "../render" }
 autograph-spirv = { path = "../spirv" }
+dropless-arena = { git = "https://github.com/ennis/dropless-arena" }
 
 [target.'cfg(windows)'.dependencies]
 winapi = "0.3.6"

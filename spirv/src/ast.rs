@@ -1,14 +1,10 @@
 //use super::parse::SpirvModule;
-use crate::{
-    inst::*,
-    layout::{Std140AlignAndSize, Std140LayoutBuilder},
-    IPtr, ImageDataType, Module, PrimitiveType, StructLayout, TypeDesc,
-};
+use crate::{inst::*, IPtr, Module, PrimitiveType, TypeDesc, ImageType};
+use dropless_arena::DroplessArena;
 use spirv_headers::*;
 use std::collections::HashMap;
-use typed_arena::Arena;
 
-#[derive(Debug)]
+#[derive(Copy,Clone,Debug,Eq,PartialEq)]
 pub enum ParsedDecoration {
     Block,
     BufferBlock,
@@ -21,39 +17,20 @@ pub enum ParsedDecoration {
     Other(Decoration),
 }
 
-/// TODO replace this with a dropless arena
-pub struct Arenas<'tcx, 'm> {
-    tydesc: Arena<TypeDesc<'tcx>>,
-    members: Arena<(usize, &'tcx TypeDesc<'tcx>)>,
-    deco: Arena<(IPtr<'m>, ParsedDecoration)>,
-    vars: Arena<(IPtr<'m>, Variable<'tcx, 'm>)>,
-}
-
-impl<'tcx, 'm> Arenas<'tcx, 'm> {
-    pub fn new() -> Arenas<'tcx, 'm> {
-        Arenas {
-            tydesc: Arena::new(),
-            members: Arena::new(),
-            deco: Arena::new(),
-            vars: Arena::new(),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Variable<'tcx, 'm> {
+#[derive(Copy,Clone,Debug)]
+pub struct Variable<'tcx> {
     pub id: u32,
     pub ty: &'tcx TypeDesc<'tcx>,
-    pub deco: &'tcx [(IPtr<'m>, ParsedDecoration)],
+    pub deco: &'tcx [(IPtr, ParsedDecoration)],
     pub storage: StorageClass,
 }
 
-impl<'tcx, 'm> Variable<'tcx, 'm> {
-    pub fn decorations(&self) -> impl Iterator<Item = &(IPtr<'m>, ParsedDecoration)> {
+impl<'tcx> Variable<'tcx> {
+    pub fn decorations(&self) -> impl Iterator<Item = &(IPtr, ParsedDecoration)> {
         self.deco.iter()
     }
 
-    pub fn location_decoration(&self) -> Option<(IPtr<'m>, u32)> {
+    pub fn location_decoration(&self) -> Option<(IPtr, u32)> {
         self.deco
             .iter()
             .filter_map(|(iptr, d)| match d {
@@ -63,7 +40,7 @@ impl<'tcx, 'm> Variable<'tcx, 'm> {
             .next()
     }
 
-    pub fn has_block_decoration(&self) -> Option<IPtr<'m>> {
+    pub fn has_block_decoration(&self) -> Option<IPtr> {
         self.deco
             .iter()
             .find(|(_, d)| match d {
@@ -73,7 +50,7 @@ impl<'tcx, 'm> Variable<'tcx, 'm> {
             .map(|d| d.0)
     }
 
-    pub fn has_buffer_block_decoration(&self) -> Option<IPtr<'m>> {
+    pub fn has_buffer_block_decoration(&self) -> Option<IPtr> {
         self.deco
             .iter()
             .find(|(_, d)| match d {
@@ -83,7 +60,7 @@ impl<'tcx, 'm> Variable<'tcx, 'm> {
             .map(|d| d.0)
     }
 
-    pub fn descriptor_set_decoration(&self) -> Option<(IPtr<'m>, u32)> {
+    pub fn descriptor_set_decoration(&self) -> Option<(IPtr, u32)> {
         self.deco
             .iter()
             .filter_map(|(iptr, d)| match d {
@@ -93,7 +70,7 @@ impl<'tcx, 'm> Variable<'tcx, 'm> {
             .next()
     }
 
-    pub fn binding_decoration(&self) -> Option<(IPtr<'m>, u32)> {
+    pub fn binding_decoration(&self) -> Option<(IPtr, u32)> {
         self.deco
             .iter()
             .filter_map(|(iptr, d)| match d {
@@ -104,50 +81,43 @@ impl<'tcx, 'm> Variable<'tcx, 'm> {
     }
 }
 
-pub struct Ast<'tcx, 'm> {
-    //a: &'tcx Arenas<'tcx>,
-    _m: &'m Module,
+pub struct Ast<'tcx> {
     _tymap: HashMap<u32, &'tcx TypeDesc<'tcx>>,
-    vars: &'tcx [(IPtr<'m>, Variable<'tcx, 'm>)],
+    vars: &'tcx [(IPtr, Variable<'tcx>)],
 }
 
-impl<'tcx, 'm> Ast<'tcx, 'm> {
-    pub fn new(arenas: &'tcx Arenas<'tcx, 'm>, module: &'m Module) -> Ast<'tcx, 'm> {
-        let tymap = parse_types(arenas, module);
-        let vars = parse_variables(arenas, module, &tymap);
+impl<'tcx> Ast<'tcx> {
+    pub fn new(arena: &'tcx DroplessArena, module: &Module) -> Ast<'tcx> {
+        let tymap = parse_types(arena, module);
+        let vars = parse_variables(arena, module, &tymap);
         Ast {
-            _m: module,
             _tymap: tymap,
             vars,
         }
     }
 
-    pub fn variables(&self) -> impl Iterator<Item = &'tcx (IPtr<'m>, Variable<'tcx, 'm>)> {
+    pub fn variables(&self) -> impl Iterator<Item = &'tcx (IPtr, Variable<'tcx>)> {
         self.vars.iter()
     }
 
     //pub fn uniform_buffers(&self)
 }
 
-fn parse_types<'tcx, 'm>(
-    a: &'tcx Arenas<'tcx, 'm>,
-    m: &Module,
-) -> HashMap<u32, &'tcx TypeDesc<'tcx>> {
+fn parse_types<'tcx>(a: &'tcx DroplessArena, m: &Module) -> HashMap<u32, &'tcx TypeDesc<'tcx>> {
     // build a map from id to type
     let mut tymap = HashMap::<u32, &'tcx TypeDesc<'tcx>>::new();
-    //let mut cstmap = HashMap::<>
 
     // can process types in order, since the spec specifies that:
     // "Types are built bottom up: A parameterizing operand in a type must be defined before being used."
     m.decode().for_each(|(_, inst)| {
         match &inst {
             Instruction::TypeVoid(ITypeVoid { result_id }) => {
-                tymap.insert(*result_id, a.tydesc.alloc(TypeDesc::Void));
+                tymap.insert(*result_id, a.alloc(TypeDesc::Void));
             }
             Instruction::TypeBool(ITypeBool { result_id }) => {
                 tymap.insert(
                     *result_id,
-                    a.tydesc.alloc(TypeDesc::Primitive(PrimitiveType::Bool)),
+                    a.alloc(TypeDesc::Primitive(PrimitiveType::Bool)),
                 );
             }
             Instruction::TypeInt(ITypeInt {
@@ -157,14 +127,12 @@ fn parse_types<'tcx, 'm>(
             }) => {
                 assert_eq!(*width, 32, "unsupported bit width");
                 match signedness {
-                    true => tymap.insert(
-                        *result_id,
-                        a.tydesc.alloc(TypeDesc::Primitive(PrimitiveType::Int)),
-                    ),
+                    true => {
+                        tymap.insert(*result_id, a.alloc(TypeDesc::Primitive(PrimitiveType::Int)))
+                    }
                     false => tymap.insert(
                         *result_id,
-                        a.tydesc
-                            .alloc(TypeDesc::Primitive(PrimitiveType::UnsignedInt)),
+                        a.alloc(TypeDesc::Primitive(PrimitiveType::UnsignedInt)),
                     ),
                 };
             }
@@ -172,7 +140,7 @@ fn parse_types<'tcx, 'm>(
                 assert_eq!(*width, 32, "unsupported bit width");
                 tymap.insert(
                     *result_id,
-                    a.tydesc.alloc(TypeDesc::Primitive(PrimitiveType::Float)),
+                    a.alloc(TypeDesc::Primitive(PrimitiveType::Float)),
                 );
             }
             Instruction::TypeVector(ITypeVector {
@@ -180,16 +148,18 @@ fn parse_types<'tcx, 'm>(
                 component_id,
                 count,
             }) => {
-                let compty = tymap[component_id];
-                let compty = if let &TypeDesc::Primitive(primty) = &*compty {
-                    primty
+                let elem_ty = tymap[component_id];
+                if let &TypeDesc::Primitive(elem_ty) = &*elem_ty {
+                    tymap.insert(
+                        *result_id,
+                        a.alloc(TypeDesc::Vector {
+                            elem_ty,
+                            len: *count as u8,
+                        }),
+                    );
                 } else {
                     panic!("expected primitive type");
-                };
-                tymap.insert(
-                    *result_id,
-                    a.tydesc.alloc(TypeDesc::Vector(compty, *count as u8)),
-                );
+                }
             }
             Instruction::TypeMatrix(ITypeMatrix {
                 result_id,
@@ -197,32 +167,39 @@ fn parse_types<'tcx, 'm>(
                 column_count,
             }) => {
                 let colty = tymap[column_type_id];
-                let (elemty, rows) = if let &TypeDesc::Vector(primty, count) = colty {
-                    (primty, count)
+                if let &TypeDesc::Vector { elem_ty, len } = colty {
+                    tymap.insert(
+                        *result_id,
+                        a.alloc(TypeDesc::Matrix {
+                            elem_ty,
+                            rows: len,
+                            columns: *column_count as u8,
+                        }),
+                    );
                 } else {
                     panic!("expected vector type");
-                };
-                tymap.insert(
-                    *result_id,
-                    a.tydesc
-                        .alloc(TypeDesc::Matrix(elemty, rows, *column_count as u8)),
-                );
+                }
             }
             Instruction::TypeImage(ITypeImage {
                 result_id,
-                sampled_type_id: _,
-                dim: _,
+                sampled_type_id,
+                dim,
                 depth: _,
                 arrayed: _,
                 ms: _,
                 sampled: _,
-                format: _,
+                format,
                 access: _,
             }) => {
-                // yeah that's not really enough
+                // TODO yeah that's not really enough
+                let sampled_ty = tymap[sampled_type_id];
                 tymap.insert(
                     *result_id,
-                    a.tydesc.alloc(TypeDesc::Image(ImageDataType::Float, None)),
+                    a.alloc(TypeDesc::Image(ImageType {
+                        sampled_ty,
+                        format: *format,
+                        dimensions: *dim,
+                    })),
                 );
             }
             Instruction::TypeSampler(ITypeSampler { result_id: _ }) => unimplemented!(),
@@ -230,45 +207,35 @@ fn parse_types<'tcx, 'm>(
                 result_id,
                 image_type_id,
             }) => {
-                let imgty = tymap[image_type_id];
-                let (dataty, fmt) = if let &TypeDesc::Image(dataty, fmt) = imgty {
-                    (dataty, fmt)
+                let image_ty = tymap[image_type_id];
+                if let &TypeDesc::Image(ref img_ty) = image_ty {
+                    tymap.insert(*result_id, a.alloc(TypeDesc::SampledImage(img_ty)));
                 } else {
                     panic!("expected image type")
                 };
-                tymap.insert(
-                    *result_id,
-                    a.tydesc.alloc(TypeDesc::SampledImage(dataty, fmt)),
-                );
             }
             Instruction::TypeArray(ITypeArray {
                 result_id,
                 type_id,
                 length_id: _,
             }) => {
-                let ty = tymap[type_id];
-                // TODO eval length
-                let stride = Std140AlignAndSize::of(ty).size;
-                tymap.insert(*result_id, a.tydesc.alloc(TypeDesc::Array(ty, 0, stride)));
+                let elem_ty = tymap[type_id];
+                tymap.insert(*result_id, a.alloc(TypeDesc::Array { elem_ty, len: 0 }));
             }
             Instruction::TypeRuntimeArray(ITypeRuntimeArray { result_id, type_id }) => {
-                let ty = tymap[type_id];
-                let stride = Std140AlignAndSize::of(ty).size;
-                tymap.insert(*result_id, a.tydesc.alloc(TypeDesc::Array(ty, 0, stride)));
+                let elem_ty = tymap[type_id];
+                tymap.insert(*result_id, a.alloc(TypeDesc::Array { elem_ty, len: 0 }));
             }
             Instruction::TypeStruct(ITypeStruct {
                 result_id,
                 member_types,
             }) => {
-                let mut layout_builder = Std140LayoutBuilder::new();
+                let fields = a.alloc_extend(member_types.iter().map(|tyid| tymap[tyid]));
                 tymap.insert(
                     *result_id,
-                    a.tydesc.alloc(TypeDesc::Struct(StructLayout {
-                        fields: a.members.alloc_extend(member_types.iter().map(|tyid| {
-                            let ty = tymap[tyid];
-                            (layout_builder.add_member(ty), ty)
-                        })),
-                    })),
+                    a.alloc(TypeDesc::Struct {
+                        fields,
+                    }),
                 );
             }
             Instruction::TypeOpaque(ITypeOpaque {
@@ -281,7 +248,7 @@ fn parse_types<'tcx, 'm>(
                 type_id,
             }) => {
                 let ty = tymap[type_id];
-                tymap.insert(*result_id, a.tydesc.alloc(TypeDesc::Pointer(ty)));
+                tymap.insert(*result_id, a.alloc(TypeDesc::Pointer(ty)));
             }
             _ => {}
         };
@@ -290,48 +257,43 @@ fn parse_types<'tcx, 'm>(
     tymap
 }
 
-fn parse_variables<'tcx, 'm>(
-    a: &'tcx Arenas<'tcx, 'm>,
-    m: &'m Module,
+fn parse_variables<'tcx>(
+    a: &'tcx DroplessArena,
+    m: &Module,
     tymap: &HashMap<u32, &'tcx TypeDesc<'tcx>>,
-) -> &'tcx [(IPtr<'m>, Variable<'tcx, 'm>)] {
-    let vars = a
-        .vars
-        .alloc_extend(m.filter_instructions::<IVariable>().map(|(iptr, v)| {
-            (
-                iptr,
-                Variable {
-                    id: v.result_id,
-                    ty: tymap[&v.result_type_id],
-                    deco: a.deco.alloc_extend(
-                        m.filter_instructions::<IDecorate>()
-                            .filter(|(_, d)| d.target_id == v.result_id)
-                            .map(|(iptr, d)| {
-                                (
-                                    iptr,
-                                    match d.decoration {
-                                        Decoration::Block => ParsedDecoration::Block,
-                                        Decoration::BufferBlock => ParsedDecoration::BufferBlock,
-                                        Decoration::Constant => ParsedDecoration::Constant,
-                                        Decoration::Uniform => ParsedDecoration::Uniform,
-                                        Decoration::Location => {
-                                            ParsedDecoration::Location(d.params[0])
-                                        }
-                                        Decoration::Index => ParsedDecoration::Index(d.params[0]),
-                                        Decoration::Binding => {
-                                            ParsedDecoration::Binding(d.params[0])
-                                        }
-                                        Decoration::DescriptorSet => {
-                                            ParsedDecoration::DescriptorSet(d.params[0])
-                                        }
-                                        other => ParsedDecoration::Other(other),
-                                    },
-                                )
-                            }),
-                    ),
-                    storage: v.storage_class,
-                },
-            )
-        }));
-    vars
+) -> &'tcx [(IPtr, Variable<'tcx>)]
+{
+    let vars : Vec<_> = m.filter_instructions::<IVariable>().map(|(iptr, v)| {
+        (
+            iptr,
+            Variable {
+                id: v.result_id,
+                ty: tymap[&v.result_type_id],
+                deco: a.alloc_extend(
+                    m.filter_instructions::<IDecorate>()
+                        .filter(|(_, d)| d.target_id == v.result_id)
+                        .map(|(iptr, d)| {
+                            (
+                                iptr,
+                                match d.decoration {
+                                    Decoration::Block => ParsedDecoration::Block,
+                                    Decoration::BufferBlock => ParsedDecoration::BufferBlock,
+                                    Decoration::Constant => ParsedDecoration::Constant,
+                                    Decoration::Uniform => ParsedDecoration::Uniform,
+                                    Decoration::Location => ParsedDecoration::Location(d.params[0]),
+                                    Decoration::Index => ParsedDecoration::Index(d.params[0]),
+                                    Decoration::Binding => ParsedDecoration::Binding(d.params[0]),
+                                    Decoration::DescriptorSet => {
+                                        ParsedDecoration::DescriptorSet(d.params[0])
+                                    }
+                                    other => ParsedDecoration::Other(other),
+                                },
+                            )
+                        }),
+                ),
+                storage: v.storage_class,
+            },
+        )
+    }).collect();
+    a.alloc_extend(vars.into_iter())
 }

@@ -13,7 +13,6 @@ use crate::{
     sampler::SamplerCache,
     swapchain::GlSwapchain,
     sync::{GpuSyncObject, Timeline},
-    util::DroplessArena,
     AliasInfo, ImplementationParameters,
 };
 use autograph_render::{
@@ -41,6 +40,7 @@ use std::{
     time::Duration,
 };
 use typed_arena::Arena;
+use dropless_arena::DroplessArena;
 
 //--------------------------------------------------------------------------------------------------
 extern "system" fn debug_callback(

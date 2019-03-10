@@ -1,11 +1,10 @@
 use crate::{
     descriptor::{ResourceBinding, ResourceBindingType},
-    framebuffer::FragmentOutputDescription,
+    pipeline::FragmentOutputDescription,
     pipeline::{GraphicsPipelineCreateInfo, Scissors, SignatureDescription, Viewports},
-    vertex::{IndexFormat, TypedVertexInputAttributeDescription, VertexLayout},
+    vertex::{IndexFormat, VertexLayout, VertexLayoutElement},
     Backend,
 };
-use autograph_spirv as spirv;
 use autograph_spirv::{headers::StorageClass, TypeDesc};
 use log::warn;
 use std::{error, fmt};

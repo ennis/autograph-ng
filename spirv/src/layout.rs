@@ -1,15 +1,17 @@
 use crate::{PrimitiveType, TypeDesc};
+use dropless_arena::DroplessArena;
+use std::iter;
 
 //--------------------------------------------------------------------------------------------------
 // yet another copy of the align offset function
-fn align_offset(ptr: usize, align: usize) -> usize {
+/*fn align_offset(ptr: usize, align: usize) -> usize {
     let offset = ptr % align;
     if offset == 0 {
         0
     } else {
         align - offset
     }
-}
+}*/
 
 fn round_up(value: usize, multiple: usize) -> usize {
     if multiple == 0 {
@@ -22,128 +24,171 @@ fn round_up(value: usize, multiple: usize) -> usize {
     value + multiple - remainder
 }
 
-/// TODO more unit testing!
-pub struct Std140AlignAndSize {
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct Layout<'tcx> {
     pub align: usize,
-    /// More precisely, "offset to next member"
     pub size: usize,
+    pub details: LayoutDetails<'tcx>,
 }
 
-impl Std140AlignAndSize {
-    pub fn of_array(elemty: &TypeDesc, arraylen: usize) -> Std140AlignAndSize {
-        let Std140AlignAndSize {
-            align: elem_align,
-            size: elem_size,
-        } = Std140AlignAndSize::of(elemty);
-        // alignment = column type align rounded up to vec4 align (16 bytes)
-        let base_align = round_up(elem_align, 16);
-        let stride = elem_size + align_offset(elem_size, elem_align);
-        // total array size = num columns * stride, rounded up to the next multiple of the base alignment.
-        // actually the spec says nothing about the 'size' of an element, only about the alignment
-        // of the next element in the structure.
-        let array_size = round_up(arraylen * stride, base_align);
-        Std140AlignAndSize {
-            align: base_align,
-            size: array_size,
-        }
-    }
-
-    /// returns true if round-up needed after (for items following structures)
-    pub fn of(ty: &TypeDesc) -> Std140AlignAndSize {
-        match *ty {
-            TypeDesc::Primitive(PrimitiveType::Int)
-            | TypeDesc::Primitive(PrimitiveType::UnsignedInt)
-            | TypeDesc::Primitive(PrimitiveType::Float) => {
-                //assert!(ty.width == 32);
-                Std140AlignAndSize { align: 4, size: 4 }
-            }
-            TypeDesc::Vector(primty, num_components) => {
-                let Std140AlignAndSize { size: n, .. } =
-                    Std140AlignAndSize::of(&TypeDesc::Primitive(primty));
-                match num_components {
-                    2 => Std140AlignAndSize {
-                        align: 2 * n,
-                        size: 2 * n,
-                    },
-                    3 => Std140AlignAndSize {
-                        align: 4 * n,
-                        size: 3 * n,
-                    },
-                    4 => Std140AlignAndSize {
-                        align: 4 * n,
-                        size: 4 * n,
-                    },
-                    _ => panic!("unsupported vector size"),
-                }
-            }
-            TypeDesc::Matrix(primty, rows, cols) => {
-                Std140AlignAndSize::of_array(&TypeDesc::Vector(primty, rows), cols as usize)
-            }
-            TypeDesc::Array(elemty, size, _) => match elemty {
-                TypeDesc::Primitive(_) | TypeDesc::Vector(_, _) | TypeDesc::Struct(_) => {
-                    Std140AlignAndSize::of_array(elemty, size)
-                }
-                ty => panic!("unsupported array element type: {:?}", ty),
-            },
-            TypeDesc::Struct(layout) => {
-                /* If the member is a structure, the base alignment of the structure is N,
-                where N is the largest base alignment value of any of its members,
-                and rounded up to the base alignment of a vec4.
-                The individual members of this sub-structure are then assigned offsets by applying this set of rules recursively,
-                where the base offset of the first member of the sub-structure is equal to the aligned offset of the structure.
-                The structure may have padding at the end;
-                the base offset of the member following the sub-structure is rounded up to the next multiple of the base alignment of the structure.
-                */
-                // TODO: zero-sized structures?
-                let n = layout
-                    .fields
-                    .iter()
-                    .map(|(_, mty)| Std140AlignAndSize::of(mty).align)
-                    .max()
-                    .unwrap_or(0);
-                if n == 0 {
-                    // skip, no members
-                    return Std140AlignAndSize { align: 0, size: 0 };
-                }
-
-                // round up to base alignment of vec4
-                let n = round_up(n, 16);
-
-                // compute total structure size
-                let mlast = layout.fields.last().unwrap();
-                let mlast_offset = mlast.0;
-                let mlast_size = Std140AlignAndSize::of(mlast.1).size;
-                let size = mlast_offset + mlast_size;
-
-                // round up total size to base align
-                let size = round_up(size, n);
-
-                Std140AlignAndSize { align: n, size }
-            }
-            ty => panic!("unsupported type: {:?}", ty),
+impl<'tcx> Layout<'tcx> {
+    pub const fn with_size_align(size: usize, align: usize) -> Layout<'tcx> {
+        Layout {
+            align,
+            size,
+            details: LayoutDetails::None,
         }
     }
 }
 
-//--------------------------------------------------------------------------------------------------
-pub struct Std140LayoutBuilder {
-    next_offset: usize,
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct FieldsLayout<'tcx> {
+    pub offsets: &'tcx [usize],
+    pub layouts: &'tcx [&'tcx Layout<'tcx>],
 }
 
-impl Std140LayoutBuilder {
-    pub fn new() -> Std140LayoutBuilder {
-        Std140LayoutBuilder { next_offset: 0 }
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct ArrayLayout<'tcx> {
+    pub elem_layout: &'tcx Layout<'tcx>,
+    pub stride: usize,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum LayoutDetails<'tcx> {
+    None,
+    Array(ArrayLayout<'tcx>),
+    Struct(FieldsLayout<'tcx>),
+}
+
+fn std140_array_layout<'tcx>(
+    a: &'tcx DroplessArena,
+    elem_ty: &TypeDesc,
+    arraylen: usize,
+) -> &'tcx Layout<'tcx> {
+    let elem_layout = std140_layout(a, elem_ty);
+    // alignment = column type align rounded up to vec4 align (16 bytes)
+    let base_align = round_up(elem_layout.align, 16);
+    let stride = round_up(elem_layout.size, elem_layout.align);
+    // total array size = num columns * stride, rounded up to the next multiple of the base alignment.
+    // actually the spec says nothing about the 'size' of an element, only about the alignment
+    // of the next element in the structure.
+    let array_size = round_up(arraylen * stride, base_align);
+    a.alloc(Layout {
+        align: base_align,
+        size: array_size,
+        details: LayoutDetails::Array(ArrayLayout {
+            stride,
+            elem_layout,
+        }),
+    })
+}
+
+fn std140_struct_layout<'tcx>(a: &'tcx DroplessArena, fields: &[&TypeDesc]) -> &'tcx Layout<'tcx> {
+    /* If the member is a structure, the base alignment of the structure is N,
+    where N is the largest base alignment value of any of its members,
+    and rounded up to the base alignment of a vec4.
+    The individual members of this sub-structure are then assigned offsets by applying this set of rules recursively,
+    where the base offset of the first member of the sub-structure is equal to the aligned offset of the structure.
+    The structure may have padding at the end;
+    the base offset of the member following the sub-structure is rounded up to the next multiple of the base alignment of the structure.
+    */
+    // TODO: zero-sized structures?
+
+    let layouts : Vec<_> = fields.iter().map(|&mty| std140_layout(a, mty)).collect();
+    let layouts = a.alloc_extend(layouts.into_iter());
+    let n = layouts.iter().map(|l| l.align).max().unwrap_or(0);
+    if n == 0 {
+        // skip, no members
+        return a.alloc(Layout {
+            align: 0,
+            size: 0,
+            details: LayoutDetails::Struct(FieldsLayout {
+                offsets: &[],
+                layouts: &[],
+            }),
+        });
     }
 
-    fn align(&mut self, a: usize) -> usize {
-        self.next_offset += align_offset(self.next_offset, a);
-        self.next_offset
+    // round up to base alignment of vec4
+    let n = round_up(n, 16);
+
+    // compute field offsets
+    let offsets = a.alloc_extend(iter::repeat(0).take(fields.len()));
+    let mut off = 0;
+    for i in 0..fields.len() {
+        offsets[i] = off;
+        off += layouts[i].size;
     }
 
-    pub fn add_member(&mut self, ty: &TypeDesc) -> usize {
-        let Std140AlignAndSize { align, size } = Std140AlignAndSize::of(ty);
-        let current_offset = self.align(align);
-        self.next_offset += size;
-        current_offset
+    // round up total size to base align
+    let size = round_up(off, n);
+
+    a.alloc(Layout {
+        align: n,
+        size,
+        details: LayoutDetails::Struct(FieldsLayout { layouts, offsets }),
+    })
+}
+
+fn std140_primitive_layout(prim_ty: PrimitiveType) -> Layout<'static> {
+    match prim_ty {
+        PrimitiveType::Int | PrimitiveType::UnsignedInt | PrimitiveType::Float => Layout {
+            size: 4,
+            align: 4,
+            details: LayoutDetails::None,
+        },
+        _ => unimplemented!(),
+    }
+}
+
+fn std140_vector_layout(prim_ty: PrimitiveType, len: u8) -> Layout<'static> {
+    let Layout { size: n, .. } = std140_primitive_layout(prim_ty);
+    match len {
+        2 => Layout {
+            align: 2 * n,
+            size: 2 * n,
+            details: LayoutDetails::None,
+        },
+        3 => Layout {
+            align: 4 * n,
+            size: 3 * n,
+            details: LayoutDetails::None,
+        },
+        4 => Layout {
+            align: 4 * n,
+            size: 4 * n,
+            details: LayoutDetails::None,
+        },
+        _ => panic!("unsupported vector size"),
+    }
+}
+
+fn std140_layout<'tcx>(a: &'tcx DroplessArena, ty: &TypeDesc) -> &'tcx Layout<'tcx> {
+    match *ty {
+        TypeDesc::Primitive(p) => a.alloc(std140_primitive_layout(p)),
+        TypeDesc::Vector { elem_ty, len } => a.alloc(std140_vector_layout(elem_ty, len)),
+        TypeDesc::Matrix {
+            elem_ty,
+            rows,
+            columns,
+        } => std140_array_layout(
+            a,
+            &TypeDesc::Vector { elem_ty, len: rows },
+            columns as usize,
+        ),
+        TypeDesc::Array { elem_ty, len } => match elem_ty {
+            TypeDesc::Primitive(_) | TypeDesc::Vector { .. } | TypeDesc::Struct { .. } => {
+                std140_array_layout(a, elem_ty, len)
+            }
+            ty => panic!("unsupported array element type: {:?}", ty),
+        },
+        TypeDesc::Struct { fields } => std140_struct_layout(a, fields),
+        ty => panic!("unsupported type: {:?}", ty),
+    }
+}
+
+impl<'tcx> Layout<'tcx> {
+    pub fn std140(a: &'tcx DroplessArena, ty: &TypeDesc) -> &'tcx Layout<'tcx> {
+        std140_layout(a, ty)
     }
 }

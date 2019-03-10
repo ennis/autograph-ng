@@ -7,7 +7,7 @@ use autograph_render::{
     image::SamplerDescription,
     pipeline::{
         ColorBlendAttachmentState, ColorBlendAttachments, DepthStencilState, InputAssemblyState,
-        LogicOp, MultisampleState, RasterisationState, VertexInputBindingDescription,
+        LogicOp, MultisampleState, RasterisationState,
     },
 };
 use ordered_float::NotNan;
@@ -26,10 +26,11 @@ pub(crate) use self::{
 use autograph_render::{
     pipeline::{
         GraphicsPipelineCreateInfo, ScissorsOwned, SignatureDescription,
-        VertexInputAttributeDescription, VertexInputRate, ViewportsOwned,
+        VertexInputAttributeDescription, ViewportsOwned,
     },
-    vertex::VertexLayout,
+    vertex::{VertexLayout, VertexInputRate},
 };
+use autograph_render::pipeline::VertexInputBinding;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct StaticSamplerEntry {
@@ -57,7 +58,7 @@ pub struct GlGraphicsPipeline {
     pub(crate) depth_stencil_state: DepthStencilState,
     pub(crate) multisample_state: MultisampleState,
     pub(crate) input_assembly_state: InputAssemblyState,
-    pub(crate) vertex_input_bindings: Vec<VertexInputBindingDescription>,
+    //pub(crate) vertex_input_bindings: Vec<VertexInputBinding>,
     pub(crate) color_blend_state: PipelineColorBlendStateOwned,
     pub(crate) descriptor_map: DescriptorMap,
     pub(crate) viewports: ViewportsOwned,
@@ -76,6 +77,7 @@ impl GlGraphicsPipeline {
     }*/
 }
 
+/*
 /// Converts a sequence of VertexLayouts (one for each vertex buffer) into binding descriptions
 /// and vertex attribute descriptions.
 ///
@@ -113,7 +115,7 @@ pub(crate) fn build_vertex_input_interface(
     }
 
     (input_bindings, input_attribs)
-}
+}*/
 
 fn collect_vertex_layouts<'a>(sig: &'a SignatureDescription<'a>, out: &mut Vec<VertexLayout<'a>>) {
     for &i in sig.inherited {

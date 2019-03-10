@@ -4,7 +4,7 @@ extern crate proc_macro;
 extern crate proc_macro2;
 
 use lazy_static::lazy_static;
-use proc_macro2::Span;
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use regex::Regex;
 use shaderc::{self, IncludeType, ResolvedInclude};
@@ -13,8 +13,22 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use syn;
+use syn::export::ToTokens;
+use quote::TokenStreamExt;
 
+mod reflection;
+
+//--------------------------------------------------------------------------------------------------
+struct CrateName;
+const G: CrateName = CrateName;
+
+impl ToTokens for CrateName {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        tokens.append(syn::Ident::new("autograph_render", Span::call_site()))
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
 lazy_static! {
     static ref RE_COMPILE_ERROR: Regex =
         Regex::new(r#"^(?P<srcid>[^:]*):(?P<line>[^:]*):(?P<msg>.*)$"#).unwrap();
@@ -82,11 +96,20 @@ fn compile_embedded_shader(
 ) -> proc_macro::TokenStream {
     // parse a string literal
     let litstr: syn::LitStr = syn::parse_macro_input!(src);
-    compile_glsl_shader(&litstr.value(), None, &litstr.span(), stage).into()
+    compile_glsl_shader(&litstr.value(), None, &litstr.span(), stage, false).into()
 }
 
 #[proc_macro]
-pub fn include_shader(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn include_glsl(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    include_glsl_inner(input, false)
+}
+
+#[proc_macro]
+pub fn include_glsl_raw(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    include_glsl_inner(input, true)
+}
+
+fn include_glsl_inner(input: proc_macro::TokenStream, raw: bool) -> proc_macro::TokenStream {
     let rel_path_lit: syn::LitStr = syn::parse_macro_input!(input);
     let rel_path = PathBuf::from(rel_path_lit.value());
 
@@ -99,9 +122,6 @@ pub fn include_shader(input: proc_macro::TokenStream) -> proc_macro::TokenStream
         Some(ext) if ext == "comp" => shaderc::ShaderKind::Compute,
         _ => {
             panic!("cannot deduce shader stage from extension")
-            /*return syn::Error::new(pathlit.span(), "cannot deduce shader stage from extension")
-            .to_compile_error()
-            .into();*/
         }
     };
 
@@ -112,16 +132,12 @@ pub fn include_shader(input: proc_macro::TokenStream) -> proc_macro::TokenStream
         src
     } else {
         panic!("failed to open GLSL shader source")
-        /*return syn::Error::new(pathlit.span(), "")
-        .to_compile_error()
-        .into();*/
     };
 
-    let bytecode = compile_glsl_shader(&src, Some(&path), &rel_path_lit.span(), stage);
+    let sh = compile_glsl_shader(&src, Some(&path), &rel_path_lit.span(), stage, raw);
 
     // include_str so that it is considered when tracking dirty files
-    let q = quote! { (#bytecode, include_str!(#rel_path_lit)).0 };
-
+    let q = quote! { (#sh, include_str!(#rel_path_lit)).0 };
     q.into()
 }
 
@@ -163,6 +179,7 @@ fn compile_glsl_shader(
     file_path: Option<&Path>,
     span: &Span,
     stage: shaderc::ShaderKind,
+    raw: bool
 ) -> proc_macro2::TokenStream {
     // the doc says that we should preferably create one instance of the compiler
     // and reuse it, but I don't see a way to reuse a compiler instance
@@ -264,16 +281,21 @@ fn compile_glsl_shader(
             // include_str all include files so that their changes are tracked
             let a = all_includes.borrow();
             let a = a.iter();
-
-            //let time_begin = time::Instant::now();
             let q = quote!((#binstr, #(include_str!(#a)),*).0);
-            //let elapsed = time_begin.elapsed();
-            //let sec = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1_000_000_000.0);
-            //span.unstable().warning(format!("compile_into_spirv took {}s", sec))
-            //    .note(format!("bytecode size: {} bytes", bin.len()))
-            //    .emit();
 
-            q
+            if raw {
+                // raw output, without reflection info
+                q
+            } else {
+                // reflection info requested
+                let refl = reflection::generate_reflection_info(span, bin, stage);
+                quote! {
+                    #G::pipeline::ReflectedShader {
+                         bytecode: #q,
+                         reflection: &#refl
+                    }
+                }
+            }
         }
     }
 }

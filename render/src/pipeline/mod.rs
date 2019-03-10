@@ -1,15 +1,17 @@
 use crate::{
-    descriptor::{Descriptor, ResourceBinding, ResourceInterface},
+    descriptor::{ResourceBinding},
     format::Format,
-    framebuffer::FragmentOutputDescription,
-    image::{DepthStencilView, RenderTargetView},
-    vertex::{IndexBufferView, IndexFormat, VertexBufferView, VertexLayout},
+    vertex::{
+        IndexFormat,  VertexLayout,
+    },
     Arena, Backend, Renderer,
 };
 pub use autograph_render_macros::Arguments;
 use bitflags::bitflags;
 use ordered_float::NotNan;
 use std::{fmt::Debug, marker::PhantomData, mem};
+use autograph_spirv::TypeDesc;
+use crate::vertex::{Semantic, VertexInputRate};
 
 pub mod validate;
 
@@ -27,14 +29,6 @@ bitflags! {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct VertexInputAttributeDescription {
-    pub location: u32,
-    pub binding: u32,
-    pub format: Format,
-    pub offset: u32,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum PrimitiveTopology {
     PointList,
     LineList,
@@ -48,20 +42,20 @@ pub enum ShaderFormat {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct GraphicsShaderStages<'a, 'spv, B: Backend> {
+pub struct GraphicsShaderStages<'a, 're, B: Backend> {
     //pub format: ShaderFormat,
-    pub vertex: ShaderModule<'a, 'spv, B>,
-    pub geometry: Option<ShaderModule<'a, 'spv, B>>,
-    pub fragment: Option<ShaderModule<'a, 'spv, B>>,
-    pub tess_eval: Option<ShaderModule<'a, 'spv, B>>,
-    pub tess_control: Option<ShaderModule<'a, 'spv, B>>,
+    pub vertex: ShaderModule<'a, 're, B>,
+    pub geometry: Option<ShaderModule<'a, 're, B>>,
+    pub fragment: Option<ShaderModule<'a, 're, B>>,
+    pub tess_eval: Option<ShaderModule<'a, 're, B>>,
+    pub tess_control: Option<ShaderModule<'a, 're, B>>,
 }
 
-impl<'a, 'spv, B: Backend> GraphicsShaderStages<'a, 'spv, B> {
+impl<'a, 're, B: Backend> GraphicsShaderStages<'a, 're, B> {
     pub fn new_vertex_fragment(
-        vertex: ShaderModule<'a, 'spv, B>,
-        fragment: ShaderModule<'a, 'spv, B>,
-    ) -> GraphicsShaderStages<'a, 'spv, B> {
+        vertex: ShaderModule<'a, 're, B>,
+        fragment: ShaderModule<'a, 're, B>,
+    ) -> GraphicsShaderStages<'a, 're, B> {
         GraphicsShaderStages {
             vertex,
             fragment: fragment.into(),
@@ -292,25 +286,6 @@ impl Default for MultisampleState {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum VertexInputRate {
-    Vertex,
-    Instance,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct VertexInputBindingDescription {
-    pub binding: u32,
-    pub stride: u32,
-    pub input_rate: VertexInputRate,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct VertexInputState<'a> {
-    pub bindings: &'a [VertexInputBindingDescription],
-    pub attributes: &'a [VertexInputAttributeDescription],
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AttachmentDescription {
     pub format: Format,
     pub samples: u32,
@@ -525,7 +500,6 @@ impl<'a> ColorBlendState<'a> {
 pub struct GraphicsPipelineCreateInfo<'a, 'b, B: Backend> {
     /// Shaders
     pub shader_stages: GraphicsShaderStages<'a, 'b, B>,
-    //pub vertex_input_state: &'b VertexInputState<'b>,
     pub viewport_state: ViewportState<'b>,
     pub rasterization_state: RasterisationState,
     pub multisample_state: MultisampleState,
@@ -542,18 +516,18 @@ pub struct GraphicsPipelineCreateInfo<'a, 'b, B: Backend> {
 /// We keep a reference to the SPIR-V bytecode for interface checking when building pipelines.
 #[derive(derivative::Derivative)]
 #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
-pub struct ShaderModule<'a, 'spv, B: Backend>(
-    pub(crate) &'a B::ShaderModule,
-    pub(crate) &'spv [u8],
-);
+pub struct ShaderModule<'a, 're, B: Backend> {
+    pub ( crate ) module: &'a B::ShaderModule,
+    pub ( crate ) reflection: &'re ShaderStageReflection<'re>,
+}
 
-impl<'a, 'spv, B: Backend> ShaderModule<'a, 'spv, B> {
+impl<'a, 're, B: Backend> ShaderModule<'a, 're, B> {
     pub fn inner(&self) -> &'a B::ShaderModule {
-        self.0
+        self.module
     }
 
-    pub fn spirv_binary(&self) -> &'spv [u8] {
-        self.1
+    pub fn reflection(&self) -> &'re ShaderStageReflection<'re> {
+        self.reflection
     }
 }
 
@@ -574,6 +548,14 @@ impl<'a, B: Backend, T: PipelineInterface<'a, B>> From<GraphicsPipeline<'a, B, T
     }
 }*/
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct VertexInputBinding<'a>
+{
+    pub layout: VertexLayout<'a>,
+    pub rate: VertexInputRate,
+    pub base_location: Option<u32>
+}
+
 /// Describes the contents (all arguments) of an argument block.
 ///
 /// This can be seen as the 'layout' or 'format' of an argument block.
@@ -592,7 +574,7 @@ pub struct SignatureDescription<'a> {
     /// Layouts of all vertex buffers in the block.
     ///
     /// The length of this slice defines the number of _vertex buffers_ in a block.
-    pub vertex_layouts: &'a [VertexLayout<'a>],
+    pub vertex_inputs: &'a [VertexInputBinding<'a>],
 
     /// (Color) outputs of the fragment shader. The block contains one _render target_ image for
     /// each entry.
@@ -641,7 +623,7 @@ impl<'a> SignatureDescription<'a> {
     pub const EMPTY: SignatureDescription<'static> = SignatureDescription {
         inherited: &[],
         descriptors: &[],
-        vertex_layouts: &[],
+        vertex_inputs: &[],
         fragment_outputs: &[],
         depth_stencil_fragment_output: None,
         index_format: None,
@@ -721,7 +703,9 @@ pub type TypedArgumentBlock<'a, B, T> = ArgumentBlock<'a, B, TypedSignature<'a, 
 #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
 pub struct BareArgumentBlock<'a, B: Backend>(pub &'a B::ArgumentBlock);
 
-impl<'a, B: Backend, S: Signature<'a, B>> From<ArgumentBlock<'a, B, S>> for BareArgumentBlock<'a, B> {
+impl<'a, B: Backend, S: Signature<'a, B>> From<ArgumentBlock<'a, B, S>>
+    for BareArgumentBlock<'a, B>
+{
     fn from(b: ArgumentBlock<'a, B, S>) -> Self {
         BareArgumentBlock(b.arguments)
     }
@@ -855,3 +839,34 @@ impl<'a, B: Backend, P: Arguments<'a, B>> Arguments<'a, B>
         self.into()
     }
 }
+
+//--------------------------------------------------------------------------------------------------
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct VertexInputAttributeDescription<'tcx> {
+    pub location: Option<u32>,
+    pub ty: &'tcx TypeDesc<'tcx>,
+    pub semantic: Option<Semantic<'tcx>>,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct FragmentOutputDescription {
+    // nothing yet, we just care about the count
+}
+
+/// Shader reflection information for one stage.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct ShaderStageReflection<'a> {
+    pub stage: ShaderStageFlags,
+    pub descriptors: &'a [ResourceBinding<'a>],
+    pub vertex_input_attributes: &'a [VertexInputAttributeDescription<'a>],
+    pub fragment_outputs: &'a [FragmentOutputDescription],
+}
+
+/// Shader bytecode and reflection information.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct ReflectedShader<'bc,'re> {
+    pub bytecode: &'bc [u8],
+    pub reflection: &'re ShaderStageReflection<'re>
+}
+

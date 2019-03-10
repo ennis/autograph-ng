@@ -3,7 +3,9 @@ use crate::{
     buffer::BufferData, image::SamplerDescription, pipeline::ShaderStageFlags, typedesc::TypeDesc,
     Backend,
 };
+use autograph_spirv::layout::Layout;
 use std::marker::PhantomData;
+use crate::format::Format;
 
 #[derive(Copy, Clone, Debug)]
 #[repr(transparent)]
@@ -41,18 +43,25 @@ pub enum ResourceBindingType {
 ///
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ResourceBinding<'tcx> {
+    /// Set index. `None` means inferred from the argument structure, or irrelevant.
+    pub set: Option<u32>,
     /// Binding index
-    pub index: usize,
+    pub index: u32,
     /// Descriptor type
     pub ty: ResourceBindingType,
     /// Which shader stages will see this descriptor
     pub stage_flags: ShaderStageFlags,
     /// TODO How many descriptors in the binding? Should be 1
-    pub count: usize,
-    /// Precise description of the expected data type (image format, layout of buffer data, etc.).
+    pub count: u32,
+    /// Precise description of the expected data type (image format).
     ///
     /// Can be None if no type information is available for this binding.
     pub data_ty: Option<&'tcx TypeDesc<'tcx>>,
+    /// Data layout.
+    pub data_layout: Option<&'tcx Layout<'tcx>>,
+    /// Data format for r/w images & texel buffers.
+    /// `Format::UNDEFINED` if not applicable (all other binding types)
+    pub data_format: Format
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -112,7 +121,9 @@ pub trait ResourceInterface<'a, B: Backend> {
     /// Descriptor type
     const TYPE: ResourceBindingType;
     /// Type information about the content of the data referenced by the descriptor.
-    const DATA_TYPE: Option<&'static TypeDesc<'static>>;
+    const DATA_TYPE: Option<&'static TypeDesc<'static>> = None;
+    const DATA_LAYOUT: Option<&'static Layout<'static>> = None;
+    const DATA_FORMAT: Format = Format::UNDEFINED;
     fn into_descriptor(self) -> Descriptor<'a, B>;
 }
 

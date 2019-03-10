@@ -1,4 +1,4 @@
-use crate::backend::{OpenGlInstance, InstanceConfig};
+use crate::backend::{InstanceConfig, OpenGlInstance};
 use config::Config;
 use glutin::{self, GlWindow};
 use std::sync::Arc;

@@ -258,12 +258,12 @@ pub fn translate_spirv_to_gl_flavor(
 
     let m = spirv::Module::from_words(spv).expect("failed to load SPIR-V module");
 
-    struct RemapEntry<'m> {
+    struct RemapEntry {
         space: BindingSpace,
         set: u32,
         binding: u32,
-        iptr_set: spirv::IPtr<'m>,
-        iptr_binding: spirv::IPtr<'m>,
+        iptr_set: spirv::IPtr,
+        iptr_binding: spirv::IPtr,
         var_id: u32,
     }
 
@@ -271,7 +271,7 @@ pub fn translate_spirv_to_gl_flavor(
 
     {
         // parse spirv
-        let a = spirv::ast::Arenas::new();
+        let a = spirv::DroplessArena::new();
         let ast = spirv::ast::Ast::new(&a, &m);
 
         for (_, v) in ast.variables() {

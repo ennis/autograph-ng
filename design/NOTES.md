@@ -2111,3 +2111,26 @@ GraphicsPipeline trait
 - issue: not using attributes for fields produce stuff in the wrong order
     - not optimal
     - revert to old design
+    
+#### Vertex input
+- two concepts:
+    - vertex buffers, bound to vertex input slots (or input-assembler slots)
+        - vertex buffers have a layout that describe all the elements in the buffer, and to which attribute they correspond
+    - vertex attributes, which are inputs to the vertex shader
+        - don't care about format, input slots, or offsets
+- issue: generating vb layouts at compile time, when the layout also contains attribute indices (which depend on the shader)
+    - Solution A: hard-code attrib index in VertexData (using `#[vertex_attribute(<index>)]`)
+        - But: can't reuse when not the same attrib index in vertex input
+        - locations auto-generated in sequence depending on vertex layout + base location
+    - Solution B: use semantics, like D3D12
+        - assign semantics to VertexData
+        - map to corresponding semantic in shader
+        - if same semantic, then add index discriminant (e.g. POS(1), POS(2))
+            - index discriminant specified in Signature, not VertexData
+        - mapping to vulkan?
+             - vulkan has no semantics, only location
+             - use input names?
+    - Solution C: use both
+        - semantic + semantic index and base location 
+            - for gl, vulkan, ignore semantic
+        

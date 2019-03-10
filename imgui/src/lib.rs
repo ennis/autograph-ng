@@ -9,7 +9,7 @@ use autograph_render::{
         ImageUsageFlags, MipmapsOption, RenderTarget2dView, SamplerDescription,
         TextureSampler2dView,
     },
-    include_shader,
+    include_glsl,
     pipeline::{
         Arguments, ColorBlendState, DepthStencilState, GraphicsPipelineCreateInfo,
         InputAssemblyState, MultisampleState, RasterisationState, Scissor, ScissorRect,
@@ -20,11 +20,12 @@ use autograph_render::{
 };
 use imgui::ImGui;
 use std::{mem, slice};
+use autograph_render::pipeline::ReflectedShader;
 
 /// ImGui vertex shader
-static IMGUI_VERT: &[u8] = include_shader!("imgui.vert");
+static IMGUI_VERT: ReflectedShader = include_glsl!("imgui.vert");
 /// ImGui fragment shader
-static IMGUI_FRAG: &[u8] = include_shader!("imgui.frag");
+static IMGUI_FRAG: ReflectedShader = include_glsl!("imgui.frag");
 
 /// Vertices produced by dear imgui.
 #[derive(Copy, Clone, Debug, VertexData)]
@@ -41,6 +42,7 @@ struct ImUniforms {
     mat: glm::Mat4,
 }
 
+
 #[derive(Copy, Clone, Debug, Arguments)]
 struct ImRenderTarget<'a, B: Backend> {
     #[argument(render_target)]
@@ -49,7 +51,7 @@ struct ImRenderTarget<'a, B: Backend> {
     viewport: Viewport,
 }
 
-#[derive(Copy, Clone, Debug, Arguments)]
+#[derive(Clone, Debug, Arguments)]
 struct ImArguments<'a, B: Backend> {
     #[argument(inherit)]
     rt: TypedArgumentBlock<'a, B, ImRenderTarget<'a, B>>,

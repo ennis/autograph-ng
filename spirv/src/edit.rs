@@ -34,7 +34,7 @@ impl Module {
         for e in edits {
             match e {
                 Edit::Remove(i) => {
-                    debug!("deleting iptr {}", i);
+                    //debug!("deleting iptr {}", i);
                     let size = {
                         let (inst, _) = decode_raw_instruction(&data[i..]).expect("invalid edit");
                         inst.word_count as usize

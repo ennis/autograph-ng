@@ -1,6 +1,7 @@
 #![feature(proc_macro_hygiene)]
+use autograph_imgui::ImGuiRenderer;
 use autograph_render::{
-    buffer::StructuredBufferData,
+    buffer::{BoolU32, StructuredBufferData},
     command::DrawParams,
     format::Format,
     glm,
@@ -15,9 +16,6 @@ use autograph_render::{
     vertex::VertexData,
     AliasScope,
 };
-//use autograph_render_extra;
-use autograph_imgui::ImGuiRenderer;
-use autograph_render::buffer::BoolU32;
 use autograph_render_boilerplate::{App, Event, KeyboardInput, WindowEvent};
 use autograph_render_extra::{commandext::CommandBufferExt, quad::Quad};
 use autograph_render_gl::OpenGlBackend;
@@ -578,14 +576,26 @@ fn main() {
     // load substrate texture
     let mut substrate_img = oiio::ImageInput::open("data/rough_default_2k.jpg").unwrap();
     let substrate_data: oiio::ImageBuffer<u16> = substrate_img.all_channels().read().unwrap();
-    let substrate = arena_0.image_2d(Format::R16G16B16_UNORM,
+    let substrate = arena_0
+        .image_2d(
+            Format::R16G16B16_UNORM,
             substrate_data.width() as u32,
-            substrate_data.height() as u32).with_data(substrate_data.as_bytes());
+            substrate_data.height() as u32,
+        )
+        .with_data(substrate_data.as_bytes());
 
-    let control = arena_0.image_2d(Format::R8G8B8A8_UNORM, frame_width, frame_height).build();
-    let edge_map = arena_0.image_2d(Format::R32_SFLOAT, frame_width, frame_height).build();
-    let lighting = arena_0.image_2d(Format::R16G16B16_UNORM,frame_width, frame_height).build();
-    let color_buffer_2 = arena_0.image_2d(Format::R16G16B16_UNORM, frame_width, frame_height).build();
+    let control = arena_0
+        .image_2d(Format::R8G8B8A8_UNORM, frame_width, frame_height)
+        .build();
+    let edge_map = arena_0
+        .image_2d(Format::R32_SFLOAT, frame_width, frame_height)
+        .build();
+    let lighting = arena_0
+        .image_2d(Format::R16G16B16_UNORM, frame_width, frame_height)
+        .build();
+    let color_buffer_2 = arena_0
+        .image_2d(Format::R16G16B16_UNORM, frame_width, frame_height)
+        .build();
 
     // clear control map
     let mut cmdbuf = r.create_command_buffer();
@@ -606,12 +616,18 @@ fn main() {
         let default_swapchain = r.default_swapchain().unwrap();
         let (w, h) = default_swapchain.size();
         let arena_1 = r.create_arena();
-        let color_buffer =
-            arena_1.render_target(Format::R16G16B16A16_SFLOAT, w, h).samples(8).build();
+        let color_buffer = arena_1
+            .render_target(Format::R16G16B16A16_SFLOAT, w, h)
+            .samples(8)
+            .build();
 
         // UI renderer
-        let mut imgui_renderer =
-            ImGuiRenderer::new(&arena_1, imguictx.imgui(), color_buffer.render_target_view(), (w, h).into());
+        let mut imgui_renderer = ImGuiRenderer::new(
+            &arena_1,
+            imguictx.imgui(),
+            color_buffer.render_target_view(),
+            (w, h).into(),
+        );
 
         'inner: loop {
             //----------------------------------------------------------------------------------
@@ -622,27 +638,35 @@ fn main() {
             let mut cmdbuf = r.create_command_buffer();
 
             // Clear background
-            cmdbuf.clear_render_target(0x0, color_buffer.render_target_view(), &[0.0, 0.2, 0.8, 1.0]);
+            cmdbuf.clear_render_target(
+                0x0,
+                color_buffer.render_target_view(),
+                &[0.0, 0.2, 0.8, 1.0],
+            );
 
             // common arguments
             let common = arena_frame.create_typed_argument_block(CommonArguments {
-                uniforms: arena_frame.upload(&CommonUniforms {
-                    wvp: glm::identity(),
-                    screen_size: glm::vec2(w as f32, h as f32),
-                    _padding: [0.0; 2],
-                    luminance_coeff: glm::vec3(1.0, 1.0, 1.0),
-                }).into(),
+                uniforms: arena_frame
+                    .upload(&CommonUniforms {
+                        wvp: glm::identity(),
+                        screen_size: glm::vec2(w as f32, h as f32),
+                        _padding: [0.0; 2],
+                        luminance_coeff: glm::vec3(1.0, 1.0, 1.0),
+                    })
+                    .into(),
                 color_tex: lighting.sampled_linear(),
                 viewport: (frame_width, frame_height).into(),
             });
 
             let common2 = arena_frame.create_typed_argument_block(CommonArguments {
-                uniforms: arena_frame.upload(&CommonUniforms {
-                    wvp: glm::identity(),
-                    screen_size: glm::vec2(w as f32, h as f32),
-                    _padding: [0.0; 2],
-                    luminance_coeff: glm::vec3(1.0, 1.0, 1.0),
-                }).into(),
+                uniforms: arena_frame
+                    .upload(&CommonUniforms {
+                        wvp: glm::identity(),
+                        screen_size: glm::vec2(w as f32, h as f32),
+                        _padding: [0.0; 2],
+                        luminance_coeff: glm::vec3(1.0, 1.0, 1.0),
+                    })
+                    .into(),
                 color_tex: color_buffer_2.sampled_linear(),
                 viewport: (frame_width, frame_height).into(),
             });

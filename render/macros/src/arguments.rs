@@ -1,4 +1,4 @@
-use super::autograph_name;
+use super::G;
 use darling::{util::Flag, FromDeriveInput, FromField};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
@@ -52,8 +52,6 @@ struct ArgumentsItem {
 
 pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     let s: ArgumentsStruct = <ArgumentsStruct as FromDeriveInput>::from_derive_input(ast).unwrap();
-
-    let g = autograph_name();
     let struct_name = &s.ident;
 
     //----------------------------------------------------------------------------------------------
@@ -174,7 +172,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                         std::iter::once(self.#name.into())
                     });
                     i_inherited
-                        .push(quote! { <#ty as #g::pipeline::Arguments<#ty_backend>>::SIGNATURE });
+                        .push(quote! { <#ty as #G::pipeline::Arguments<#ty_backend>>::SIGNATURE });
                     i_inherited_ty.push(quote!(#ty));
                 }
                 // render target --------------------------------------------
@@ -182,7 +180,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                     iter_render_targets.push(quote! {
                         std::iter::once(self.#name.into())
                     });
-                    i_fragout.push(quote! { #g::framebuffer::FragmentOutputDescription{} });
+                    i_fragout.push(quote! { #G::pipeline::FragmentOutputDescription{} });
                 }
                 // depth stencil render target --------------------------------------------
                 else if pitem.depth_stencil_render_target.is_some() {
@@ -206,14 +204,17 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                     iter_descriptors.push(quote! {
                        std::iter::once(self.#name.into_descriptor())
                     });
-                    let index = i_desc.len();
+                    let index = i_desc.len() as u32;
                     i_desc.push(quote!{
-                        #g::descriptor::ResourceBinding {
+                        #G::descriptor::ResourceBinding {
+                            set: None, // descriptor set is determined by the argument block layout
                             index: #index,
-                            ty: <#ty as #g::descriptor::ResourceInterface<#ty_backend>>::TYPE,
-                            stage_flags: #g::pipeline::ShaderStageFlags::ALL_GRAPHICS,
+                            ty: <#ty as #G::descriptor::ResourceInterface<#ty_backend>>::TYPE,
+                            stage_flags: #G::pipeline::ShaderStageFlags::ALL_GRAPHICS,
                             count: 1,
-                            data_ty: <#ty as #g::descriptor::ResourceInterface<#ty_backend>>::DATA_TYPE,
+                            data_ty: <#ty as #G::descriptor::ResourceInterface<#ty_backend>>::DATA_TYPE,
+                            data_format: <#ty as #G::descriptor::ResourceInterface<#ty_backend>>::DATA_FORMAT,
+                            data_layout: <#ty as #G::descriptor::ResourceInterface<#ty_backend>>::DATA_LAYOUT,
                         }
                     });
                 }
@@ -224,7 +225,11 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                     });
 
                     i_vtxin.push(quote! {
-                        <<#ty as #g::vertex::VertexBufferInterface<#ty_backend>>::Vertex as #g::vertex::VertexData>::LAYOUT
+                        #G::pipeline::VertexInputBinding {
+                            layout: <<#ty as #G::vertex::VertexBufferInterface<#ty_backend>>::Vertex as #G::vertex::VertexData>::LAYOUT,
+                            rate: #G::vertex::VertexInputRate::Vertex,   // TODO
+                            base_location: None
+                        }
                     });
                 }
                 // index buffer --------------------------------------------
@@ -235,7 +240,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                             index_buffer = Some(self.#name.into());
                         });
                         ib_format = Some(
-                            quote!(Some(<<#ty as #g::vertex::IndexBufferInterface<#ty_backend>>::Index as #g::vertex::IndexData>::FORMAT)),
+                            quote!(Some(<<#ty as #G::vertex::IndexBufferInterface<#ty_backend>>::Index as #G::vertex::IndexData>::FORMAT)),
                         );
                     } else {
                         stmts.push(
@@ -285,7 +290,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     let is_root_fragment_output_signature = i_fragout.len() > 0;
     let is_root_vertex_input_signature = false;
     let depth_stencil_fragment_output = if seen_dst {
-        quote!(Some(#g::framebuffer::FragmentOutputDescription{}))
+        quote!(Some(#G::pipeline::FragmentOutputDescription{}))
     } else {
         quote!(None)
     };
@@ -312,17 +317,17 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
             pub struct Dummy<#(#ty_params,)*>(std::marker::PhantomData<(#(#ty_params3),*)>);
         }
 
-        impl #impl_generics #g::pipeline::Arguments<#lt_arena, #ty_backend> for #struct_name #ty_generics #where_clause {
+        impl #impl_generics #G::pipeline::Arguments<#lt_arena, #ty_backend> for #struct_name #ty_generics #where_clause {
 
             type UniqueType = #privmod::Dummy<#(#ty_params2,)*>;
             type IntoInterface = Self;
 
-            const SIGNATURE: &'static #g::pipeline::SignatureDescription<'static> = &#g::pipeline::SignatureDescription {
+            const SIGNATURE: &'static #G::pipeline::SignatureDescription<'static> = &#G::pipeline::SignatureDescription {
                 is_root_fragment_output_signature : #is_root_fragment_output_signature,
                 is_root_vertex_input_signature    : #is_root_vertex_input_signature,
                 inherited                         : &[#(#i_inherited,)*],
                 descriptors                       : &[#(#i_desc,)*],
-                vertex_layouts                    : &[#(#i_vtxin,)*],
+                vertex_inputs                     : &[#(#i_vtxin,)*],
                 fragment_outputs                  : &[#(#i_fragout,)*],
                 depth_stencil_fragment_output     : #depth_stencil_fragment_output,
                 index_format                      : #ib_format,
@@ -330,7 +335,7 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                 num_scissors                      : #n_scissors,
             };
 
-            fn get_inherited_signatures(renderer: &#lt_arena #g::Renderer<#ty_backend>) -> Vec<&#lt_arena <#ty_backend as #g::Backend>::Signature> {
+            fn get_inherited_signatures(renderer: &#lt_arena #G::Renderer<#ty_backend>) -> Vec<&#lt_arena <#ty_backend as #G::Backend>::Signature> {
                 use autograph_render::pipeline::Signature;
                 let mut sig = Vec::new();
                 #(sig.push(renderer.get_cached_signature::<#i_inherited_ty>().inner());)*
@@ -339,12 +344,12 @@ pub fn generate(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
 
             fn into_block(
                     self,
-                    signature: #g::pipeline::TypedSignature<#lt_arena, #ty_backend, Self::IntoInterface>,
-                    arena: &#lt_arena #g::Arena <#ty_backend>) ->
-                    #g::pipeline::ArgumentBlock<#lt_arena,  #ty_backend, #g::pipeline::TypedSignature<#lt_arena, #ty_backend, Self::IntoInterface>>
+                    signature: #G::pipeline::TypedSignature<#lt_arena, #ty_backend, Self::IntoInterface>,
+                    arena: &#lt_arena #G::Arena <#ty_backend>) ->
+                    #G::pipeline::ArgumentBlock<#lt_arena,  #ty_backend, #G::pipeline::TypedSignature<#lt_arena, #ty_backend, Self::IntoInterface>>
             {
-                use #g::pipeline::Arguments;
-                use #g::descriptor::ResourceInterface;
+                use #G::pipeline::Arguments;
+                use #G::descriptor::ResourceInterface;
 
                 let mut index_buffer = None;
                 let mut depth_stencil_render_target = None;

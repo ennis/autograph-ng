@@ -34,7 +34,6 @@ pub mod command;
 pub mod descriptor;
 pub mod error;
 pub mod format;
-pub mod framebuffer;
 pub mod image;
 pub mod pipeline;
 pub mod swapchain;
@@ -48,7 +47,7 @@ pub use crate::{buffer::*, command::*, descriptor::*, format::*, image::*, util:
 // re-export macros
 pub use autograph_shader_macros::{
     glsl_compute, glsl_fragment, glsl_geometry, glsl_tess_control, glsl_tess_eval, glsl_vertex,
-    include_shader,
+    include_glsl, include_glsl_raw
 };
 
 use crate::{
@@ -64,6 +63,7 @@ use std::{
     any::TypeId, collections::HashMap, fmt::Debug, hash::Hash, marker::PhantomData, mem,
     sync::Mutex,
 };
+use crate::pipeline::ReflectedShader;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -419,74 +419,75 @@ impl<'r, B: Backend> Arena<'r, B> {
 
     /// Creates a shader module from SPIR-V bytecode.
     #[inline]
-    pub fn create_shader_module<'a, 'spv>(
+    pub fn create_shader_module<'a, 're>(
         &'a self,
-        data: &'spv [u8],
-        stage: ShaderStageFlags,
-    ) -> ShaderModule<'a, 'spv, B> {
-        ShaderModule(
-            unsafe {
+        shader: ReflectedShader<'_, 're>,
+    ) -> ShaderModule<'a, 're, B> {
+        ShaderModule {
+            module: unsafe {
                 self.instance
-                    .create_shader_module(&self.inner(), data, stage)
+                    .create_shader_module(&self.inner(), shader.bytecode, shader.reflection.stage)
             },
-            data,
-        )
+            reflection: shader.reflection
+        }
     }
 
-    /// Equivalent to `create_shader_module(data, ShaderStageFlags::VERTEX)`
+    /*/// Equivalent to `create_shader_module(data, ShaderStageFlags::VERTEX)`
     #[inline]
-    pub fn create_vertex_shader_module<'a, 'spv>(
+    pub fn create_vertex_shader_module<'a, 're>(
         &'a self,
-        data: &'spv [u8],
-    ) -> ShaderModule<'a, 'spv, B> {
+        shader: ReflectedShader<'re>,
+    ) -> ShaderModule<'a, 're, B> {
         self.create_shader_module(data, ShaderStageFlags::VERTEX)
     }
 
     /// Equivalent to `create_shader_module(data, ShaderStageFlags::FRAGMENT)`
     #[inline]
-    pub fn create_fragment_shader_module<'a, 'spv>(
+    pub fn create_fragment_shader_module<'a, 're>(
         &'a self,
-        data: &'spv [u8],
-    ) -> ShaderModule<'a, 'spv, B> {
+        shader: ReflectedShader<'re>,
+    ) -> ShaderModule<'a, 're, B> {
         self.create_shader_module(data, ShaderStageFlags::FRAGMENT)
     }
 
     /// Equivalent to `create_shader_module(data, ShaderStageFlags::GEOMETRY)`
     #[inline]
-    pub fn create_geometry_shader_module<'a, 'spv>(
+    pub fn create_geometry_shader_module<'a, 're>(
         &'a self,
-        data: &'spv [u8],
-    ) -> ShaderModule<'a, 'spv, B> {
+        shader: ReflectedShader<'re>,
+    ) -> ShaderModule<'a, 're, B> {
         self.create_shader_module(data, ShaderStageFlags::GEOMETRY)
     }
 
     /// Equivalent to `create_shader_module(data, ShaderStageFlags::TESS_CONTROL)`
     #[inline]
-    pub fn create_tess_control_shader_module<'a, 'spv>(
+    pub fn create_tess_control_shader_module<'a, 're>(
         &'a self,
-        data: &'spv [u8],
-    ) -> ShaderModule<'a, 'spv, B> {
+        shader: ReflectedShader<'re>,
+    ) -> ShaderModule<'a, 're, B> {
         self.create_shader_module(data, ShaderStageFlags::TESS_CONTROL)
     }
 
     /// Equivalent to `create_shader_module(data, ShaderStageFlags::TESS_EVAL)`
     #[inline]
-    pub fn create_tess_eval_shader_module<'a, 'spv>(
+    pub fn create_tess_eval_shader_module<'a, 're>(
         &'a self,
-        data: &'spv [u8],
-    ) -> ShaderModule<'a, 'spv, B> {
+        shader: ReflectedShader<'re>,
+    ) -> ShaderModule<'a, 're, B> {
         self.create_shader_module(data, ShaderStageFlags::TESS_EVAL)
-    }
+    }*/
 
     /// Shorthand to create a `GraphicsShaderStages` object with a vertex and a fragment shader.
     #[inline]
-    pub fn create_vertex_fragment_shader_stages<'a, 'spv>(
+    pub fn create_vertex_fragment_shader_stages<'a, 're>(
         &'a self,
-        vertex_shader: &'spv [u8],
-        fragment_shader: &'spv [u8],
-    ) -> GraphicsShaderStages<'a, 'spv, B> {
-        let vert = self.create_vertex_shader_module(vertex_shader);
-        let frag = self.create_fragment_shader_module(fragment_shader);
+        vertex_shader: ReflectedShader<'_, 're>,
+        fragment_shader: ReflectedShader<'_, 're>,
+    ) -> GraphicsShaderStages<'a, 're, B> {
+        assert_eq!(vertex_shader.reflection.stage, ShaderStageFlags::VERTEX, "invalid shader stage");
+        assert_eq!(fragment_shader.reflection.stage, ShaderStageFlags::FRAGMENT, "invalid shader stage");
+        let vert = self.create_shader_module(vertex_shader);
+        let frag = self.create_shader_module(fragment_shader);
         GraphicsShaderStages {
             vertex: vert,
             geometry: None,

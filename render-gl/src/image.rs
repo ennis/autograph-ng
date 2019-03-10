@@ -132,18 +132,6 @@ impl RawImage {
         let et = ExtentsAndType::from_dimensions(&dimensions);
         let glfmt = GlFormatInfo::from_format(format);
 
-        /*let mipcount = match mipmaps {
-            MipmapsOption::Log2 => get_texture_mip_map_count(max(et.width, et.height)),
-            MipmapsOption::Specific(count) => {
-                // Multisampled textures can't have more than one mip level
-                if samples > 1 {
-                    assert_eq!(count, 1);
-                }
-                count
-            }
-            MipmapsOption::One => 1,
-        };*/
-
         if et.array_layers > 1 {
             unimplemented!("array textures")
         }
@@ -151,10 +139,6 @@ impl RawImage {
         let mut obj = 0;
         unsafe {
             gl.CreateTextures(et.target, 1, &mut obj);
-
-            /*if desc.options.contains(SPARSE_STORAGE) {
-                gl::TextureParameteri(obj, gl::TEXTURE_SPARSE_ARB, gl::TRUE as i32);
-            }*/
 
             match et.target {
                 gl::TEXTURE_1D => {

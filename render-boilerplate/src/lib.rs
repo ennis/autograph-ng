@@ -2,7 +2,7 @@
 extern crate image as img;
 use self::img::GenericImageView;
 use autograph_render::*;
-use autograph_render_gl::{create_instance_and_window, OpenGlBackend, InstanceConfig};
+use autograph_render_gl::{create_instance_and_window, InstanceConfig, OpenGlBackend};
 use config;
 use pretty_env_logger;
 use std::{cell::RefCell, error, fmt, path::Path};
@@ -71,7 +71,6 @@ pub fn load_image_2d<'a, B: Backend, P: AsRef<Path>>(
         bytes,
     ))
 }*/
-
 
 pub struct App {
     pub events_loop: RefCell<winit::EventsLoop>,

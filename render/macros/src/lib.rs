@@ -13,13 +13,23 @@ extern crate proc_macro2;
 extern crate quote;
 extern crate syn;
 
-//mod descriptor_set_interface;
+use proc_macro2::TokenStream;
+use syn::export::{ToTokens, TokenStreamExt, Span};
+
+//--------------------------------------------------------------------------------------------------
+struct CrateName;
+const G: CrateName = CrateName;
+
+impl ToTokens for CrateName {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        tokens.append(syn::Ident::new("autograph_render", Span::call_site()))
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+
 mod arguments;
 mod layout;
-
-fn autograph_name() -> syn::Path {
-    syn::parse_str("autograph_render").unwrap()
-}
 
 #[proc_macro_derive(StructuredBufferData)]
 pub fn structured_buffer_data_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {

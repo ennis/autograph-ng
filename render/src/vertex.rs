@@ -1,12 +1,11 @@
 use crate::{
-    buffer::{Buffer, BufferData, BufferTypeless},
+    buffer::{Buffer, BufferData},
     format::Format,
     typedesc::{PrimitiveType, TypeDesc},
 };
 
 use crate::Backend;
 pub use autograph_render_macros::VertexData;
-use std::marker::PhantomData;
 
 /// Describes the type of indices contained in an index buffer.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -17,10 +16,24 @@ pub enum IndexFormat {
     U32,
 }
 
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum VertexInputRate {
+    Vertex,
+    Instance
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct Semantic<'tcx> {
+    pub name: &'tcx str,
+    /// Index relative to the base semantic index of the VertexInputBinding
+    pub index: u32
+}
+
 /// Description of a vertex attribute within a vertex layout.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TypedVertexInputAttributeDescription<'tcx> {
-    pub ty: &'tcx TypeDesc<'tcx>,
+pub struct VertexLayoutElement<'tcx> {
+    pub semantic: Option<Semantic<'tcx>>,
     pub format: Format,
     pub offset: u32,
 }
@@ -29,7 +42,7 @@ pub struct TypedVertexInputAttributeDescription<'tcx> {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VertexLayout<'tcx> {
     /// Description of individual vertex attributes inside the buffer.
-    pub elements: &'tcx [TypedVertexInputAttributeDescription<'tcx>],
+    pub elements: &'tcx [VertexLayoutElement<'tcx>],
     /// Number of bytes to go to the next element.
     pub stride: usize,
 }
@@ -229,7 +242,7 @@ macro_rules! impl_attrib_prim_type {
 macro_rules! impl_attrib_array_type {
     ([$t:ty; $len:expr], $prim:ident, $fmt:ident) => {
         unsafe impl VertexAttributeType for [$t; $len] {
-            const EQUIVALENT_TYPE: TypeDesc<'static> = TypeDesc::Vector(PrimitiveType::$prim, $len);
+            const EQUIVALENT_TYPE: TypeDesc<'static> = TypeDesc::Vector { elem_ty: PrimitiveType::$prim, len: $len };
             const FORMAT: Format = Format::$fmt;
         }
     };
@@ -289,25 +302,25 @@ impl_index_data!(u32, U32);
 #[cfg(feature = "glm")]
 impl_attrib_type!(
     nalgebra_glm::Vec2,
-    TypeDesc::Vector(PrimitiveType::Float, 2),
+    TypeDesc::Vector{elem_ty: PrimitiveType::Float, len:2},
     R32G32_SFLOAT
 );
 #[cfg(feature = "glm")]
 impl_attrib_type!(
     nalgebra_glm::Vec3,
-    TypeDesc::Vector(PrimitiveType::Float, 3),
+    TypeDesc::Vector{elem_ty: PrimitiveType::Float, len:3},
     R32G32B32_SFLOAT
 );
 #[cfg(feature = "glm")]
 impl_attrib_type!(
     nalgebra_glm::Vec4,
-    TypeDesc::Vector(PrimitiveType::Float, 4),
+    TypeDesc::Vector{elem_ty: PrimitiveType::Float, len:4},
     R32G32B32A32_SFLOAT
 );
 
 #[cfg(feature = "glm")]
 impl_attrib_type!(
     nalgebra_glm::U8Vec4,
-    TypeDesc::Vector(PrimitiveType::Float, 4),
-    R8G8B8A8_UNORM
+    TypeDesc::Vector{elem_ty: PrimitiveType::Float, len:4},
+    R8G8B8A8_UNORM  // FIXME why UNORM and not UINT?
 );

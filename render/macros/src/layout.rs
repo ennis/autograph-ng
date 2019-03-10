@@ -1,4 +1,4 @@
-use crate::autograph_name;
+use crate::G;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::Ident;
@@ -83,8 +83,6 @@ pub fn generate_structured_buffer_data(
     ast: &syn::DeriveInput,
     fields: &syn::Fields,
 ) -> TokenStream {
-    let gfx = autograph_name();
-
     if !has_repr_c_attr(ast) {
         panic!("derive(StructuredBufferData) can only be used on repr(C) structs");
     }
@@ -103,46 +101,60 @@ pub fn generate_structured_buffer_data(
         syn::Fields::Unit => panic!("cannot generate struct layout of unit structs"),
     };
 
-    let mut field_descs = Vec::new();
+    let mut field_tys = Vec::new();
+    let mut layouts = Vec::new();
+    let mut offsets = Vec::new();
 
     for (i, f) in fields.iter().enumerate() {
         let field_ty = &f.ty;
-        let offset = &layout.offsets[i];
-        let offset = &offset.ident;
+        let offset = &layout.offsets[i].ident;
 
         // skip padding fields (with an underscore)
         if f.ident.as_ref().unwrap().to_string().starts_with('_') {
             continue;
         }
 
-        field_descs.push(
-            quote! { (#privmod::#offset, <#field_ty as #gfx::buffer::StructuredBufferData>::TYPE) },
+        field_tys.push(
+            quote! { <#field_ty as #G::buffer::StructuredBufferData>::TYPE },
+        );
+
+        offsets.push(
+            quote! { #privmod::#offset },
+        );
+
+        layouts.push(
+            quote! { <#field_ty as #G::buffer::StructuredBufferData>::LAYOUT },
         );
     }
 
-    let offsets = &layout.offsets;
-    let sizes = &layout.sizes;
+    let offset_consts = &layout.offsets;
+    let size_consts = &layout.sizes;
 
     quote! {
         #[allow(non_snake_case)]
         mod #privmod {
             use super::*;
-            #(#offsets)*
-            #(#sizes)*
+            #(#offset_consts)*
+            #(#size_consts)*
         }
 
-        unsafe impl #gfx::buffer::StructuredBufferData for #struct_name {
-            const TYPE: &'static #gfx::typedesc::TypeDesc<'static> = &#gfx::typedesc::TypeDesc::Struct(
-                #gfx::typedesc::StructLayout {
-                    fields: &[#(#field_descs),*],
-                });
+        unsafe impl #G::buffer::StructuredBufferData for #struct_name {
+            const TYPE: #G::typedesc::TypeDesc<'static> = #G::typedesc::TypeDesc::Struct {
+                fields: &[#(&#field_tys),*],
+            };
+            const LAYOUT: #G::typedesc::Layout<'static> = #G::typedesc::Layout {
+                align: std::mem::align_of::<#struct_name>(),
+                size: std::mem::size_of::<#struct_name>(),
+                details: #G::typedesc::LayoutDetails::Struct(#G::typedesc::FieldsLayout {
+                    offsets: &[#(#offsets),*],
+                    layouts: &[#(&#layouts),*]
+                })
+            };
         }
     }
 }
 
 pub fn generate_vertex_data(ast: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
-    let gfx = autograph_name();
-
     if !has_repr_c_attr(ast) {
         panic!("derive(VertexData) can only be used on repr(C) structs");
     }
@@ -166,11 +178,12 @@ pub fn generate_vertex_data(ast: &syn::DeriveInput, fields: &syn::Fields) -> Tok
         let offset = &offset.ident;
 
         attribs.push(quote! {
-            #gfx::vertex::TypedVertexInputAttributeDescription {
-                ty: &<#field_ty as #gfx::vertex::VertexAttributeType>::EQUIVALENT_TYPE,
+            #G::vertex::VertexLayoutElement {
+                //ty: &<#field_ty as #gfx::vertex::VertexAttributeType>::EQUIVALENT_TYPE,
                 //location: #i as u32,
-                format: <#field_ty as #gfx::vertex::VertexAttributeType>::FORMAT,
+                format: <#field_ty as #G::vertex::VertexAttributeType>::FORMAT,
                 offset: #privmod::#offset as u32,
+                semantic: None  // TODO
             }
         });
     }
@@ -186,9 +199,9 @@ pub fn generate_vertex_data(ast: &syn::DeriveInput, fields: &syn::Fields) -> Tok
             #(#sizes)*
         }
 
-        unsafe impl #gfx::vertex::VertexData for #struct_name {
-            const LAYOUT: #gfx::vertex::VertexLayout<'static> =
-                #gfx::vertex::VertexLayout {
+        unsafe impl #G::vertex::VertexData for #struct_name {
+            const LAYOUT: #G::vertex::VertexLayout<'static> =
+                #G::vertex::VertexLayout {
                     elements: &[#(#attribs,)*],
                     stride: ::std::mem::size_of::<#struct_name>()
                 };
