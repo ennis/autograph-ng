@@ -1,4 +1,4 @@
-use crate::{
+/*use crate::{
     api::{types::*, Gl},
     format::GlFormatInfo,
 };
@@ -26,3 +26,4 @@ pub fn create_vertex_array_object(gl: &Gl, attribs: &[VertexInputAttributeDescri
 
     vao
 }
+*/

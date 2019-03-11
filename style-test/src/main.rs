@@ -1,60 +1,37 @@
 #![feature(proc_macro_hygiene)]
 use autograph_imgui::ImGuiRenderer;
-use autograph_render::{
-    buffer::{BoolU32, StructuredBufferData},
-    command::DrawParams,
-    format::Format,
-    glm,
-    image::{ImageUsageFlags, MipmapsOption, SamplerDescription},
-    include_shader,
-    pipeline::{
-        Arguments, ColorBlendAttachmentState, ColorBlendAttachments, ColorBlendState,
-        DepthStencilState, GraphicsPipelineCreateInfo, GraphicsShaderStages, InputAssemblyState,
-        MultisampleState, PrimitiveTopology, RasterisationState, Viewport, ViewportState,
-        Viewports,
-    },
-    vertex::VertexData,
-    AliasScope,
-};
+use autograph_render::{glm, prelude::*};
 use autograph_render_boilerplate::{App, Event, KeyboardInput, WindowEvent};
 use autograph_render_extra::{commandext::CommandBufferExt, quad::Quad};
-use autograph_render_gl::OpenGlBackend;
+use autograph_render_gl::prelude::*;
 use imgui::{im_str, FontGlyphRange, ImGui};
 use log::{debug, info, warn};
 use openimageio as oiio;
 use std::{env, iter, mem, path::Path, slice, time};
 
-// Define shorthands for backend-specific types ----------------------------------------------------
-type Backend = autograph_render_gl::OpenGlBackend;
-type Arena<'a> = autograph_render::Arena<'a, Backend>;
-type Buffer<'a, T> = autograph_render::buffer::Buffer<'a, Backend, T>;
-type TypedConstantBufferView<'a, T> =
-    autograph_render::buffer::TypedConstantBufferView<'a, Backend, T>;
-type Image2d<'a> = autograph_render::image::Image2d<'a, Backend>;
-type RenderTarget2dView<'a> = autograph_render::image::RenderTarget2dView<'a, Backend>;
-type TextureSampler2dView<'a> = autograph_render::image::TextureSampler2dView<'a, Backend>;
-type TypedGraphicsPipeline<'a, T> =
-    autograph_render::pipeline::TypedGraphicsPipeline<'a, Backend, T>;
-type TypedArgumentBlock<'a, T> = autograph_render::pipeline::TypedArgumentBlock<'a, Backend, T>;
-
 // Shaders -----------------------------------------------------------------------------------------
-static QUAD_VERT: &[u8] = include_shader!("quad.vert");
-static QUAD_SAMPLER_VERT: &[u8] = include_shader!("quadSampler.vert");
-static PIGMENT_APPLICATION_OIL_PAINT_FRAG: &[u8] = include_shader!("pigmentApplicationOP.frag");
-static PIGMENT_APPLICATION_WATERCOLOR_FRAG: &[u8] = include_shader!("pigmentApplicationWC.frag");
-static SUBSTRATE_DEFERRED_LIGHTING_FRAG: &[u8] = include_shader!("substrateDeferredLighting.frag");
-static SUBSTRATE_DEFERRED_IMPASTO_LIGHTING_FRAG: &[u8] =
-    include_shader!("substrateDeferredImpastoLighting.frag");
-static SUBSTRATE_DISTORTION_FRAG: &[u8] = include_shader!("substrateDistortion.frag");
-static SUBSTRATE_DISTORTION_EDGES_FRAG: &[u8] = include_shader!("substrateDistortionEdges.frag");
-static GRADIENT_EDGES_WATERCOLOR_FRAG: &[u8] = include_shader!("gradientEdgesWC.frag");
-static EDGE_DETECTION_SOBEL_RGBD_FRAG: &[u8] = include_shader!("edgeDetectionSobelRGBD.frag");
-static EDGE_DETECTION_DOG_RGBD_FRAG: &[u8] = include_shader!("edgeDetectionDoGRGBD.frag");
-static WATERCOLOR_FILTER_H_FRAG: &[u8] = include_shader!("watercolorFilterH.frag");
-static WATERCOLOR_FILTER_V_FRAG: &[u8] = include_shader!("watercolorFilterV.frag");
+static QUAD_VERT: ReflectedShader = include_glsl!("quad.vert");
+static QUAD_SAMPLER_VERT: ReflectedShader = include_glsl!("quadSampler.vert");
+static PIGMENT_APPLICATION_OIL_PAINT_FRAG: ReflectedShader =
+    include_glsl!("pigmentApplicationOP.frag");
+static PIGMENT_APPLICATION_WATERCOLOR_FRAG: ReflectedShader =
+    include_glsl!("pigmentApplicationWC.frag");
+static SUBSTRATE_DEFERRED_LIGHTING_FRAG: ReflectedShader =
+    include_glsl!("substrateDeferredLighting.frag");
+static SUBSTRATE_DEFERRED_IMPASTO_LIGHTING_FRAG: ReflectedShader =
+    include_glsl!("substrateDeferredImpastoLighting.frag");
+static SUBSTRATE_DISTORTION_FRAG: ReflectedShader = include_glsl!("substrateDistortion.frag");
+static SUBSTRATE_DISTORTION_EDGES_FRAG: ReflectedShader =
+    include_glsl!("substrateDistortionEdges.frag");
+static GRADIENT_EDGES_WATERCOLOR_FRAG: ReflectedShader = include_glsl!("gradientEdgesWC.frag");
+static EDGE_DETECTION_SOBEL_RGBD_FRAG: ReflectedShader =
+    include_glsl!("edgeDetectionSobelRGBD.frag");
+static EDGE_DETECTION_DOG_RGBD_FRAG: ReflectedShader = include_glsl!("edgeDetectionDoGRGBD.frag");
+static WATERCOLOR_FILTER_H_FRAG: ReflectedShader = include_glsl!("watercolorFilterH.frag");
+static WATERCOLOR_FILTER_V_FRAG: ReflectedShader = include_glsl!("watercolorFilterV.frag");
 
-static WATERCOLOR_SHADING_VERT: &[u8] = include_shader!("watercolorShading.vert");
-static WATERCOLOR_SHADING_FRAG: &[u8] = include_shader!("watercolorShading.frag");
+static WATERCOLOR_SHADING_VERT: ReflectedShader = include_glsl!("watercolorShading.vert");
+static WATERCOLOR_SHADING_FRAG: ReflectedShader = include_glsl!("watercolorShading.frag");
 
 #[derive(VertexData, Copy, Clone)]
 #[repr(C)]
@@ -343,13 +320,11 @@ struct WatercolorShading<'a> {
 }
 
 struct Pipelines<'a> {
-    edge_detection_dog_rgbd: TypedGraphicsPipeline<'a, Quad<'a, OpenGlBackend, EdgeDetection<'a>>>,
-    edge_detection_sobel_rgbd:
-        TypedGraphicsPipeline<'a, Quad<'a, OpenGlBackend, EdgeDetection<'a>>>,
-    substrate_deferred_lighting:
-        TypedGraphicsPipeline<'a, Quad<'a, OpenGlBackend, SubstrateCommon<'a>>>,
-    watercolor_shading: TypedGraphicsPipeline<'a, Quad<'a, OpenGlBackend, WatercolorShading<'a>>>,
-    substrate_distortion: TypedGraphicsPipeline<'a, Quad<'a, OpenGlBackend, SubstrateCommon<'a>>>,
+    edge_detection_dog_rgbd: TypedGraphicsPipeline<'a, Quad<'a, Backend, EdgeDetection<'a>>>,
+    edge_detection_sobel_rgbd: TypedGraphicsPipeline<'a, Quad<'a, Backend, EdgeDetection<'a>>>,
+    substrate_deferred_lighting: TypedGraphicsPipeline<'a, Quad<'a, Backend, SubstrateCommon<'a>>>,
+    watercolor_shading: TypedGraphicsPipeline<'a, Quad<'a, Backend, WatercolorShading<'a>>>,
+    substrate_distortion: TypedGraphicsPipeline<'a, Quad<'a, Backend, SubstrateCommon<'a>>>,
 }
 
 impl<'a> Pipelines<'a> {

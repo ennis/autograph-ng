@@ -27,7 +27,7 @@ use autograph_render::{
     vertex::{IndexBufferView, VertexBufferView},
     AliasScope, Backend, Instance,
 };
-use config::Config;
+use dropless_arena::DroplessArena;
 use glutin::{GlContext, GlWindow};
 use std::{
     cell::{Cell, RefCell},
@@ -40,7 +40,6 @@ use std::{
     time::Duration,
 };
 use typed_arena::Arena;
-use dropless_arena::DroplessArena;
 
 //--------------------------------------------------------------------------------------------------
 extern "system" fn debug_callback(
@@ -372,18 +371,16 @@ impl Instance<OpenGlBackend> for OpenGlInstance {
             let raw = RawImage::new(&self.gl, &d);
 
             if let Some(data) = initial_data {
-                unsafe {
-                    upload_image_region(
-                        &self.gl,
-                        raw.target,
-                        raw.obj,
-                        format,
-                        0,
-                        (0, 0, 0),
-                        dimensions.width_height_depth(),
-                        data,
-                    );
-                }
+                upload_image_region(
+                    &self.gl,
+                    raw.target,
+                    raw.obj,
+                    format,
+                    0,
+                    (0, 0, 0),
+                    dimensions.width_height_depth(),
+                    data,
+                );
             }
 
             arena.images.alloc(GlImage {

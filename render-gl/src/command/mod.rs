@@ -252,8 +252,7 @@ impl<'a, 'rcx> SubmissionContext<'a, 'rcx> {
                     let scissors = unsafe { slice::from_raw_parts(scissors, sig.num_scissors) };
                     self.state_cache.set_scissors(self.gl, scissors);
                     //base_slots.viewports += sig.num_scissors;
-                }
-                &StateBlock::Empty => {}
+                } //&StateBlock::Empty => {}
             }
         }
     }

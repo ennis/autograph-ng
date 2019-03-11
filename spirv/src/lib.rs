@@ -5,15 +5,14 @@ mod edit;
 pub mod inst;
 pub mod layout;
 
-use std::{cell::RefCell, fmt};
-use std::error;
+use std::{cell::RefCell, error, fmt};
 
 //pub use self::inst::*;
 //pub use self::edit::*;
-pub use dropless_arena::DroplessArena;
 pub use self::{decode::DecodedInstruction, layout::*};
-pub use spirv_headers as headers;
+pub use dropless_arena::DroplessArena;
 pub use headers::{Dim, ImageFormat};
+pub use spirv_headers as headers;
 
 /// Error that can happen when parsing.
 #[derive(Debug, Clone)]
@@ -182,22 +181,19 @@ pub enum TypeDesc<'tcx> {
     Unknown,
 }
 
-impl<'tcx> TypeDesc<'tcx>
-{
+impl<'tcx> TypeDesc<'tcx> {
     pub fn element_type(&self) -> Option<&'tcx TypeDesc<'tcx>> {
         match self {
-            TypeDesc::Array {
-                elem_ty,
-                .. } => Some(*elem_ty),
+            TypeDesc::Array { elem_ty, .. } => Some(*elem_ty),
             TypeDesc::Pointer(elem_ty) => Some(*elem_ty),
-            _ => None
+            _ => None,
         }
     }
 
     pub fn pointee_type(&self) -> Option<&'tcx TypeDesc<'tcx>> {
         match self {
             TypeDesc::Pointer(elem_ty) => Some(*elem_ty),
-            _ => None
+            _ => None,
         }
     }
 }

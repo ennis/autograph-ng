@@ -45,6 +45,7 @@ mod format;
 mod framebuffer;
 mod image;
 mod pipeline;
+pub mod prelude;
 mod sampler;
 mod swapchain;
 mod sync;
@@ -90,6 +91,3 @@ impl ImplementationParameters {
         }
     }
 }
-
-//--------------------------------------------------------------------------------------------------
-pub type Backend = backend::OpenGlBackend;

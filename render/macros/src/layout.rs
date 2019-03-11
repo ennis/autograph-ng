@@ -114,17 +114,11 @@ pub fn generate_structured_buffer_data(
             continue;
         }
 
-        field_tys.push(
-            quote! { <#field_ty as #G::buffer::StructuredBufferData>::TYPE },
-        );
+        field_tys.push(quote! { <#field_ty as #G::buffer::StructuredBufferData>::TYPE });
 
-        offsets.push(
-            quote! { #privmod::#offset },
-        );
+        offsets.push(quote! { #privmod::#offset });
 
-        layouts.push(
-            quote! { <#field_ty as #G::buffer::StructuredBufferData>::LAYOUT },
-        );
+        layouts.push(quote! { <#field_ty as #G::buffer::StructuredBufferData>::LAYOUT });
     }
 
     let offset_consts = &layout.offsets;

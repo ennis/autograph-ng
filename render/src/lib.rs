@@ -36,6 +36,7 @@ pub mod error;
 pub mod format;
 pub mod image;
 pub mod pipeline;
+pub mod prelude;
 pub mod swapchain;
 pub mod traits;
 pub mod typedesc;
@@ -47,13 +48,13 @@ pub use crate::{buffer::*, command::*, descriptor::*, format::*, image::*, util:
 // re-export macros
 pub use autograph_shader_macros::{
     glsl_compute, glsl_fragment, glsl_geometry, glsl_tess_control, glsl_tess_eval, glsl_vertex,
-    include_glsl, include_glsl_raw
+    include_glsl, include_glsl_raw,
 };
 
 use crate::{
     pipeline::{
         ArgumentBlock, Arguments, BareArgumentBlock, GraphicsPipeline, GraphicsPipelineCreateInfo,
-        GraphicsShaderStages, Scissor, ShaderModule, ShaderStageFlags, Signature,
+        GraphicsShaderStages, ReflectedShader, Scissor, ShaderModule, ShaderStageFlags, Signature,
         SignatureDescription, TypedSignature, Viewport,
     },
     swapchain::Swapchain,
@@ -63,7 +64,6 @@ use std::{
     any::TypeId, collections::HashMap, fmt::Debug, hash::Hash, marker::PhantomData, mem,
     sync::Mutex,
 };
-use crate::pipeline::ReflectedShader;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -425,10 +425,13 @@ impl<'r, B: Backend> Arena<'r, B> {
     ) -> ShaderModule<'a, 're, B> {
         ShaderModule {
             module: unsafe {
-                self.instance
-                    .create_shader_module(&self.inner(), shader.bytecode, shader.reflection.stage)
+                self.instance.create_shader_module(
+                    &self.inner(),
+                    shader.bytecode,
+                    shader.reflection.stage,
+                )
             },
-            reflection: shader.reflection
+            reflection: shader.reflection,
         }
     }
 
@@ -484,8 +487,16 @@ impl<'r, B: Backend> Arena<'r, B> {
         vertex_shader: ReflectedShader<'_, 're>,
         fragment_shader: ReflectedShader<'_, 're>,
     ) -> GraphicsShaderStages<'a, 're, B> {
-        assert_eq!(vertex_shader.reflection.stage, ShaderStageFlags::VERTEX, "invalid shader stage");
-        assert_eq!(fragment_shader.reflection.stage, ShaderStageFlags::FRAGMENT, "invalid shader stage");
+        assert_eq!(
+            vertex_shader.reflection.stage,
+            ShaderStageFlags::VERTEX,
+            "invalid shader stage"
+        );
+        assert_eq!(
+            fragment_shader.reflection.stage,
+            ShaderStageFlags::FRAGMENT,
+            "invalid shader stage"
+        );
         let vert = self.create_shader_module(vertex_shader);
         let frag = self.create_shader_module(fragment_shader);
         GraphicsShaderStages {

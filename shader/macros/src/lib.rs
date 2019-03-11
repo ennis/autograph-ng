@@ -5,7 +5,7 @@ extern crate proc_macro2;
 
 use lazy_static::lazy_static;
 use proc_macro2::{Span, TokenStream};
-use quote::quote;
+use quote::{quote, TokenStreamExt};
 use regex::Regex;
 use shaderc::{self, IncludeType, ResolvedInclude};
 use std::{
@@ -14,7 +14,6 @@ use std::{
     path::{Path, PathBuf},
 };
 use syn::export::ToTokens;
-use quote::TokenStreamExt;
 
 mod reflection;
 
@@ -120,9 +119,7 @@ fn include_glsl_inner(input: proc_macro::TokenStream, raw: bool) -> proc_macro::
         Some(ext) if ext == "tese" => shaderc::ShaderKind::TessEvaluation,
         Some(ext) if ext == "tesc" => shaderc::ShaderKind::TessControl,
         Some(ext) if ext == "comp" => shaderc::ShaderKind::Compute,
-        _ => {
-            panic!("cannot deduce shader stage from extension")
-        }
+        _ => panic!("cannot deduce shader stage from extension"),
     };
 
     // look in the same directory as the source file
@@ -179,7 +176,7 @@ fn compile_glsl_shader(
     file_path: Option<&Path>,
     span: &Span,
     stage: shaderc::ShaderKind,
-    raw: bool
+    raw: bool,
 ) -> proc_macro2::TokenStream {
     // the doc says that we should preferably create one instance of the compiler
     // and reuse it, but I don't see a way to reuse a compiler instance

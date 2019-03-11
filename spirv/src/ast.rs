@@ -1,10 +1,10 @@
 //use super::parse::SpirvModule;
-use crate::{inst::*, IPtr, Module, PrimitiveType, TypeDesc, ImageType};
+use crate::{inst::*, IPtr, ImageType, Module, PrimitiveType, TypeDesc};
 use dropless_arena::DroplessArena;
 use spirv_headers::*;
 use std::collections::HashMap;
 
-#[derive(Copy,Clone,Debug,Eq,PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ParsedDecoration {
     Block,
     BufferBlock,
@@ -17,7 +17,7 @@ pub enum ParsedDecoration {
     Other(Decoration),
 }
 
-#[derive(Copy,Clone,Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Variable<'tcx> {
     pub id: u32,
     pub ty: &'tcx TypeDesc<'tcx>,
@@ -231,12 +231,7 @@ fn parse_types<'tcx>(a: &'tcx DroplessArena, m: &Module) -> HashMap<u32, &'tcx T
                 member_types,
             }) => {
                 let fields = a.alloc_extend(member_types.iter().map(|tyid| tymap[tyid]));
-                tymap.insert(
-                    *result_id,
-                    a.alloc(TypeDesc::Struct {
-                        fields,
-                    }),
-                );
+                tymap.insert(*result_id, a.alloc(TypeDesc::Struct { fields }));
             }
             Instruction::TypeOpaque(ITypeOpaque {
                 result_id: _,
@@ -261,39 +256,45 @@ fn parse_variables<'tcx>(
     a: &'tcx DroplessArena,
     m: &Module,
     tymap: &HashMap<u32, &'tcx TypeDesc<'tcx>>,
-) -> &'tcx [(IPtr, Variable<'tcx>)]
-{
-    let vars : Vec<_> = m.filter_instructions::<IVariable>().map(|(iptr, v)| {
-        (
-            iptr,
-            Variable {
-                id: v.result_id,
-                ty: tymap[&v.result_type_id],
-                deco: a.alloc_extend(
-                    m.filter_instructions::<IDecorate>()
-                        .filter(|(_, d)| d.target_id == v.result_id)
-                        .map(|(iptr, d)| {
-                            (
-                                iptr,
-                                match d.decoration {
-                                    Decoration::Block => ParsedDecoration::Block,
-                                    Decoration::BufferBlock => ParsedDecoration::BufferBlock,
-                                    Decoration::Constant => ParsedDecoration::Constant,
-                                    Decoration::Uniform => ParsedDecoration::Uniform,
-                                    Decoration::Location => ParsedDecoration::Location(d.params[0]),
-                                    Decoration::Index => ParsedDecoration::Index(d.params[0]),
-                                    Decoration::Binding => ParsedDecoration::Binding(d.params[0]),
-                                    Decoration::DescriptorSet => {
-                                        ParsedDecoration::DescriptorSet(d.params[0])
-                                    }
-                                    other => ParsedDecoration::Other(other),
-                                },
-                            )
-                        }),
-                ),
-                storage: v.storage_class,
-            },
-        )
-    }).collect();
+) -> &'tcx [(IPtr, Variable<'tcx>)] {
+    let vars: Vec<_> = m
+        .filter_instructions::<IVariable>()
+        .map(|(iptr, v)| {
+            (
+                iptr,
+                Variable {
+                    id: v.result_id,
+                    ty: tymap[&v.result_type_id],
+                    deco: a.alloc_extend(
+                        m.filter_instructions::<IDecorate>()
+                            .filter(|(_, d)| d.target_id == v.result_id)
+                            .map(|(iptr, d)| {
+                                (
+                                    iptr,
+                                    match d.decoration {
+                                        Decoration::Block => ParsedDecoration::Block,
+                                        Decoration::BufferBlock => ParsedDecoration::BufferBlock,
+                                        Decoration::Constant => ParsedDecoration::Constant,
+                                        Decoration::Uniform => ParsedDecoration::Uniform,
+                                        Decoration::Location => {
+                                            ParsedDecoration::Location(d.params[0])
+                                        }
+                                        Decoration::Index => ParsedDecoration::Index(d.params[0]),
+                                        Decoration::Binding => {
+                                            ParsedDecoration::Binding(d.params[0])
+                                        }
+                                        Decoration::DescriptorSet => {
+                                            ParsedDecoration::DescriptorSet(d.params[0])
+                                        }
+                                        other => ParsedDecoration::Other(other),
+                                    },
+                                )
+                            }),
+                    ),
+                    storage: v.storage_class,
+                },
+            )
+        })
+        .collect();
     a.alloc_extend(vars.into_iter())
 }

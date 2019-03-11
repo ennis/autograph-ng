@@ -1,17 +1,14 @@
 use crate::{
-    descriptor::{ResourceBinding},
+    descriptor::ResourceBinding,
     format::Format,
-    vertex::{
-        IndexFormat,  VertexLayout,
-    },
+    vertex::{IndexFormat, Semantic, VertexInputRate, VertexLayout},
     Arena, Backend, Renderer,
 };
 pub use autograph_render_macros::Arguments;
+use autograph_spirv::TypeDesc;
 use bitflags::bitflags;
 use ordered_float::NotNan;
 use std::{fmt::Debug, marker::PhantomData, mem};
-use autograph_spirv::TypeDesc;
-use crate::vertex::{Semantic, VertexInputRate};
 
 pub mod validate;
 
@@ -517,8 +514,8 @@ pub struct GraphicsPipelineCreateInfo<'a, 'b, B: Backend> {
 #[derive(derivative::Derivative)]
 #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
 pub struct ShaderModule<'a, 're, B: Backend> {
-    pub ( crate ) module: &'a B::ShaderModule,
-    pub ( crate ) reflection: &'re ShaderStageReflection<'re>,
+    pub(crate) module: &'a B::ShaderModule,
+    pub(crate) reflection: &'re ShaderStageReflection<'re>,
 }
 
 impl<'a, 're, B: Backend> ShaderModule<'a, 're, B> {
@@ -549,11 +546,10 @@ impl<'a, B: Backend, T: PipelineInterface<'a, B>> From<GraphicsPipeline<'a, B, T
 }*/
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct VertexInputBinding<'a>
-{
+pub struct VertexInputBinding<'a> {
     pub layout: VertexLayout<'a>,
     pub rate: VertexInputRate,
-    pub base_location: Option<u32>
+    pub base_location: Option<u32>,
 }
 
 /// Describes the contents (all arguments) of an argument block.
@@ -865,8 +861,7 @@ pub struct ShaderStageReflection<'a> {
 
 /// Shader bytecode and reflection information.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct ReflectedShader<'bc,'re> {
+pub struct ReflectedShader<'bc, 're> {
     pub bytecode: &'bc [u8],
-    pub reflection: &'re ShaderStageReflection<'re>
+    pub reflection: &'re ShaderStageReflection<'re>,
 }
-

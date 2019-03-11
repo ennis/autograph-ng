@@ -1,11 +1,10 @@
 //! Descriptors
 use crate::{
-    buffer::BufferData, image::SamplerDescription, pipeline::ShaderStageFlags, typedesc::TypeDesc,
-    Backend,
+    buffer::BufferData, format::Format, image::SamplerDescription, pipeline::ShaderStageFlags,
+    typedesc::TypeDesc, Backend,
 };
 use autograph_spirv::layout::Layout;
 use std::marker::PhantomData;
-use crate::format::Format;
 
 #[derive(Copy, Clone, Debug)]
 #[repr(transparent)]
@@ -61,7 +60,7 @@ pub struct ResourceBinding<'tcx> {
     pub data_layout: Option<&'tcx Layout<'tcx>>,
     /// Data format for r/w images & texel buffers.
     /// `Format::UNDEFINED` if not applicable (all other binding types)
-    pub data_format: Format
+    pub data_format: Format,
 }
 
 #[derive(Copy, Clone, Debug)]

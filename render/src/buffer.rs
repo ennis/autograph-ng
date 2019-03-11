@@ -4,7 +4,7 @@ use crate::{
     Backend,
 };
 pub use autograph_render_macros::StructuredBufferData;
-use std::{marker::PhantomData};
+use std::marker::PhantomData;
 
 //--------------------------------------------------------------------------------------------------
 

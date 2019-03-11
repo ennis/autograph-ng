@@ -288,9 +288,9 @@ pub fn translate_spirv_to_gl_flavor(
             {
                 BindingSpace::ShaderStorageBuffer
             } else if v.storage == StorageClass::UniformConstant {
-                if let &TypeDesc::Pointer(&TypeDesc::Image(_, _)) = v.ty {
+                if let &TypeDesc::Pointer(&TypeDesc::Image { .. }) = v.ty {
                     BindingSpace::Image
-                } else if let &TypeDesc::Pointer(&TypeDesc::SampledImage(_, _)) = v.ty {
+                } else if let &TypeDesc::Pointer(&TypeDesc::SampledImage { .. }) = v.ty {
                     BindingSpace::Texture
                 } else {
                     continue;

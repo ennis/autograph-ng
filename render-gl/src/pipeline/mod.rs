@@ -17,20 +17,17 @@ mod program;
 mod shader;
 mod vao;
 
-use self::{program::create_graphics_program, vao::create_vertex_array_object};
+use self::program::create_graphics_program;
 
 pub(crate) use self::{
     arguments::{GlArgumentBlock, GlSignature, StateBlock},
     shader::{DescriptorMap, GlShaderModule},
 };
-use autograph_render::{
-    pipeline::{
-        GraphicsPipelineCreateInfo, ScissorsOwned, SignatureDescription,
-        VertexInputAttributeDescription, ViewportsOwned,
-    },
-    vertex::{VertexLayout, VertexInputRate},
+use crate::format::GlFormatInfo;
+use autograph_render::pipeline::{
+    GraphicsPipelineCreateInfo, ScissorsOwned, SignatureDescription, VertexInputBinding,
+    ViewportsOwned,
 };
-use autograph_render::pipeline::VertexInputBinding;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct StaticSamplerEntry {
@@ -71,57 +68,55 @@ impl GlGraphicsPipeline {
     pub(crate) fn descriptor_map(&self) -> &DescriptorMap {
         &self.descriptor_map
     }
-
-    /*pub(crate) fn vertex_input_bindings(&self) -> &[VertexInputBindingDescription] {
-        &self.vertex_input_bindings
-    }*/
 }
 
-/*
-/// Converts a sequence of VertexLayouts (one for each vertex buffer) into binding descriptions
-/// and vertex attribute descriptions.
+/// Converts a sequence of VertexInputBinding (one for each vertex buffer) into a VAO.
 ///
 /// This function generates vertex attributes for each element in all layouts,
 /// and laid out sequentially : i.e. if buffer #0 has 4 elements,
 /// and buffer #1 has 2 elements, then 6 attributes will be generated:
 /// attributes 0..=3 will map to vertex buffer 0 and attributes 4..=5 will map to vertex buffer 1.
-pub(crate) fn build_vertex_input_interface(
-    buffer_layouts: &[VertexLayout],
-) -> (
-    Vec<VertexInputBindingDescription>,
-    Vec<VertexInputAttributeDescription>,
-) {
-    let mut input_bindings = Vec::new();
-    let mut input_attribs = Vec::new();
-
+pub(crate) fn create_vertex_array_object(gl: &Gl, bindings: &[VertexInputBinding]) -> GLuint {
     let mut location = 0;
 
-    for (binding, &layout) in buffer_layouts.iter().enumerate() {
-        input_bindings.push(VertexInputBindingDescription {
-            binding: binding as u32,
-            stride: layout.stride as u32,
-            input_rate: VertexInputRate::Vertex,
-        });
+    let mut vao = 0;
+    unsafe {
+        gl.CreateVertexArrays(1, &mut vao);
+    }
 
-        for &attrib in layout.elements.iter() {
-            input_attribs.push(VertexInputAttributeDescription {
-                location,
-                binding: binding as u32,
-                format: attrib.format,
-                offset: attrib.offset,
-            });
+    for (binding_index, &binding) in bindings.iter().enumerate() {
+        if let Some(base_location) = binding.base_location {
+            assert!(base_location >= location);
+            location = base_location;
+        }
+        for &e in binding.layout.elements.iter() {
+            unsafe {
+                gl.EnableVertexArrayAttrib(vao, location);
+                let fmtinfo = e.format.get_format_info();
+                let normalized = fmtinfo.is_normalized() as u8;
+                let size = fmtinfo.num_components() as i32;
+                let glfmt = GlFormatInfo::from_format(e.format);
+                let ty = glfmt.upload_ty;
+
+                gl.VertexArrayAttribFormat(vao, location, size, ty, normalized, e.offset);
+                gl.VertexArrayAttribBinding(vao, location, binding_index as u32);
+            }
+
             location += 1;
         }
     }
 
-    (input_bindings, input_attribs)
-}*/
+    vao
+}
 
-fn collect_vertex_layouts<'a>(sig: &'a SignatureDescription<'a>, out: &mut Vec<VertexLayout<'a>>) {
+fn collect_vertex_bindings<'a>(
+    sig: &'a SignatureDescription<'a>,
+    out: &mut Vec<VertexInputBinding<'a>>,
+) {
     for &i in sig.inherited {
-        collect_vertex_layouts(i, out);
+        collect_vertex_bindings(i, out);
     }
-    out.extend(sig.vertex_layouts.iter().cloned());
+    out.extend(sig.vertex_inputs.iter().cloned());
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -141,13 +136,11 @@ pub(crate) unsafe fn create_graphics_pipeline_internal<'a>(
         create_graphics_program(gl, vs, fs, gs, tcs, tes).expect("failed to create program")
     };
 
-    // collect vertex layouts
-    let mut vertex_layouts = Vec::new();
-    collect_vertex_layouts(root_signature_description, &mut vertex_layouts);
-
-    let (vertex_input_bindings, vertex_input_attribs) =
-        build_vertex_input_interface(&vertex_layouts);
-    let vao = create_vertex_array_object(gl, &vertex_input_attribs);
+    // collect vertex bindings
+    // TODO should be in the same argblock anyway
+    let mut vertex_bindings = Vec::new();
+    collect_vertex_bindings(root_signature_description, &mut vertex_bindings);
+    let vao = create_vertex_array_object(gl, &vertex_bindings);
 
     /*    // count number of viewports
     let num_viewports = match ci.viewport_state.viewports {
@@ -174,7 +167,7 @@ pub(crate) unsafe fn create_graphics_pipeline_internal<'a>(
         depth_stencil_state: ci.depth_stencil_state,
         multisample_state: ci.multisample_state,
         input_assembly_state: ci.input_assembly_state,
-        vertex_input_bindings,
+        //vertex_input_bindings,
         program,
         vao,
         descriptor_map,

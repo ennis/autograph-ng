@@ -1,7 +1,9 @@
 use crate::{
     descriptor::{ResourceBinding, ResourceBindingType},
-    pipeline::FragmentOutputDescription,
-    pipeline::{GraphicsPipelineCreateInfo, Scissors, SignatureDescription, Viewports},
+    pipeline::{
+        FragmentOutputDescription, GraphicsPipelineCreateInfo, Scissors, SignatureDescription,
+        Viewports,
+    },
     vertex::{IndexFormat, VertexLayout, VertexLayoutElement},
     Backend,
 };

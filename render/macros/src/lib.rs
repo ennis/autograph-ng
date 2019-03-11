@@ -14,7 +14,7 @@ extern crate quote;
 extern crate syn;
 
 use proc_macro2::TokenStream;
-use syn::export::{ToTokens, TokenStreamExt, Span};
+use syn::export::{Span, ToTokens, TokenStreamExt};
 
 //--------------------------------------------------------------------------------------------------
 struct CrateName;

@@ -1,73 +1,79 @@
-use autograph_spirv as spirv;
-use autograph_spirv::{TypeDesc, ImageType, ArrayLayout, FieldsLayout};
-use proc_macro2::{TokenStream, Span};
-use shaderc::ShaderKind;
-use quote::quote;
-use autograph_spirv::ast::Variable;
 use crate::G;
-use autograph_spirv::layout::{Layout, LayoutDetails};
+use autograph_spirv as spirv;
+use autograph_spirv::{
+    ast::Variable,
+    layout::{Layout, LayoutDetails},
+    ArrayLayout, FieldsLayout, ImageType, TypeDesc,
+};
+use proc_macro2::{Span, TokenStream};
+use quote::quote;
+use shaderc::ShaderKind;
 
 /*
 fn gen_spirv_option_image_format(_fmt: Option<spirv::headers::ImageFormat>) -> TokenStream {
     quote!(None)
 }*/
 
-fn gen_format_from_spirv(fmt: spirv::headers::ImageFormat) -> syn::Ident
-{
+fn gen_format_from_spirv(fmt: spirv::headers::ImageFormat) -> syn::Ident {
     let s = match fmt {
-        spirv::headers::ImageFormat::Unknown => { "UNDEFINED" },
-        spirv::headers::ImageFormat::Rgba32f => { "R32G32B32A32_SFLOAT" },
-        spirv::headers::ImageFormat::Rgba16f => { "R16G16B16A16_SFLOAT" },
-        spirv::headers::ImageFormat::R32f => { "R32_SFLOAT" },
-        spirv::headers::ImageFormat::Rgba8 => { "R8G8B8A8_UNORM" },
-        spirv::headers::ImageFormat::Rgba8Snorm => { "RGBA8_SNORM" },
-        spirv::headers::ImageFormat::Rg32f => { "R32G32_SFLOAT" },
-        spirv::headers::ImageFormat::Rg16f => { "R16G16_SFLOAT" },
-        spirv::headers::ImageFormat::R11fG11fB10f => { unimplemented!("{:?}", fmt) /*"R11F_G11F_B10F"*/ },
-        spirv::headers::ImageFormat::R16f => { "R16_SFLOAT" },
-        spirv::headers::ImageFormat::Rgba16 => { "R16G16B16A16_UNORM" },
-        spirv::headers::ImageFormat::Rgb10A2 => { unimplemented!("{:?}", fmt) /*"RGB10_A2"*/ },
-        spirv::headers::ImageFormat::Rg16 => { "R16G16_UNORM" },
-        spirv::headers::ImageFormat::Rg8 => { "R8G8_UNORM" },
-        spirv::headers::ImageFormat::R16 => { "R16_UNORM" },
-        spirv::headers::ImageFormat::R8 => { "R8_UNORM" },
-        spirv::headers::ImageFormat::Rgba16Snorm => { "R16G16B16A16_SNORM" },
-        spirv::headers::ImageFormat::Rg16Snorm => { "R16G16_SNORM" },
-        spirv::headers::ImageFormat::Rg8Snorm => { "R8G8_SNORM" },
-        spirv::headers::ImageFormat::R16Snorm => { "R16_SNORM" },
-        spirv::headers::ImageFormat::R8Snorm => { "R8_SNORM" },
-        spirv::headers::ImageFormat::Rgba32i => { "R32G32B32A32_SINT" },
-        spirv::headers::ImageFormat::Rgba16i => { "R16G16B16A16_SINT" },
-        spirv::headers::ImageFormat::Rgba8i => { "R8G8B8A8_SINT" },
-        spirv::headers::ImageFormat::R32i => { "R32_SINT" },
-        spirv::headers::ImageFormat::Rg32i => { "R32G32_SINT" },
-        spirv::headers::ImageFormat::Rg16i => { "R16G16_SINT" },
-        spirv::headers::ImageFormat::Rg8i => { "R8G8_SINT" },
-        spirv::headers::ImageFormat::R16i => { "R16_SINT" },
-        spirv::headers::ImageFormat::R8i => { "R8_SINT" },
-        spirv::headers::ImageFormat::Rgba32ui => { "R32G32B32A32_UINT" },
-        spirv::headers::ImageFormat::Rgba16ui => { "R16G16B16A16_UINT" },
-        spirv::headers::ImageFormat::Rgba8ui => { "R8G8B8A8_UINT" },
-        spirv::headers::ImageFormat::R32ui => { "R32_UINT" },
-        spirv::headers::ImageFormat::Rgb10a2ui => { unimplemented!("{:?}", fmt) /*"rgb10a2ui"*/ },
-        spirv::headers::ImageFormat::Rg32ui => { "R32G32_UINT" },
-        spirv::headers::ImageFormat::Rg16ui => { "R16G16_UINT" },
-        spirv::headers::ImageFormat::Rg8ui => { "R8G8_UINT" },
-        spirv::headers::ImageFormat::R16ui => { "R16G16_UINT" },
-        spirv::headers::ImageFormat::R8ui => { "R8_UINT" },
+        spirv::headers::ImageFormat::Unknown => "UNDEFINED",
+        spirv::headers::ImageFormat::Rgba32f => "R32G32B32A32_SFLOAT",
+        spirv::headers::ImageFormat::Rgba16f => "R16G16B16A16_SFLOAT",
+        spirv::headers::ImageFormat::R32f => "R32_SFLOAT",
+        spirv::headers::ImageFormat::Rgba8 => "R8G8B8A8_UNORM",
+        spirv::headers::ImageFormat::Rgba8Snorm => "RGBA8_SNORM",
+        spirv::headers::ImageFormat::Rg32f => "R32G32_SFLOAT",
+        spirv::headers::ImageFormat::Rg16f => "R16G16_SFLOAT",
+        spirv::headers::ImageFormat::R11fG11fB10f => {
+            unimplemented!("{:?}", fmt) /*"R11F_G11F_B10F"*/
+        }
+        spirv::headers::ImageFormat::R16f => "R16_SFLOAT",
+        spirv::headers::ImageFormat::Rgba16 => "R16G16B16A16_UNORM",
+        spirv::headers::ImageFormat::Rgb10A2 => {
+            unimplemented!("{:?}", fmt) /*"RGB10_A2"*/
+        }
+        spirv::headers::ImageFormat::Rg16 => "R16G16_UNORM",
+        spirv::headers::ImageFormat::Rg8 => "R8G8_UNORM",
+        spirv::headers::ImageFormat::R16 => "R16_UNORM",
+        spirv::headers::ImageFormat::R8 => "R8_UNORM",
+        spirv::headers::ImageFormat::Rgba16Snorm => "R16G16B16A16_SNORM",
+        spirv::headers::ImageFormat::Rg16Snorm => "R16G16_SNORM",
+        spirv::headers::ImageFormat::Rg8Snorm => "R8G8_SNORM",
+        spirv::headers::ImageFormat::R16Snorm => "R16_SNORM",
+        spirv::headers::ImageFormat::R8Snorm => "R8_SNORM",
+        spirv::headers::ImageFormat::Rgba32i => "R32G32B32A32_SINT",
+        spirv::headers::ImageFormat::Rgba16i => "R16G16B16A16_SINT",
+        spirv::headers::ImageFormat::Rgba8i => "R8G8B8A8_SINT",
+        spirv::headers::ImageFormat::R32i => "R32_SINT",
+        spirv::headers::ImageFormat::Rg32i => "R32G32_SINT",
+        spirv::headers::ImageFormat::Rg16i => "R16G16_SINT",
+        spirv::headers::ImageFormat::Rg8i => "R8G8_SINT",
+        spirv::headers::ImageFormat::R16i => "R16_SINT",
+        spirv::headers::ImageFormat::R8i => "R8_SINT",
+        spirv::headers::ImageFormat::Rgba32ui => "R32G32B32A32_UINT",
+        spirv::headers::ImageFormat::Rgba16ui => "R16G16B16A16_UINT",
+        spirv::headers::ImageFormat::Rgba8ui => "R8G8B8A8_UINT",
+        spirv::headers::ImageFormat::R32ui => "R32_UINT",
+        spirv::headers::ImageFormat::Rgb10a2ui => {
+            unimplemented!("{:?}", fmt) /*"rgb10a2ui"*/
+        }
+        spirv::headers::ImageFormat::Rg32ui => "R32G32_UINT",
+        spirv::headers::ImageFormat::Rg16ui => "R16G16_UINT",
+        spirv::headers::ImageFormat::Rg8ui => "R8G8_UINT",
+        spirv::headers::ImageFormat::R16ui => "R16G16_UINT",
+        spirv::headers::ImageFormat::R8ui => "R8_UINT",
     };
     syn::Ident::new(s, Span::call_site())
 }
 
-
 fn gen_primitive_type(ty: spirv::PrimitiveType) -> TokenStream {
     match ty {
-        spirv::PrimitiveType::Int => { quote!(#G::typedesc::PrimitiveType::Int) }
-        spirv::PrimitiveType::UnsignedInt => { quote!(#G::typedesc::PrimitiveType::UnsignedInt) }
-        spirv::PrimitiveType::Half => { quote!(#G::typedesc::PrimitiveType::Half) }
-        spirv::PrimitiveType::Float => { quote!(#G::typedesc::PrimitiveType::Float) }
-        spirv::PrimitiveType::Double => { quote!(#G::typedesc::PrimitiveType::Double) }
-        spirv::PrimitiveType::Bool => { quote!(#G::typedesc::PrimitiveType::Bool) }
+        spirv::PrimitiveType::Int => quote!(#G::typedesc::PrimitiveType::Int),
+        spirv::PrimitiveType::UnsignedInt => quote!(#G::typedesc::PrimitiveType::UnsignedInt),
+        spirv::PrimitiveType::Half => quote!(#G::typedesc::PrimitiveType::Half),
+        spirv::PrimitiveType::Float => quote!(#G::typedesc::PrimitiveType::Float),
+        spirv::PrimitiveType::Double => quote!(#G::typedesc::PrimitiveType::Double),
+        spirv::PrimitiveType::Bool => quote!(#G::typedesc::PrimitiveType::Bool),
     }
 }
 
@@ -90,17 +96,11 @@ fn gen_type_info(ty: &spirv::TypeDesc) -> TokenStream {
             let prim = gen_primitive_type(*ty);
             quote!(#G::typedesc::TypeDesc::Primitive(#prim))
         }
-        TypeDesc::Array {
-            elem_ty,
-            len,
-        } => {
+        TypeDesc::Array { elem_ty, len } => {
             let elem_ty = gen_type_info(elem_ty);
-            quote!(#G::typedesc::TypeDesc::Array { elem_ty: #elem_ty, len: #len })
+            quote!(#G::typedesc::TypeDesc::Array { elem_ty: &#elem_ty, len: #len })
         }
-        TypeDesc::Vector{
-            elem_ty,
-            len,
-        } => {
+        TypeDesc::Vector { elem_ty, len } => {
             let elem_ty = gen_primitive_type(*elem_ty);
             quote!(#G::typedesc::TypeDesc::Vector { elem_ty: #elem_ty, len: #len })
         }
@@ -112,9 +112,7 @@ fn gen_type_info(ty: &spirv::TypeDesc) -> TokenStream {
             let elem_ty = gen_primitive_type(*elem_ty);
             quote!(#G::typedesc::TypeDesc::Matrix { elem_ty: #elem_ty, rows: #rows, columns: #columns })
         }
-        TypeDesc::Struct {
-            fields,
-        } => {
+        TypeDesc::Struct { fields } => {
             let fields = fields.iter().map(|&f| gen_type_info(f));
             quote!(
                 #G::typedesc::TypeDesc::Struct { fields: &[#(&#fields,)*] }
@@ -138,8 +136,7 @@ fn gen_type_info(ty: &spirv::TypeDesc) -> TokenStream {
     }
 }
 
-fn gen_layout_info(layout: &Layout) -> TokenStream
-{
+fn gen_layout_info(layout: &Layout) -> TokenStream {
     let align = layout.align;
     let size = layout.size;
 
@@ -147,16 +144,15 @@ fn gen_layout_info(layout: &Layout) -> TokenStream
         LayoutDetails::None => quote!(#G::typedesc::LayoutDetails::None),
         LayoutDetails::Array(ArrayLayout {
             elem_layout,
-            stride }) => {
+            stride,
+        }) => {
             let elem_layout = gen_layout_info(elem_layout);
             quote!(#G::typedesc::LayoutDetails::Array(#G::typedesc::ArrayLayout {
                 elem_layout: &#elem_layout,
                 stride: #stride
             }))
-        },
-        LayoutDetails::Struct(FieldsLayout {
-            offsets,
-            layouts}) => {
+        }
+        LayoutDetails::Struct(FieldsLayout { offsets, layouts }) => {
             let field_layouts = layouts.iter().map(|l| gen_layout_info(l));
             quote!(#G::typedesc::LayoutDetails::Struct(#G::typedesc::FieldsLayout {
                 offsets: &[#(#offsets,)*],
@@ -290,18 +286,22 @@ fn gen_descriptor_reflection_info(
                 }
             }
         } else {
-            s.unstable().warning(format!("unsupported uniform constant type: {:?}", v)).emit();
+            s.unstable()
+                .warning(format!("unsupported uniform constant type: {:?}", v))
+                .emit();
             quote!()
         }
     } else {
-        s.unstable().warning(format!("unsupported shader interface: {:?}", v)).emit();
+        s.unstable()
+            .warning(format!("unsupported shader interface: {:?}", v))
+            .emit();
         quote!()
     }
 }
 
 fn gen_vertex_input_reflection_info(_s: &Span, v: &Variable, location: u32) -> TokenStream {
     let ty = gen_type_info(v.ty.pointee_type().expect("expected pointer type"));
-    quote!{
+    quote! {
         #G::pipeline::VertexInputAttributeDescription {
             location: Some(#location),
             ty: &#ty,
@@ -312,7 +312,7 @@ fn gen_vertex_input_reflection_info(_s: &Span, v: &Variable, location: u32) -> T
 
 fn gen_fragment_output_reflection_info(_s: &Span, _v: &Variable, _location: u32) -> TokenStream {
     //let ty = gen_type_info(v.ty);
-    quote!{
+    quote! {
         #G::pipeline::FragmentOutputDescription {
             // TODO
         }
@@ -354,7 +354,7 @@ pub fn generate_reflection_info(s: &Span, bytecode: &[u8], stage: ShaderKind) ->
 
     let stage_flags = gen_stage_flags(stage);
 
-    quote!{
+    quote! {
         #G::pipeline::ShaderStageReflection {
             stage: #stage_flags,
             descriptors: &[#(#descriptor_infos,)*],
@@ -363,4 +363,3 @@ pub fn generate_reflection_info(s: &Span, bytecode: &[u8], stage: ShaderKind) ->
         }
     }
 }
-

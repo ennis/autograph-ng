@@ -3,9 +3,8 @@ extern crate image as img;
 use self::img::GenericImageView;
 use autograph_render::*;
 use autograph_render_gl::{create_instance_and_window, InstanceConfig, OpenGlBackend};
-use config;
 use pretty_env_logger;
-use std::{cell::RefCell, error, fmt, path::Path};
+use std::cell::RefCell;
 use winit;
 
 use glutin::GlWindow;

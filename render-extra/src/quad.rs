@@ -1,12 +1,13 @@
 use autograph_render::{
     format::Format,
-    pipeline::{ArgumentBlock, Arguments, Signature, SignatureDescription, TypedSignature},
-    vertex::{VertexData, VertexLayout, VertexLayoutElement},
+    pipeline::{
+        ArgumentBlock, Arguments, Signature, SignatureDescription, TypedSignature,
+        VertexInputBinding,
+    },
+    vertex::{Semantic, VertexData, VertexInputRate, VertexLayout, VertexLayoutElement},
     Arena, Backend, Renderer,
 };
 use std::{iter, marker::PhantomData};
-use autograph_render::vertex::{Semantic, VertexInputRate};
-use autograph_render::pipeline::VertexInputBinding;
 
 #[derive(Copy, Clone, Debug)]
 pub struct QuadVertex {
@@ -26,12 +27,18 @@ unsafe impl VertexData for QuadVertex {
     const LAYOUT: VertexLayout<'static> = VertexLayout {
         elements: &[
             VertexLayoutElement {
-                semantic: Some(Semantic { name: "POSITION", index: 0 }),
+                semantic: Some(Semantic {
+                    name: "POSITION",
+                    index: 0,
+                }),
                 format: Format::R32G32_SFLOAT,
                 offset: 0,
             },
             VertexLayoutElement {
-                semantic: Some(Semantic { name: "TEXCOORD", index: 0 }),
+                semantic: Some(Semantic {
+                    name: "TEXCOORD",
+                    index: 0,
+                }),
                 format: Format::R32G32_SFLOAT,
                 offset: 8,
             },
@@ -45,7 +52,11 @@ pub struct QuadVertices<'a, B: Backend>(PhantomData<&'a B>);
 // Note: could be automatically derived, but left for implementation purposes
 impl<'a, B: Backend> Arguments<'a, B> for QuadVertices<'a, B> {
     const SIGNATURE: &'static SignatureDescription<'static> = &SignatureDescription {
-        vertex_inputs: &[VertexInputBinding { layout: QuadVertex::LAYOUT, base_location: None, rate: VertexInputRate::Vertex }],
+        vertex_inputs: &[VertexInputBinding {
+            layout: QuadVertex::LAYOUT,
+            base_location: None,
+            rate: VertexInputRate::Vertex,
+        }],
         ..SignatureDescription::empty()
     };
 

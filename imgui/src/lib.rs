@@ -12,15 +12,14 @@ use autograph_render::{
     include_glsl,
     pipeline::{
         Arguments, ColorBlendState, DepthStencilState, GraphicsPipelineCreateInfo,
-        InputAssemblyState, MultisampleState, RasterisationState, Scissor, ScissorRect,
-        TypedArgumentBlock, TypedGraphicsPipeline, Viewport, ViewportState,
+        InputAssemblyState, MultisampleState, RasterisationState, ReflectedShader, Scissor,
+        ScissorRect, TypedArgumentBlock, TypedGraphicsPipeline, Viewport, ViewportState,
     },
     vertex::{IndexBufferView, VertexBufferView, VertexData},
     Arena, Backend,
 };
 use imgui::ImGui;
 use std::{mem, slice};
-use autograph_render::pipeline::ReflectedShader;
 
 /// ImGui vertex shader
 static IMGUI_VERT: ReflectedShader = include_glsl!("imgui.vert");
@@ -41,7 +40,6 @@ struct ImDrawVert {
 struct ImUniforms {
     mat: glm::Mat4,
 }
-
 
 #[derive(Copy, Clone, Debug, Arguments)]
 struct ImRenderTarget<'a, B: Backend> {

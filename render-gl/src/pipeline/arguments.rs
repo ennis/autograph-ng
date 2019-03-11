@@ -12,7 +12,7 @@ use autograph_render::{
     pipeline::{BareArgumentBlock, Scissor, SignatureDescription, Viewport},
     vertex::{IndexBufferView, IndexFormat, VertexBufferView},
 };
-use std::{iter, slice};
+use std::slice;
 
 /// Proposal: flatten signature?
 /// At least, no need to store inherited (only the length matters)
@@ -81,7 +81,7 @@ impl GlSignature {
                 | ResourceBindingType::Sampler => unimplemented!(),
             }
         }
-        let num_vertex_buffers = description.vertex_layouts.len();
+        let num_vertex_buffers = description.vertex_inputs.len();
         let has_index_buffer = description.index_format.is_some();
         let num_render_targets = description.fragment_outputs.len();
         let has_depth_render_target = description.depth_stencil_fragment_output.is_some();
@@ -178,7 +178,7 @@ pub(crate) enum StateBlock {
     Framebuffer(GLuint),
     Viewports(*const Viewport),
     Scissors(*const Scissor),
-    Empty,
+    //Empty,
 }
 
 struct StateBlocks<'a> {
@@ -200,7 +200,6 @@ struct StateBlocks<'a> {
     textures: &'a mut [GLuint],
     samplers: &'a mut [GLuint],
     images: &'a mut [GLuint],
-    framebuffer: GLuint,
     viewports: &'a mut [Viewport],
     scissors: &'a mut [Scissor],
 }
@@ -304,7 +303,6 @@ impl<'a> StateBlocks<'a> {
             textures,
             images,
             samplers,
-            framebuffer: 0,
             viewports,
             scissors,
         }
@@ -356,9 +354,7 @@ impl<'a> StateBlocks<'a> {
                 // TODO change this when the additional rule that "all render targets must be in the same argument block"
                 // is put into place.
                 for &a in self.inherited.iter() {
-                    unsafe {
-                        (&*a).collect_render_targets(&mut tmp_color, &mut tmp_depth_stencil);
-                    }
+                    (&*a).collect_render_targets(&mut tmp_color, &mut tmp_depth_stencil);
                 }
                 tmp_color.extend(self.render_targets.iter().cloned());
 
@@ -413,7 +409,7 @@ impl<'a> StateBlocks<'a> {
                 format: self.index_format,
                 offset: self.index_offset,
             };
-            i += 1;
+            //i += 1;
         }
 
         arena.other.alloc(GlArgumentBlock {
@@ -438,7 +434,7 @@ pub struct GlArgumentBlock {
 unsafe impl Sync for GlArgumentBlock {}
 
 /// Copy the contents of an iterator into a mut slice
-fn copy_iter<T>(mut it: impl Iterator<Item = T>, out: &mut [T]) -> usize {
+fn copy_iter<T>(it: impl Iterator<Item = T>, out: &mut [T]) -> usize {
     let mut i = 0;
     for v in it {
         out[i] = v;
@@ -494,7 +490,7 @@ impl GlArgumentBlock {
     ) -> &'a GlArgumentBlock {
         let mut stb = unsafe { StateBlocks::new(arena, signature) };
 
-        let mut i_inherited = copy_iter(inherited.into_iter().map(|a| a.0), stb.inherited);
+        let i_inherited = copy_iter(inherited.into_iter().map(|a| a.0), stb.inherited);
         let mut i_uniform_buffers: usize = 0;
         let mut i_shader_storage_buffers: usize = 0;
         let mut i_textures_samplers: usize = 0;
@@ -502,8 +498,8 @@ impl GlArgumentBlock {
 
         for d in descriptors.into_iter() {
             match d {
-                Descriptor::Sampler { desc } => unimplemented!(),
-                Descriptor::Texture { image, subresource } => unimplemented!(),
+                Descriptor::Sampler { .. } => unimplemented!(),
+                Descriptor::Texture { .. } => unimplemented!(),
                 Descriptor::TextureSampler {
                     image,
                     subresource,
@@ -547,16 +543,8 @@ impl GlArgumentBlock {
                         size.unwrap_or(buffer.raw.size - offset) as isize;
                     i_shader_storage_buffers += 1;
                 }
-                Descriptor::TexelBuffer {
-                    buffer,
-                    offset,
-                    size,
-                } => unimplemented!(),
-                Descriptor::RwTexelBuffer {
-                    buffer,
-                    offset,
-                    size,
-                } => unimplemented!(),
+                Descriptor::TexelBuffer { .. } => unimplemented!(),
+                Descriptor::RwTexelBuffer { .. } => unimplemented!(),
                 Descriptor::Empty => unimplemented!(),
             }
         }

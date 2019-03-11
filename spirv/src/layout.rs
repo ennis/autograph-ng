@@ -94,7 +94,7 @@ fn std140_struct_layout<'tcx>(a: &'tcx DroplessArena, fields: &[&TypeDesc]) -> &
     */
     // TODO: zero-sized structures?
 
-    let layouts : Vec<_> = fields.iter().map(|&mty| std140_layout(a, mty)).collect();
+    let layouts: Vec<_> = fields.iter().map(|&mty| std140_layout(a, mty)).collect();
     let layouts = a.alloc_extend(layouts.into_iter());
     let n = layouts.iter().map(|l| l.align).max().unwrap_or(0);
     if n == 0 {

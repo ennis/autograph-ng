@@ -16,18 +16,17 @@ pub enum IndexFormat {
     U32,
 }
 
-
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum VertexInputRate {
     Vertex,
-    Instance
+    Instance,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Semantic<'tcx> {
     pub name: &'tcx str,
     /// Index relative to the base semantic index of the VertexInputBinding
-    pub index: u32
+    pub index: u32,
 }
 
 /// Description of a vertex attribute within a vertex layout.
@@ -242,7 +241,10 @@ macro_rules! impl_attrib_prim_type {
 macro_rules! impl_attrib_array_type {
     ([$t:ty; $len:expr], $prim:ident, $fmt:ident) => {
         unsafe impl VertexAttributeType for [$t; $len] {
-            const EQUIVALENT_TYPE: TypeDesc<'static> = TypeDesc::Vector { elem_ty: PrimitiveType::$prim, len: $len };
+            const EQUIVALENT_TYPE: TypeDesc<'static> = TypeDesc::Vector {
+                elem_ty: PrimitiveType::$prim,
+                len: $len,
+            };
             const FORMAT: Format = Format::$fmt;
         }
     };
@@ -302,25 +304,37 @@ impl_index_data!(u32, U32);
 #[cfg(feature = "glm")]
 impl_attrib_type!(
     nalgebra_glm::Vec2,
-    TypeDesc::Vector{elem_ty: PrimitiveType::Float, len:2},
+    TypeDesc::Vector {
+        elem_ty: PrimitiveType::Float,
+        len: 2
+    },
     R32G32_SFLOAT
 );
 #[cfg(feature = "glm")]
 impl_attrib_type!(
     nalgebra_glm::Vec3,
-    TypeDesc::Vector{elem_ty: PrimitiveType::Float, len:3},
+    TypeDesc::Vector {
+        elem_ty: PrimitiveType::Float,
+        len: 3
+    },
     R32G32B32_SFLOAT
 );
 #[cfg(feature = "glm")]
 impl_attrib_type!(
     nalgebra_glm::Vec4,
-    TypeDesc::Vector{elem_ty: PrimitiveType::Float, len:4},
+    TypeDesc::Vector {
+        elem_ty: PrimitiveType::Float,
+        len: 4
+    },
     R32G32B32A32_SFLOAT
 );
 
 #[cfg(feature = "glm")]
 impl_attrib_type!(
     nalgebra_glm::U8Vec4,
-    TypeDesc::Vector{elem_ty: PrimitiveType::Float, len:4},
-    R8G8B8A8_UNORM  // FIXME why UNORM and not UINT?
+    TypeDesc::Vector {
+        elem_ty: PrimitiveType::Float,
+        len: 4
+    },
+    R8G8B8A8_UNORM // FIXME why UNORM and not UINT?
 );
