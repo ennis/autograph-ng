@@ -2133,4 +2133,13 @@ GraphicsPipeline trait
     - Solution C: use both
         - semantic + semantic index and base location 
             - for gl, vulkan, ignore semantic
+            
+#### Remove aliasing of resources in backend?
+- aliasing must be known in advance 
+- replace aliasing scopes with arenas
+    - and make aliasing scopes real scopes
+- issue: command generation must now happen sequentially
+    - yet, can happen in parallel **within** a scope
+- add commands for multiple passes 
+    - if resources can be reused between passes => must keep alias scopes
         

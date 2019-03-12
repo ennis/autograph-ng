@@ -17,10 +17,6 @@
 #include "common.glsl"
 #include "quad.frag.glsl"
 
-// TEXTURES
-layout(set=1,binding=1) uniform sampler2D gEdgeTexSampler;
-layout(set=1,binding=2) uniform sampler2D gControlTexSampler;
-
 // VARIABLES
 layout(set=1,binding=0) uniform Variables
 {
@@ -28,14 +24,12 @@ layout(set=1,binding=0) uniform Variables
     float gEdgeIntensity;
 };
 
-layout(location=0) out vec4 result;
+// TEXTURES
+layout(set=1,binding=1) uniform sampler2D gColorTexSampler;
+layout(set=1,binding=2) uniform sampler2D gEdgeTexSampler;
+layout(set=1,binding=3) uniform sampler2D gControlTexSampler;
 
-//                        _ _            _                _                 
-//     __ _ _ __ __ _  __| (_) ___ _ __ | |_      ___  __| | __ _  ___  ___ 
-//    / _` | '__/ _` |/ _` | |/ _ \ '_ \| __|    / _ \/ _` |/ _` |/ _ \/ __|
-//   | (_| | | | (_| | (_| | |  __/ | | | |_    |  __/ (_| | (_| |  __/\__ \
-//    \__, |_|  \__,_|\__,_|_|\___|_| |_|\__|    \___|\__,_|\__, |\___||___/
-//    |___/                                                 |___/           
+layout(location=0) out vec4 result;
 
 // Contributor: Santiago Montesdeoca
 // [WC] - Modifies the color at the edges using previously calculated edge gradients

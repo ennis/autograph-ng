@@ -8,9 +8,21 @@ use crate::{
 };
 use bitflags::bitflags;
 use std::{
+    cmp::max,
     fmt,
     ops::{Bound, RangeBounds},
 };
+
+#[derive(Copy, Clone, Debug)]
+pub struct ImageCreateInfo<'a> {
+    pub scope: AliasScope,
+    pub format: Format,
+    pub dimensions: Dimensions,
+    pub mipmaps: MipmapsOption,
+    pub samples: u32,
+    pub usage: ImageUsageFlags,
+    pub data: Option<&'a [u8]>,
+}
 
 /// An image.
 #[derive(derivative::Derivative)]
@@ -311,6 +323,19 @@ pub enum MipmapsOption {
     GenerateCount(u32),
 }
 
+impl MipmapsOption {
+    pub fn count(&self, width: u32, height: u32, depth: u32) -> u32 {
+        match self {
+            MipmapsOption::Allocate | MipmapsOption::Generate => {
+                // TODO mipcount for 3D textures?
+                get_texture_mip_map_count(max(width, height))
+            }
+            MipmapsOption::GenerateCount(n) | MipmapsOption::AllocateCount(n) => *n,
+            MipmapsOption::NoMipmap => 1,
+        }
+    }
+}
+
 macro_rules! impl_image_builder {
     (@T size D1) => { u32 };
     (@T size D2) => { (u32,u32) };
@@ -414,11 +439,21 @@ macro_rules! impl_image_builder {
     (@E flags C) => { ImageUsageFlags::COLOR_ATTACHMENT };
     (@E flags DS) => { ImageUsageFlags::DEPTH_ATTACHMENT };
 
-    (@M build $rty:ident) => {
-        pub fn build(&mut self) -> $rty<'a,B> {
-            $rty {
+    (@M build) => {
+        pub fn build(&mut self) -> O {
+            let c = ImageCreateInfo {
+                scope: self.aliasing,
+                format: self.format,
+                dimensions: self.dimensions(),
+                mipmaps: self.mipmaps,
+                samples: self.samples,
+                usage: self.usage,
+                data: None
+            };
+            (self.builder)(&c)
+            /*$rty {
                 image: self.arena.create_image(self.aliasing, self.format, self.dimensions(), self.mipmaps, self.samples, self.usage, None).image
-            }
+            }*/
         }
     };
 
@@ -426,36 +461,47 @@ macro_rules! impl_image_builder {
     // RW: Read/write (sample, storage, render target)
     // C: Color render target
     // DS: Depth stencil taret
-    (@M build RW $rty:ident) => { impl_image_builder!(@M build $rty); };
-    (@M build C $rty:ident) => { impl_image_builder!(@M build $rty); };
-    (@M build DS $rty:ident) => { impl_image_builder!(@M build $rty); };
-    (@M build RO $rty:ident) => {};
+    (@M build RW) => { impl_image_builder!(@M build); };
+    (@M build C) => { impl_image_builder!(@M build); };
+    (@M build DS) => { impl_image_builder!(@M build); };
+    (@M build RO) => {};
 
-    (@M with_data $rty:ident) => {
-        pub fn with_data(&mut self, data: &[u8]) -> $rty<'a,B> {
-            $rty {
+    (@M with_data) => {
+        pub fn with_data(&mut self, data: &[u8]) -> O {
+            let c = ImageCreateInfo {
+                scope: self.aliasing,
+                format: self.format,
+                dimensions: self.dimensions(),
+                mipmaps: self.mipmaps,
+                samples: self.samples,
+                usage: self.usage,
+                data: Some(data)
+            };
+            (self.builder)(&c)
+
+            /*$rty {
                 image: self.arena.create_image(self.aliasing, self.format, self.dimensions(), self.mipmaps, self.samples, self.usage, Some(data)).image
-            }
+            }*/
         }
     };
 
-    ($n:ident $mode:ident $shape:ident $multisample:ident $rty:ident) => {
+    ($n:ident $mode:ident $shape:ident $multisample:ident) => {
         #[allow(dead_code)]
-        pub struct $n<'a,B:Backend> {
-            arena: &'a Arena<'a, B>,
-            format: Format,
-            size: impl_image_builder!(@T size $shape),
-            array_layers: u32,
-            mipmaps: MipmapsOption,
-            samples: u32,
-            usage: ImageUsageFlags,
-            aliasing: AliasScope,
+        pub struct $n<O, F: Fn(&ImageCreateInfo) -> O> {
+            pub builder: F,
+            pub format: Format,
+            pub size: impl_image_builder!(@T size $shape),
+            pub array_layers: u32,
+            pub mipmaps: MipmapsOption,
+            pub samples: u32,
+            pub usage: ImageUsageFlags,
+            pub aliasing: AliasScope,
         }
 
-        impl<'a,B:Backend> $n<'a,B> {
-            pub fn new(arena: &'a Arena<'a,B>, format: Format, size: impl_image_builder!(@T size $shape)) -> $n<'a,B> {
+        impl<O, F: Fn(&ImageCreateInfo) -> O> $n<O,F> {
+            pub fn new(format: Format, size: impl_image_builder!(@T size $shape), builder: F) -> $n<O,F> {
                 $n {
-                    arena,
+                    builder,
                     format,
                     size,
                     array_layers: 1,
@@ -471,17 +517,17 @@ macro_rules! impl_image_builder {
             impl_image_builder!(@M samples $multisample);
             impl_image_builder!(@M size $shape);
             impl_image_builder!(@MM mipmap_methods $shape $multisample);
-            impl_image_builder!(@M build $mode $rty);
-            impl_image_builder!(@M with_data $rty);
+            impl_image_builder!(@M build $mode);
+            impl_image_builder!(@M with_data);
         }
     };
 }
 
-impl_image_builder!(Image1dBuilder RW D1 SS Image1d);
-impl_image_builder!(Image2dBuilder RW D2 MS Image2d);
-impl_image_builder!(Image3dBuilder RW D3 SS Image3d);
-impl_image_builder!(RenderTargetBuilder       C  D2 MS RenderTargetImage2d);
-impl_image_builder!(DepthStencilTargetBuilder DS D2 MS DepthStencilImage2d);
+impl_image_builder!(Image1dBuilder RW D1 SS);
+impl_image_builder!(Image2dBuilder RW D2 MS);
+impl_image_builder!(Image3dBuilder RW D3 SS);
+impl_image_builder!(RenderTargetBuilder       C  D2 MS);
+impl_image_builder!(DepthStencilTargetBuilder DS D2 MS);
 
 //--------------------------------------------------------------------------------------------------
 // Image types
@@ -511,6 +557,10 @@ macro_rules! impl_image {
         impl<'a, B: Backend> $n<'a, B> {
             pub fn inner(&self) -> &'a B::Image {
                 &self.image
+            }
+
+            pub unsafe fn from_raw(raw: &'a B::Image) -> $n<'a, B> {
+                $n { image: raw }
             }
         }
     };

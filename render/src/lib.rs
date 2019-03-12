@@ -581,18 +581,71 @@ impl<'r, B: Backend> Arena<'r, B> {
     }
 
     #[inline]
-    pub fn image_1d(&self, format: Format, size: u32) -> Image1dBuilder<B> {
-        Image1dBuilder::new(self, format, size)
+    pub fn image_1d<'a>(
+        &'a self,
+        format: Format,
+        size: u32,
+    ) -> Image1dBuilder<Image1d<'a, B>, impl Fn(&ImageCreateInfo) -> Image1d<'a, B>> {
+        Image1dBuilder::new(format, size, move |c| Image1d {
+            image: self
+                .create_image(
+                    c.scope,
+                    c.format,
+                    c.dimensions,
+                    c.mipmaps,
+                    c.samples,
+                    c.usage,
+                    c.data,
+                )
+                .image,
+        })
     }
 
     #[inline]
-    pub fn image_2d(&self, format: Format, width: u32, height: u32) -> Image2dBuilder<B> {
-        Image2dBuilder::new(self, format, (width, height))
+    pub fn image_2d<'a>(
+        &'a self,
+        format: Format,
+        width: u32,
+        height: u32,
+    ) -> Image2dBuilder<Image2d<'a, B>, impl Fn(&ImageCreateInfo) -> Image2d<'a, B>> {
+        Image2dBuilder::new(format, (width, height), move |c| Image2d {
+            image: self
+                .create_image(
+                    c.scope,
+                    c.format,
+                    c.dimensions,
+                    c.mipmaps,
+                    c.samples,
+                    c.usage,
+                    c.data,
+                )
+                .image,
+        })
     }
 
     #[inline]
-    pub fn render_target(&self, format: Format, width: u32, height: u32) -> RenderTargetBuilder<B> {
-        RenderTargetBuilder::new(self, format, (width, height))
+    pub fn render_target<'a>(
+        &'a self,
+        format: Format,
+        width: u32,
+        height: u32,
+    ) -> RenderTargetBuilder<
+        RenderTargetImage2d<'a, B>,
+        impl Fn(&ImageCreateInfo) -> RenderTargetImage2d<'a, B>,
+    > {
+        RenderTargetBuilder::new(format, (width, height), move |c| RenderTargetImage2d {
+            image: self
+                .create_image(
+                    c.scope,
+                    c.format,
+                    c.dimensions,
+                    c.mipmaps,
+                    c.samples,
+                    c.usage,
+                    c.data,
+                )
+                .image,
+        })
     }
 
     /// Creates a GPU (device local) buffer.

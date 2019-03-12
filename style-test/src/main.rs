@@ -2,7 +2,7 @@
 use autograph_imgui::ImGuiRenderer;
 use autograph_render::{glm, prelude::*};
 use autograph_render_boilerplate::{App, Event, KeyboardInput, WindowEvent};
-use autograph_render_extra::{commandext::CommandBufferExt, quad::Quad};
+use autograph_render_extra::{blackboard::Blackboard, commandext::CommandBufferExt, quad::Quad};
 use autograph_render_gl::prelude::*;
 use imgui::{im_str, FontGlyphRange, ImGui};
 use log::{debug, info, warn};
@@ -121,8 +121,6 @@ pub struct CommonUniforms {
 pub struct CommonArguments<'a> {
     #[argument(descriptor)]
     pub uniforms: TypedConstantBufferView<'a, CommonUniforms>,
-    #[argument(descriptor)]
-    pub color_tex: TextureSampler2dView<'a>,
     #[argument(viewport)]
     pub viewport: Viewport,
     //#[argument(vertex_buffer)]
@@ -134,6 +132,8 @@ pub struct CommonArguments<'a> {
 pub struct PigmentApplication<'a> {
     #[argument(inherit)]
     pub common: TypedArgumentBlock<'a, CommonArguments<'a>>,
+    #[argument(descriptor)]
+    pub color_tex: TextureSampler2dView<'a>,
     #[argument(descriptor)]
     pub params: TypedConstantBufferView<'a, PigmentApplicationParams>,
     #[argument(render_target)]
@@ -149,6 +149,8 @@ pub struct PigmentApplication<'a> {
 pub struct EdgeDetection<'a> {
     #[argument(inherit)]
     pub common: TypedArgumentBlock<'a, CommonArguments<'a>>,
+    #[argument(descriptor)]
+    pub color_tex: TextureSampler2dView<'a>,
     #[argument(render_target)]
     pub edge_out: RenderTarget2dView<'a>,
     #[argument(descriptor)]
@@ -206,6 +208,8 @@ impl Default for SubstrateParams {
 pub struct SubstrateCommon<'a> {
     #[argument(inherit)]
     pub common: TypedArgumentBlock<'a, CommonArguments<'a>>,
+    #[argument(descriptor)]
+    pub color_tex: TextureSampler2dView<'a>,
     #[argument(render_target)]
     pub color_target: RenderTarget2dView<'a>,
     #[argument(descriptor)]
@@ -562,15 +566,6 @@ fn main() {
     let control = arena_0
         .image_2d(Format::R8G8B8A8_UNORM, frame_width, frame_height)
         .build();
-    let edge_map = arena_0
-        .image_2d(Format::R32_SFLOAT, frame_width, frame_height)
-        .build();
-    let lighting = arena_0
-        .image_2d(Format::R16G16B16_UNORM, frame_width, frame_height)
-        .build();
-    let color_buffer_2 = arena_0
-        .image_2d(Format::R16G16B16_UNORM, frame_width, frame_height)
-        .build();
 
     // clear control map
     let mut cmdbuf = r.create_command_buffer();
@@ -590,25 +585,36 @@ fn main() {
     'outer: loop {
         let default_swapchain = r.default_swapchain().unwrap();
         let (w, h) = default_swapchain.size();
-        let arena_1 = r.create_arena();
-        let color_buffer = arena_1
+        let outer_arena = r.create_arena();
+
+        // common arguments
+        let common = outer_arena.create_typed_argument_block(CommonArguments {
+            uniforms: outer_arena
+                .upload(&CommonUniforms {
+                    wvp: glm::identity(),
+                    screen_size: glm::vec2(w as f32, h as f32),
+                    _padding: [0.0; 2],
+                    luminance_coeff: glm::vec3(1.0, 1.0, 1.0),
+                })
+                .into(),
+            viewport: (frame_width, frame_height).into(),
+        });
+
+        let color_buffer = outer_arena
             .render_target(Format::R16G16B16A16_SFLOAT, w, h)
             .samples(8)
             .build();
 
         // UI renderer
         let mut imgui_renderer = ImGuiRenderer::new(
-            &arena_1,
+            &outer_arena,
             imguictx.imgui(),
             color_buffer.render_target_view(),
             (w, h).into(),
         );
 
-        'inner: loop {
-            //----------------------------------------------------------------------------------
-            // handle events
-            let should_close = app.poll_events(|event| imguictx.handle_event(app.window(), &event));
-            let arena_frame = r.create_arena();
+        'param_changed: loop {
+            let bb = Blackboard::new(r);
 
             let mut cmdbuf = r.create_command_buffer();
 
@@ -619,56 +625,33 @@ fn main() {
                 &[0.0, 0.2, 0.8, 1.0],
             );
 
-            // common arguments
-            let common = arena_frame.create_typed_argument_block(CommonArguments {
-                uniforms: arena_frame
-                    .upload(&CommonUniforms {
-                        wvp: glm::identity(),
-                        screen_size: glm::vec2(w as f32, h as f32),
-                        _padding: [0.0; 2],
-                        luminance_coeff: glm::vec3(1.0, 1.0, 1.0),
-                    })
-                    .into(),
-                color_tex: lighting.sampled_linear(),
-                viewport: (frame_width, frame_height).into(),
-            });
-
-            let common2 = arena_frame.create_typed_argument_block(CommonArguments {
-                uniforms: arena_frame
-                    .upload(&CommonUniforms {
-                        wvp: glm::identity(),
-                        screen_size: glm::vec2(w as f32, h as f32),
-                        _padding: [0.0; 2],
-                        luminance_coeff: glm::vec3(1.0, 1.0, 1.0),
-                    })
-                    .into(),
-                color_tex: color_buffer_2.sampled_linear(),
-                viewport: (frame_width, frame_height).into(),
-            });
-
-            /* //----------------------------------------------------------------------------------
-            // Run edge detection
-            cmdbuf.draw_quad(
-                0x0,
-                &arena_frame,
-                pipelines.edge_detection_dog_rgbd,
-                EdgeDetection {
-                    common,
-                    edge_out: edge_map,
-                    depth_tex: depth.into_texture_view_linear(),
-                },
-            );*/
+            bb.image_2d("edge_map", Format::R32_SFLOAT, frame_width, frame_height)
+                .build();
+            bb.image_2d(
+                "lighting",
+                Format::R16G16B16_UNORM,
+                frame_width,
+                frame_height,
+            )
+            .build();
+            bb.image_2d(
+                "distortion",
+                Format::R16G16B16_UNORM,
+                frame_width,
+                frame_height,
+            )
+            .build();
 
             //----------------------------------------------------------------------------------
             // Run shading
             cmdbuf.draw_quad(
                 0x0,
-                &arena_frame,
+                bb.arena(),
                 pipelines.watercolor_shading,
                 WatercolorShading {
-                    target: lighting.render_target_view(),
+                    target: bb.get_image_2d("lighting").unwrap().render_target_view(),
                     viewport: (frame_width, frame_height).into(),
-                    params: arena_frame.upload(&watercolor_shading_params).into(),
+                    params: bb.arena().upload(&watercolor_shading_params).into(),
                     diffuse_color: diffuse_color.sampled_linear(),
                     diffuse_direct_lighting: diffuse_direct_lighting.sampled_linear(),
                     specular_color: specular_color.sampled_linear(),
@@ -681,14 +664,15 @@ fn main() {
             // Run distortion
             cmdbuf.draw_quad(
                 0x0,
-                &arena_frame,
+                bb.arena(),
                 pipelines.substrate_distortion,
                 SubstrateCommon {
                     common,
-                    color_target: color_buffer_2.render_target_view(),
-                    params: arena_frame.upload(&substrate_params).into(),
+                    color_target: bb.get_image_2d("distortion").unwrap().render_target_view(),
+                    params: bb.arena().upload(&substrate_params).into(),
+                    color_tex: bb.get_image_2d("lighting").unwrap().sampled_linear(),
                     substrate_tex: substrate.sampled_linear(),
-                    edge_tex: edge_map.sampled_linear(),
+                    edge_tex: bb.get_image_2d("edge_map").unwrap().sampled_linear(),
                     control_tex: control.sampled_linear(),
                     depth_tex: depth.sampled_linear(),
                 },
@@ -698,105 +682,115 @@ fn main() {
             // Run substrate shading
             cmdbuf.draw_quad(
                 0x0,
-                &arena_frame,
+                bb.arena(),
                 pipelines.substrate_deferred_lighting,
                 SubstrateCommon {
-                    common: common2,
+                    common,
                     color_target: color_buffer.render_target_view(),
-                    params: arena_frame.upload(&substrate_params).into(),
+                    params: bb.arena().upload(&substrate_params).into(),
+                    color_tex: bb.get_image_2d("distortion").unwrap().sampled_linear(),
                     substrate_tex: substrate.sampled_linear(),
-                    edge_tex: edge_map.sampled_linear(),
+                    edge_tex: bb.get_image_2d("edge_map").unwrap().sampled_linear(),
                     control_tex: control.sampled_linear(),
                     depth_tex: depth.sampled_linear(),
                 },
             );
 
-            //----------------------------------------------------------------------------------
-            // Parameter UI
-            let mut ui = imguictx.frame(app.window());
-            let mut open = true;
-            ui.show_demo_window(&mut open);
-            ui.slider_float(
-                im_str!("Cangiante"),
-                &mut watercolor_shading_params.cangiante,
-                0.0,
-                1.0,
-            )
-            .build();
-            ui.slider_float(
-                im_str!("Dilute"),
-                &mut watercolor_shading_params.dilute,
-                0.0,
-                1.0,
-            )
-            .build();
-
-            ui.slider_float(im_str!("gamma"), &mut substrate_params.gamma, 0.0, 1.0)
-                .build(); // 1.0,
-            ui.slider_float(
-                im_str!("substrate_light_dir"),
-                &mut substrate_params.substrate_light_dir,
-                0.0,
-                90.0,
-            )
-            .build(); // 0.0,
-            ui.slider_float(
-                im_str!("substrate_light_tilt"),
-                &mut substrate_params.substrate_light_tilt,
-                0.0,
-                90.0,
-            )
-            .build(); // 45.0,
-            ui.slider_float(
-                im_str!("substrate_shading"),
-                &mut substrate_params.substrate_shading,
-                0.0,
-                1.0,
-            )
-            .build(); // 1.0,
-            ui.slider_float(
-                im_str!("substrate_distortion"),
-                &mut substrate_params.substrate_distortion,
-                0.0,
-                30.0,
-            )
-            .build(); // 1.0,
-            ui.slider_float(
-                im_str!("impasto_phong_specular"),
-                &mut substrate_params.impasto_phong_specular,
-                0.0,
-                1.0,
-            )
-            .build(); // 0.6,
-            ui.slider_float(
-                im_str!("impasto_phong_shininess"),
-                &mut substrate_params.impasto_phong_shininess,
-                0.0,
-                100.0,
-            )
-            .build(); // 16.0,
-
-            ui.color_picker(
-                im_str!("Paper color"),
-                watercolor_shading_params.paper_color.as_mut(),
-            )
-            .build();
-            //ui.color_picker(im_str!("Paper color"), watercolor_shading_params.);
-            imgui_renderer.render(&mut cmdbuf, 0x0, &arena_frame, ui);
-
-            //----------------------------------------------------------------------------------
-            // Present edge map
-            cmdbuf.present(0x0, color_buffer, default_swapchain);
             r.submit_frame(vec![cmdbuf]);
 
-            if should_close {
-                break 'outer;
-            }
+            'inner: loop {
+                let mut cmdbuf = r.create_command_buffer();
+                let inner_arena = r.create_arena();
+                //----------------------------------------------------------------------------------
+                // handle events
+                let should_close =
+                    app.poll_events(|event| imguictx.handle_event(app.window(), &event));
 
-            let (new_w, new_h) = default_swapchain.size();
-            // don't resize if new size is null in one dimension, as it will
-            // cause create_framebuffer to fail.
-            if (new_w, new_h) != (w, h) && new_w != 0 && new_h != 0 {
+                let mut ui = imguictx.frame(app.window());
+                let mut open = true;
+                ui.show_demo_window(&mut open);
+                ui.slider_float(
+                    im_str!("Cangiante"),
+                    &mut watercolor_shading_params.cangiante,
+                    0.0,
+                    1.0,
+                )
+                .build();
+                ui.slider_float(
+                    im_str!("Dilute"),
+                    &mut watercolor_shading_params.dilute,
+                    0.0,
+                    1.0,
+                )
+                .build();
+
+                ui.slider_float(im_str!("gamma"), &mut substrate_params.gamma, 0.0, 1.0)
+                    .build(); // 1.0,
+                ui.slider_float(
+                    im_str!("substrate_light_dir"),
+                    &mut substrate_params.substrate_light_dir,
+                    0.0,
+                    90.0,
+                )
+                .build(); // 0.0,
+                ui.slider_float(
+                    im_str!("substrate_light_tilt"),
+                    &mut substrate_params.substrate_light_tilt,
+                    0.0,
+                    90.0,
+                )
+                .build(); // 45.0,
+                ui.slider_float(
+                    im_str!("substrate_shading"),
+                    &mut substrate_params.substrate_shading,
+                    0.0,
+                    1.0,
+                )
+                .build(); // 1.0,
+                ui.slider_float(
+                    im_str!("substrate_distortion"),
+                    &mut substrate_params.substrate_distortion,
+                    0.0,
+                    30.0,
+                )
+                .build(); // 1.0,
+                ui.slider_float(
+                    im_str!("impasto_phong_specular"),
+                    &mut substrate_params.impasto_phong_specular,
+                    0.0,
+                    1.0,
+                )
+                .build(); // 0.6,
+                ui.slider_float(
+                    im_str!("impasto_phong_shininess"),
+                    &mut substrate_params.impasto_phong_shininess,
+                    0.0,
+                    100.0,
+                )
+                .build(); // 16.0,
+                ui.color_picker(
+                    im_str!("Paper color"),
+                    watercolor_shading_params.paper_color.as_mut(),
+                )
+                .build();
+                imgui_renderer.render(&mut cmdbuf, 0x0, &inner_arena, ui);
+
+                // Present
+                cmdbuf.present(0x0, color_buffer, default_swapchain);
+                r.submit_frame(vec![cmdbuf]);
+
+                if should_close {
+                    break 'outer;
+                }
+
+                let (new_w, new_h) = default_swapchain.size();
+                // don't resize if new size is null in one dimension, as it will
+                // cause create_framebuffer to fail.
+                if (new_w, new_h) != (w, h) && new_w != 0 && new_h != 0 {
+                    break 'param_changed;
+                }
+
+                // consider that params have changed anyway
                 break 'inner;
             }
         }

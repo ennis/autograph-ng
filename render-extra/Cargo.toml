@@ -6,4 +6,5 @@ edition = '2018'
 
 [dependencies]
 autograph-render = { path = "../render" }
-
+petgraph = "0.4.13"
+derivative = "1.0.2"

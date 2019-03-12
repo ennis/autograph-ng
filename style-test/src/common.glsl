@@ -8,7 +8,6 @@ layout(set=0, binding=0) uniform SceneGlobal {
 
 // COMMON TEXTURES
 
-layout(set=0,binding=1) uniform sampler2D gColorTexSampler;  // color target???
 
 // COMMON FUNCTIONS
 float luminance(vec3 color) {

@@ -8,13 +8,6 @@
 // - Extend the edges to converge edges into gaps and overlaps
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// TEXTURES
-layout(set=1,binding=1) uniform sampler2D gEdgeTexSampler;
-layout(set=1,binding=2) uniform sampler2D gDepthTexSampler;
-layout(set=1,binding=3) uniform sampler2D gEdgeControlTexSampler;
-layout(set=1,binding=4) uniform sampler2D gAbstractionControlTexSampler;
-
-
 // VARIABLES
 layout(set=1,binding=0) uniform Variables {
     float gRenderScale;
@@ -24,6 +17,14 @@ layout(set=1,binding=0) uniform Variables {
     float gBleedingRadius;
     float gGaussianWeights[161];  // max 40 bleeding radius (supersampled would be 80)
 };
+
+
+// TEXTURES
+layout(set=1,binding=1) uniform sampler2D gColorTexSampler;
+layout(set=1,binding=2) uniform sampler2D gEdgeTexSampler;
+layout(set=1,binding=3) uniform sampler2D gDepthTexSampler;
+layout(set=1,binding=4) uniform sampler2D gEdgeControlTexSampler;
+layout(set=1,binding=5) uniform sampler2D gAbstractionControlTexSampler;
 
 
 // MRT

@@ -16,7 +16,8 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // TEXTURES
-layout(set=1,binding=0) uniform sampler2D gDepthTexSampler;
+layout(set=1, binding=0) uniform sampler2D gColorTexSampler;  // color target???
+layout(set=1, binding=1) uniform sampler2D gDepthTexSampler;
 
 // Output to one target (vec 3)
 layout(location=0) out vec3 result;
