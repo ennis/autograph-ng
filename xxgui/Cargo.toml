@@ -8,12 +8,12 @@ edition = '2018'
 winit = "0.18.1"
 glutin = "0.19.0"
 config = "0.9.2"
-autograph-render-boilerplate = { path = "../render-boilerplate" }
+autograph-api-boilerplate = { path = "../api-boilerplate" }
 
 [dependencies]
 log = "0.4.6"
 lyon = { version = "0.11.0", features = ["extra"] }
 font-kit = "0.1.0"
 fxhash = "0.2.1"
-autograph-render = { path = "../render", features = ["glm"] }
-autograph-render-gl = { path = "../render-gl" }
+autograph-api = { path = "../api", features = ["glm"] }
+autograph-api-gl = { path = "../api-gl" }

@@ -1,7 +1,7 @@
 #![feature(proc_macro_hygiene)]
 use autograph_imgui::ImGuiRenderer;
-use autograph_render::format::Format;
-use autograph_render_boilerplate::{App, Event, KeyboardInput, WindowEvent};
+use autograph_api::format::Format;
+use autograph_api_boilerplate::{App, Event, KeyboardInput, WindowEvent};
 use imgui::{self, FontGlyphRange, ImGui};
 use log::info;
 use std::{env, time};

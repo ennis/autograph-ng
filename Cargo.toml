@@ -1,11 +1,11 @@
 [workspace]
 members = [
-    "render",
-    "render/macros",
-    "render-extra",
-    "render-gl",
-    "render-boilerplate",
-    "render-test",
+    "api",
+    "api/macros",
+    "api-extra",
+    "api-gl",
+    "api-boilerplate",
+    "api-test",
     "shader/macros",
     "spirv",
     "style-test",

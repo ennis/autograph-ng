@@ -1,6 +1,6 @@
 //! Renderer for dear imgui (https://github.com/ocornut/imgui) using autograph-render as a backend.
 #![feature(proc_macro_hygiene)]
-use autograph_render::{
+use autograph_api::{
     buffer::{Buffer, StructuredBufferData, TypedConstantBufferView},
     command::{CommandBuffer, DrawIndexedParams},
     format::Format,

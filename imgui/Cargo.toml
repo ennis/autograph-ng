@@ -7,11 +7,11 @@ edition = '2018'
 
 [dependencies]
 log = "0.4.6"
-autograph-render = { path = "../render", features = ["glm"] }
+autograph-api = { path = "../api", features = ["glm"] }
 imgui = "0.0.22"
 
 [dev-dependencies]
-autograph-render-gl = { path = "../render-gl" }
-autograph-render-boilerplate = { path = "../render-boilerplate" }
+autograph-api-gl = { path = "../api-gl" }
+autograph-api-boilerplate = { path = "../api-boilerplate" }
 imgui-winit-support = "0.0.22"
 winit = "0.18.1"

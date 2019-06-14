@@ -1,13 +1,15 @@
 #![feature(proc_macro_hygiene)]
 use autograph_imgui::ImGuiRenderer;
-use autograph_render::{glm, prelude::*};
-use autograph_render_boilerplate::{App, Event, KeyboardInput, WindowEvent};
-use autograph_render_extra::{blackboard::Blackboard, commandext::CommandBufferExt, quad::Quad};
-use autograph_render_gl::prelude::*;
+use autograph_api::{glm, prelude::*};
+use autograph_api_boilerplate::{App, Event, KeyboardInput, WindowEvent};
+use autograph_api_extra::{blackboard::Blackboard, commandext::CommandBufferExt, quad::Quad};
+use autograph_api_gl::prelude::*;
 use imgui::{im_str, FontGlyphRange, ImGui};
 use log::{debug, info, warn};
 use openimageio as oiio;
 use std::{env, iter, mem, path::Path, slice, time};
+use autograph_api::pipeline::{DynamicSignatureBuilder, VertexInputBinding};
+use autograph_api::vertex::VertexInputRate;
 
 // Shaders -----------------------------------------------------------------------------------------
 static QUAD_VERT: ReflectedShader = include_glsl!("quad.vert");
@@ -329,6 +331,7 @@ struct Pipelines<'a> {
     substrate_deferred_lighting: TypedGraphicsPipeline<'a, Quad<'a, Backend, SubstrateCommon<'a>>>,
     watercolor_shading: TypedGraphicsPipeline<'a, Quad<'a, Backend, WatercolorShading<'a>>>,
     substrate_distortion: TypedGraphicsPipeline<'a, Quad<'a, Backend, SubstrateCommon<'a>>>,
+    watercolor_shading_signature: DynamicSignature<'a>,
 }
 
 impl<'a> Pipelines<'a> {
@@ -396,6 +399,12 @@ impl<'a> Pipelines<'a> {
             color_blend_state: ColorBlendState::DISABLED,
         };
 
+        let watercolor_shading_signature = DynamicSignatureBuilder::new().vertex_input(VertexInputBinding {
+            layout: <Vertex2D as VertexData>::LAYOUT,
+            rate: VertexInputRate::Vertex,
+            base_location: None
+        }).build(arena);
+
         Pipelines {
             edge_detection_dog_rgbd: arena.create_graphics_pipeline(&edge_detection_dog_rgbd),
             edge_detection_sobel_rgbd: arena.create_graphics_pipeline(&edge_detection_sobel_rgbd),
@@ -403,6 +412,7 @@ impl<'a> Pipelines<'a> {
                 .create_graphics_pipeline(&substrate_deferred_lighting),
             watercolor_shading: arena.create_graphics_pipeline(&watercolor_shading),
             substrate_distortion: arena.create_graphics_pipeline(&substrate_distortion),
+            watercolor_shading_signature
         }
     }
 }
@@ -613,7 +623,7 @@ fn main() {
             (w, h).into(),
         );
 
-        'param_changed: loop {
+        'swapchain: loop {
             let bb = Blackboard::new(r);
 
             let mut cmdbuf = r.create_command_buffer();
@@ -649,7 +659,10 @@ fn main() {
                 bb.arena(),
                 pipelines.watercolor_shading,
                 WatercolorShading {
-                    target: bb.get_image_2d("lighting").unwrap().render_target_view(),
+                    target: bb
+                        .image_2d_by_name("lighting")
+                        .unwrap()
+                        .render_target_view(),
                     viewport: (frame_width, frame_height).into(),
                     params: bb.arena().upload(&watercolor_shading_params).into(),
                     diffuse_color: diffuse_color.sampled_linear(),
@@ -668,11 +681,14 @@ fn main() {
                 pipelines.substrate_distortion,
                 SubstrateCommon {
                     common,
-                    color_target: bb.get_image_2d("distortion").unwrap().render_target_view(),
+                    color_target: bb
+                        .image_2d_by_name("distortion")
+                        .unwrap()
+                        .render_target_view(),
                     params: bb.arena().upload(&substrate_params).into(),
-                    color_tex: bb.get_image_2d("lighting").unwrap().sampled_linear(),
+                    color_tex: bb.image_2d_by_name("lighting").unwrap().sampled_linear(),
                     substrate_tex: substrate.sampled_linear(),
-                    edge_tex: bb.get_image_2d("edge_map").unwrap().sampled_linear(),
+                    edge_tex: bb.image_2d_by_name("edge_map").unwrap().sampled_linear(),
                     control_tex: control.sampled_linear(),
                     depth_tex: depth.sampled_linear(),
                 },
@@ -688,9 +704,9 @@ fn main() {
                     common,
                     color_target: color_buffer.render_target_view(),
                     params: bb.arena().upload(&substrate_params).into(),
-                    color_tex: bb.get_image_2d("distortion").unwrap().sampled_linear(),
+                    color_tex: bb.image_2d_by_name("distortion").unwrap().sampled_linear(),
                     substrate_tex: substrate.sampled_linear(),
-                    edge_tex: bb.get_image_2d("edge_map").unwrap().sampled_linear(),
+                    edge_tex: bb.image_2d_by_name("edge_map").unwrap().sampled_linear(),
                     control_tex: control.sampled_linear(),
                     depth_tex: depth.sampled_linear(),
                 },
@@ -698,7 +714,7 @@ fn main() {
 
             r.submit_frame(vec![cmdbuf]);
 
-            'inner: loop {
+            'events: loop {
                 let mut cmdbuf = r.create_command_buffer();
                 let inner_arena = r.create_arena();
                 //----------------------------------------------------------------------------------
@@ -787,11 +803,11 @@ fn main() {
                 // don't resize if new size is null in one dimension, as it will
                 // cause create_framebuffer to fail.
                 if (new_w, new_h) != (w, h) && new_w != 0 && new_h != 0 {
-                    break 'param_changed;
+                    break 'swapchain;
                 }
 
                 // consider that params have changed anyway
-                break 'inner;
+                break 'events;
             }
         }
     }

@@ -2142,4 +2142,193 @@ GraphicsPipeline trait
     - yet, can happen in parallel **within** a scope
 - add commands for multiple passes 
     - if resources can be reused between passes => must keep alias scopes
+    
+#### Tempted to put a general-purpose dropless arena in `Arena`
+
+
+#### Rethink `Copy+Clone` bound on signatures 
+- graphics pipelines, argblocks, take a signature object by value
+    - signatures are intended to be a wrapper over a pointer to the backend object
+    - but dynamic signatures also store their description
+        - big struct
+- also it would get rid of these annoying `#[derivative(...)]` annotations
+    - why hasn't this been fixed in rust yet?
+- passing and storing by reference would change many things
+    - additional indirection for static case
+- alt. solution: impl Signature for &DynamicSignature
+   
+
+#### Issue: DynamicSignatures description
+- must return `&SignatureDescription` as part of Signature trait
+- cannot own contents of SignatureDescription (self-referential otherwise)
+- must borrow description from SignatureBuilder
+    - but then: prevents signatures from being stored in a struct (must have builder & signature in the same struct, self-referential)
+- issue: no stand-alone DynamicSignature objects
+- solution: allocate signature description data in arena
+    - same lifetime as backend object
+    - put a dropless arena in Arena?
+        - private first?
         
+#### Graphics pipeline file format
+- List of operations, and meta-operations
+- if it's a programming language, let it be a programming language
+    - lua?
+- give me fast hot reload
+    - must compile shaders on the fly
+    
+- drop-in shaders that automatically link to the blackboard context
+    - e.g. shader says "I want normals" or "I want blurred depth", and the system will automatically provide the correct resources
+        -> need "resource generators"
+    - shader says "I want texture from file XXX" and the system will load the texture from the file
+
+- slang shaders with attributes?
+
+- custom DSL?
+    - if custom DSL, then need an IDE
+    - MPS-based DSL?
+```
+// an item in the blackboard can be fully bound or partially bound
+// if fully bound, then the outputs are defined
+// otherwise, outputs are undefined
+//
+// nodes are referenced by strings
+// strings can be something like `blur(param=const(0.0))` in which case the
+// system will instantiate the blur node and a const(0.0) node bound to the blur node
+// (shorthand instantiation)
+// assigned name is blur(param=const(0.0)), base constructor is `blur`
+//
+// import nodes:
+// - annotated slang files
+// -
+//
+// builtin nodes:
+// - load_image(filename[,format]) -- loads an image from a file
+// - const(value[,type]) -- constant value (scalars, vectors, samplers, etc.)
+// - display
+// - interact
+//
+// shader files:
+// - modified GLSL
+```
+- nodes are opaque to the user
+    - just an operation that returns some data, living in some memory, with a certain type
+- shader node type
+    - apply a shader on data
+    - define pipeline in code
+    - define arguments in code
+    - annotated slang files OR MPS-based projectional editor
+    - imports and default values (auto-instantiate on import)
+- MPS-based language/editor
+    - edit in IDE, export as binary, XML or TOML structured text
+        - import serialized file in engine 
+        - use textgen
+    - can go far
+        - code reads like a report
+        - implement GLSL in MPS
+        - translate to raw GLSL
+    - free autocompletion
+    - custom editors for:
+        - pipeline states
+        - input layouts
+        - blend modes
+            - show formula!
+        - samplers
+        - input images (browse from filesystem!)
+        - tess control / eval
+        - CS workgroup size
+        - matrices / vectors
+        - mathematical formula (!)
+        - units of measure (!)
+        - a bunch of syntaxes for colors, etc.
+        - subgraphs
+    - type inference?
+        - there is a typesystem component
+    - no limit to complexity since no syntax to learn 
+        - everything is discoverable through the IDE
+    - need includes / imports
+        - import modules containing code
+    - hot-reloadable?
+        - why not, this is the responsibility of the native application
+- Also good for graphs!
+    - reimport whole graph via RPC
+- Also good for many other things
+    - specialized shader types 
+        - image processing (e.g. apply convolution kernel)
+        - optimized global operations
+            - min/max 
+            - histogram
+        - scene manipulation
+            - select objects by query
+            - transform/scale/rotate
+            - add new objects
+        - geometry manipulation 
+- Sharing?
+    - MPS models are XML files, no issue here
+- MPS is also good for scripting!
+    - state machines, event-based programming, GUI description
+    - create the language, textgen or bingen to native repr, load into native application
+        - all in a single IDE
+        - yet, the native repr is decoupled from the IDE, so can edit manually if needed, or use another editor
+    - zero actual code for lang since the lang workbench is also a projective editor
+- Limitations?
+    - domain-specific
+        - which is good
+
+```
+import "normals"
+import "depth"
+optional import "color"
+
+edgemap {
+    vertex = "..."
+    fragment = "..."
+    texture[0] = normals
+    texture[1] = depth
+    
+    param "name" = slider { type=float, min=0.0, max=1.0 }
+}
+
+```
+
+### Second renaming
+- "renderer" is misleading: autograph-render is more like an API
+    - rename to autograph-api, or just autograph
+    - Instance -> BackendInstance
+    - Renderer -> Api, or Gfx (an instance of the graphics API)
+
+- Image networks (Compositor network)
+    - Edges are images
+    - Transparent to evaluation (can use a tiled evaluation strategy if deemed necessary)
+
+- Dynamic geometry generation?
+
+- Graphics pipeline networks
+    - Dependencies between render passes
+
+- Pixel networks
+    - Fragment shaders, basically, in graph form
+    - Basically: a generic computation
+- Vertex networks
+
+
+What's more than houdini:
+- Guanranteed GPU execution and best-effort real-time
+    - Suitable for a video game
+    
+### Proposal for a third refactor
+- leverage an existing cross-platform API, but put our own type-checking, validation, proc-macro and arena allocation goodness on it
+    - wgpu
+    - gfx-rs
+    - maybe even remove the renderer trait entirely
+        - use descriptor structs from wgpu or gfx-rs
+        - (ray tracing?)
+- issue: dependent on others to add support for some exotic features
+    - like ray tracing, task & mesh shaders, etc.
+    - OR: fork wgpu/gfx-rs and add own features
+- conclusion: not enough evidence / examples to support going one way or another
+    - just stick with what's already there and migrate later
+    
+### Reconsider command list sorting
+- is that really necessary?
+    - nothing to gain (yet)
+    

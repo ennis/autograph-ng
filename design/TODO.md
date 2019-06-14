@@ -21,12 +21,6 @@
     - trait ArenaExt
 - (render) validation of ImageUsage flags when used as attachment or sampled image
 - (render) image builders for convenience
-DONE (render/validation) support booleans in structured buffer interfaces
-    - it's not easy because OpTypeBool in spirv cannot be used in externally visible interfaces
-    - and a bool in a repr(C) obviously does not satisfy the std140 rules...
-    - we loose the "bool" type info somewhere
-        -> don't support bool in structured buffers
-        -> instead, create a BoolU32 type that is equivalent to PrimitiveType::UnsignedInt
 
 - POSTPONED (render/pipeline/validation) Precise errors
     - the current output is the debug formatted TypeDesc, which is readable enough
@@ -35,12 +29,19 @@ DONE (render/validation) support booleans in structured buffer interfaces
 
 - (render-extra) post-proc stack
 - (render) blitting
+
     
 ### Enhancements
 - (render/validation) accept structs with single member in place of just the member
 - (render/pipeline/args) support reuse of Arguments struct without ArgumentBlock indirection (paste copy of Arguments)
 
 ### Archived
+- DONE (render/validation) support booleans in structured buffer interfaces
+    - it's not easy because OpTypeBool in spirv cannot be used in externally visible interfaces
+    - and a bool in a repr(C) obviously does not satisfy the std140 rules...
+    - we loose the "bool" type info somewhere
+        -> don't support bool in structured buffers
+        -> instead, create a BoolU32 type that is equivalent to PrimitiveType::UnsignedInt
 - DONE (render/pipeline/validation) Check vertex input interfaces
 - DONE (shader/macros) Cleanup autograph_shader_macros (keep only include_shader, nuke the preprocessor)
 - DONE (shader/macros) include_str all includes so that shader is recompiled even if a header changed

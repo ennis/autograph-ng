@@ -6,10 +6,10 @@ edition = '2018'
 
 [dependencies]
 log = "0.4.6"
-autograph-render-extra = { path = "../render-extra" }
-autograph-render-boilerplate = { path = "../render-boilerplate" }
-autograph-render = { path = "../render", features = ["glm"] }
-autograph-render-gl = { path = "../render-gl" }
+autograph-api-extra = { path = "../api-extra" }
+autograph-api-boilerplate = { path = "../api-boilerplate" }
+autograph-api = { path = "../api", features = ["glm"] }
+autograph-api-gl = { path = "../api-gl" }
 autograph-imgui = {path = "../imgui" }
 openimageio = { git = "https://github.com/ennis/openimageio-rs" }
 imgui-winit-support = "0.0.22"

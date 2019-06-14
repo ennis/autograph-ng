@@ -248,4 +248,36 @@ println!("{}", a.0.get());
     - reintroduce compile-time genericity for better inlining of argument block declarations
 
 
+#### Hot-reloadable scripting language
 
+- P1 (must have)
+	- easily embeddable
+	- hot-reloadable
+	- access C-layout structs & fields directly from pointer
+	- contenders
+		- LuaJIT with CFFI
+		- ??? Python? 
+		- ???
+- P2 (good)
+	- autocompletion
+	- tooling
+- P3 (not a priority)
+	- static typing
+	- performance
+
+
+- MPS-based language:
+	- P1
+		- not easily embeddable, but can compile to C and load as dynamic library
+			- application connects to compilation server
+		- not directly hot-reloadable
+			- reload DLL when file changed
+		- can access C-layout structs
+			- import definitions from somewhere?
+				- ideally from rust
+				- parse rust? generate rust module with macro?
+	- P2
+		- built-in autocompletion 
+	- P3
+		- static typing possible
+		- good perfs

@@ -1,0 +1,27 @@
+[package]
+name = "autograph-api"
+version = "0.1.0"
+authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
+edition = '2018'
+
+[dependencies]
+bitflags = "1.0.4"
+config = "0.9.1"
+log = "0.4.6"
+time = "0.1.41"
+smallvec = "0.6.7"
+lazy_static = "1.2.0"
+ordered-float = "1.0.1"
+fxhash = "0.2.1"
+derivative = "1.0.2"
+nalgebra-glm = { version = "0.2.0", optional = true }
+autograph-spirv = { path = "../spirv" }
+autograph-api-macros = { path = "macros" }
+autograph-shader-macros = { path = "../shader/macros" }
+
+[dev-dependencies]
+autograph-api-test = { path = "../api-test" }
+lyon = { version = "0.11.0", features = ["extra"] }
+
+[features]
+glm = ["nalgebra-glm"]

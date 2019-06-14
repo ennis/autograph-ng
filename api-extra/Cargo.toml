@@ -1,0 +1,10 @@
+[package]
+name = "autograph-api-extra"
+version = "0.1.0"
+authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
+edition = '2018'
+
+[dependencies]
+autograph-api = { path = "../api" }
+petgraph = "0.4.13"
+derivative = "1.0.2"

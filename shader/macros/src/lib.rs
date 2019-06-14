@@ -23,7 +23,7 @@ const G: CrateName = CrateName;
 
 impl ToTokens for CrateName {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        tokens.append(syn::Ident::new("autograph_render", Span::call_site()))
+        tokens.append(syn::Ident::new("autograph_api", Span::call_site()))
     }
 }
 
